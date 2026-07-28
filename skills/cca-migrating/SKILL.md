@@ -1,0 +1,82 @@
+---
+name: cca-migrating
+description: Skill for migrating CCA systems between repositories. Use when migrating CCA from one repo to another, integrating CCA into Ansible repositories, or consolidating multiple CCA setups.
+---
+
+# CCA Migration Skill
+
+Skill for migrating CCA (Claude Code Admin) systems between repositories. Handles various CCA organization patterns and structures.
+
+## Steps
+
+### 1. Analysis
+**Source Analysis (MANDATORY)**
+1. **Identify CCA root location**: Check `.claude/skills/`, `guides/`, `knowledge/`, `incidents/`, `servers.json`.
+2. **Categorize content**: Inventory server skills, guides, incidents, configs.
+3. **Detect naming conventions**: Server names in source vs target.
+
+### 2. Execution
+**Target Preparation**:
+1. Create directory structure (`guides/`, `incidents/`, `logs/`) — same minimal set as
+   `cca-setting-up` (no `.claude/danger/`, no `knowledge/` unless the source actually uses them).
+2. Copy CCA plugin templates.
+
+**Content Migration**:
+1. **Server skills**: Copy/rename `.claude/skills/server-*`, update internal references.
+2. **Guides**: Copy from `guides/` or `knowledge/` to `guides/`, update content references.
+3. **Incidents**: Copy to `incidents/`, rename files/references.
+
+**Configuration**:
+1. Setup `servers.json`.
+2. Merge `CLAUDE.md`.
+3. Configure `ai-config.yaml`; migrate `.claude/danger/` patterns ONLY if the source project uses them.
+4. Setup search index (`tantivy2agents install`).
+
+### 3. Verification
+**Post-Migration Checklist**:
+1. Check all files copied correctly.
+2. Verify server name replacements complete.
+3. Test `tantivy2agents search`.
+4. Verify hooks work (run safe command).
+
+## CCA Structure Variants
+
+Different CCA repositories organize content differently. **ALWAYS analyze source structure first.**
+
+### Content Location Patterns
+
+| Content Type | Variant A | Variant B | Variant C |
+|--------------|-----------|-----------|-----------|
+| Server info | `.claude/skills/server-*` | `servers.json` only | `servers/` directory |
+| Guides | `.claude/skills/guide-*` | `guides/` | `knowledge/` |
+| Incidents | `incidents/` | `logs/incidents/` | `.claude/incidents/` |
+| Config | `.claude/config/` | root `*.json` files | `config/` |
+
+## Server Name Mapping
+
+### From Ansible Inventory
+```bash
+# Extract hosts from inventory
+grep -E '^\[|^[a-zA-Z]' TARGET/production/hosts | grep -v '^\[' | grep -v '^#'
+```
+
+## Reference Replacement Patterns
+
+Always replace these patterns in migrated content:
+```bash
+# Server names in text
+sed -i 's/server1/proweb1/g' FILE
+
+# Server names in paths
+sed -i 's|server-server1|server-proweb1|g' FILE
+```
+
+## Files to Never Copy
+
+- `.tantivy-data/` - regenerate with `tantivy2agents index`
+- `logs/*.log` - local runtime logs
+- `.claude/settings.local.json.bak` - backups
+- `*.tmp`, `*~` - temporary files
+
+
+<!-- SHARED SKILL: Keep project-agnostic. For project-specific extensions, create a local skill. -->

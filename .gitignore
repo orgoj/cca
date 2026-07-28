@@ -1,0 +1,31 @@
+# Claude Code local files
+.claude/
+.dippy
+
+# Tantivy search index
+.tantivy-data/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+*.egg
+dist/
+build/
+.pytest_cache/
+.python-version
+
+# uv
+.venv/
+
+# Logs
+logs/
+*.log
+
+# Local environment
+.env
+.env.local
+
+tmp/
+.claude/CLAUDE.md

@@ -1,0 +1,24 @@
+#!/bin/bash
+# Simple hostname test script
+# Usage: ./cca-server-hostname SERVER_NAME
+# Example: ./cca-server-hostname server1
+
+set -e
+
+# Get script directory (handle symlinks correctly)
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+
+if [ $# -eq 0 ] || [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+    echo "Usage: $0 <server_name>"
+    echo "Example: $0 server1"
+    exit 0
+fi
+
+SERVER="$1"
+
+echo "<hostname-check>"
+echo "<target>$SERVER</target>"
+echo "<result>"
+"$SCRIPT_DIR/cca-run-on-server" "$SERVER" "hostname"
+echo "</result>"
+echo "</hostname-check>"

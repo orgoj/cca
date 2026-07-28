@@ -1,0 +1,306 @@
+#!/usr/bin/env python3
+"""
+Domain DNS and routing checker
+Checks if domain points to our servers
+"""
+
+import ssl
+import subprocess
+import sys
+import os
+from pathlib import Path
+import urllib.error
+import urllib.request
+
+# Config file names in priority order.
+# .cca-env is preferred so CCA does not collide with other tools owning .env.
+ENV_FILENAMES = (".cca-env", ".env")
+
+
+# Load config file
+def load_env():
+    """Load first available config file from current or parent directories"""
+    path = Path(__file__).resolve().parent
+    while path != path.parent:
+        for name in ENV_FILENAMES:
+            env_file = path / name
+            if env_file.exists():
+                with open(env_file) as f:
+                    for line in f:
+                        line = line.strip()
+                        if line.startswith("export "):
+                            line = line[len("export "):].strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            key, value = line.split("=", 1)
+                            if key not in os.environ:
+                                os.environ[key] = value.strip("'\"")
+                return
+        path = path.parent
+
+load_env()
+
+# Our server IPs (public entry points / proxy)
+OUR_IPS = set()
+if "CCA_OUR_IPS" in os.environ:
+    ips = os.environ["CCA_OUR_IPS"].split(",")
+    OUR_IPS = {ip.strip() for ip in ips if ip.strip()}
+else:
+    print("WARNING: CCA_OUR_IPS not set in .cca-env/.env. Cannot verify if IP belongs to us.", file=sys.stderr)
+
+# Marker file served by our own proxy/webserver, used to recognize our hosting.
+# Project-specific - set in project .cca-env (or .env), e.g. CCA_HOSTING_MARKER=.example.hosting.info.txt
+HOSTING_MARKER = os.environ.get("CCA_HOSTING_MARKER", "").strip().lstrip("/")
+
+
+
+def get_domain_ips(domain):
+    """Get A records for domain"""
+    try:
+        result = subprocess.run(
+            ["dig", "+short", "A", domain], capture_output=True, text=True, timeout=5, check=False
+        )
+        ips = [line.strip() for line in result.stdout.split("\n") if line.strip()]
+        return [ip for ip in ips if ip and not ip.startswith(";")]
+    except Exception as e:
+        print(f"ERROR: DNS lookup failed: {e}")
+        return []
+
+
+def check_ip_owner(ip):
+    """Check IP owner via whois (detect CDN/proxy services)"""
+    try:
+        result = subprocess.run(
+            ["whois", ip], capture_output=True, text=True, timeout=5, check=False
+        )
+        output = result.stdout.lower()
+
+        # Detect specific CDN/proxy services
+        if "cloudflare" in output:
+            return "Cloudflare"
+        if "fastly" in output:
+            return "Fastly"
+        if "akamai" in output:
+            return "Akamai"
+        if "amazon" in output and "cloudfront" in output:
+            return "CloudFront"
+        if "cdn77" in output:
+            return "CDN77"
+        if "bunnycdn" in output or "bunny.net" in output:
+            return "BunnyCDN"
+
+        return "unknown"
+    except:
+        return "unknown"
+
+
+class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Custom handler that prevents automatic redirect following"""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def check_domain_redirects(domain, max_redirects=5):
+    """Check general domain redirect chain from http://example.com"""
+    print("\nDomain redirect chain:")
+    print("-" * 60)
+
+    test_url = f"http://{domain}/"
+    redirect_chain = []
+
+    try:
+        context = ssl._create_unverified_context()
+        https_handler = urllib.request.HTTPSHandler(context=context)
+        opener = urllib.request.build_opener(NoRedirectHandler, https_handler)
+
+        current_url = test_url
+        for redirect_count in range(max_redirects):
+            req = urllib.request.Request(current_url)
+
+            try:
+                # Try to open URL
+                response = opener.open(req, timeout=10)
+
+                # Success - no more redirects
+                if redirect_chain:
+                    print(
+                        f"Final URL (after {len(redirect_chain)} redirect{'s' if len(redirect_chain) > 1 else ''}): {current_url}"
+                    )
+                else:
+                    print(f"No redirects - URL: {current_url}")
+                return
+
+            except urllib.error.HTTPError as e:
+                # Handle redirects
+                if e.code in (301, 302, 303, 307, 308):
+                    location = e.headers.get("Location")
+                    if not location:
+                        print(f"❌ Redirect {e.code} without Location header")
+                        return
+
+                    # Make absolute URL if relative
+                    if location.startswith("//"):
+                        # Protocol-relative URL (//example.com/path)
+                        from urllib.parse import urlparse
+
+                        parsed = urlparse(current_url)
+                        location = f"{parsed.scheme}:{location}"
+                    elif location.startswith("/"):
+                        # Relative path (/path)
+                        from urllib.parse import urlparse
+
+                        parsed = urlparse(current_url)
+                        location = f"{parsed.scheme}://{parsed.netloc}{location}"
+
+                    # Check for protocol change
+                    current_protocol = current_url.split("://")[0]
+                    new_protocol = location.split("://")[0]
+                    protocol_change = ""
+                    if current_protocol != new_protocol:
+                        protocol_change = f" [{current_protocol.upper()}→{new_protocol.upper()}]"
+
+                    # Display redirect step
+                    print(f"  → [{e.code}]{protocol_change} {current_url} → {location}")
+
+                    redirect_chain.append({"code": e.code, "from": current_url, "to": location})
+                    current_url = location
+                    continue
+                print(f"HTTP error {e.code}: {e.reason}")
+                return
+
+        print(f"⚠️  Too many redirects (>{max_redirects})")
+
+    except Exception as e:
+        print(f"❌ Redirect check failed: {e}")
+
+
+def test_nginx_marker(domain, max_redirects=5):
+    """Test for our webserver by checking the hosting marker file (CCA_HOSTING_MARKER)"""
+    if not HOSTING_MARKER:
+        return False, "CCA_HOSTING_MARKER not set in .cca-env/.env - cannot check hosting marker"
+
+    test_url = f"https://{domain}/{HOSTING_MARKER}"
+
+    try:
+        context = ssl._create_unverified_context()
+        https_handler = urllib.request.HTTPSHandler(context=context)
+        opener = urllib.request.build_opener(NoRedirectHandler, https_handler)
+
+        current_url = test_url
+        for redirect_count in range(max_redirects):
+            req = urllib.request.Request(current_url)
+
+            try:
+                response = opener.open(req, timeout=10)
+                content = response.read().decode("utf-8").strip()
+
+                # Success - we got the marker file
+                if content and len(content) < 100:  # Sanity check - hostname should be short
+                    return True, f"Our nginx (server: {content}) - URL: {current_url}"
+                return False, f"Invalid marker content - URL: {current_url}"
+
+            except urllib.error.HTTPError as e:
+                # Handle redirects
+                if e.code in (301, 302, 303, 307, 308):
+                    location = e.headers.get("Location")
+                    if not location:
+                        return False, f"Redirect {e.code} without Location header"
+
+                    # Make absolute URL if relative
+                    if location.startswith("//"):
+                        # Protocol-relative URL (//example.com/path)
+                        from urllib.parse import urlparse
+
+                        parsed = urlparse(current_url)
+                        location = f"{parsed.scheme}:{location}"
+                    elif location.startswith("/"):
+                        # Relative path (/path)
+                        from urllib.parse import urlparse
+
+                        parsed = urlparse(current_url)
+                        location = f"{parsed.scheme}://{parsed.netloc}{location}"
+
+                    current_url = location
+                    continue
+                return False, f"HTTP error {e.code}: {e.reason}"
+
+        return False, f"Too many redirects (>{max_redirects})"
+
+    except Exception as e:
+        return False, f"HTTP test failed: {e}"
+
+
+def check_domain(domain):
+    """Main check function"""
+    print(f"Checking domain: {domain}")
+    print("=" * 60)
+
+    # Get DNS records
+    ips = get_domain_ips(domain)
+    if not ips:
+        print("❌ FAIL: No A records found")
+        return False
+
+    print(f"DNS A records: {', '.join(ips)}")
+
+    # Check if any IP is ours
+    direct_to_us = any(ip in OUR_IPS for ip in ips)
+
+    result = False
+
+    if direct_to_us:
+        print("DNS points to our server IP")
+        print("Testing marker file...")
+        is_ours, message = test_nginx_marker(domain)
+        if is_ours:
+            print(f"✅ CONFIRMED: {message}")
+            result = True
+        else:
+            print(f"❌ FAIL: {message}")
+            result = False
+
+    else:
+        # Check IP owner
+        print("Not our IP, checking owner...")
+        ip_owner = check_ip_owner(ips[0])
+
+        if ip_owner != "unknown":
+            print(f"⚠️  {ip_owner.upper()}: Behind {ip_owner} CDN/proxy, testing actual backend...")
+            is_ours, message = test_nginx_marker(domain)
+            if is_ours:
+                print(f"✅ CONFIRMED: {message}")
+                result = True
+            else:
+                print(f"❌ FAIL: {message}")
+                result = False
+
+        else:
+            # Unknown - still test for our nginx
+            print("Unknown IP owner, testing for our nginx...")
+            is_ours, message = test_nginx_marker(domain)
+            if is_ours:
+                print(f"✅ CONFIRMED: {message}")
+                result = True
+            else:
+                print(f"❌ FAIL: {message}")
+                result = False
+
+    # Check domain redirects (for all domains - ours and non-ours)
+    check_domain_redirects(domain)
+
+    return result
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: cca-check-domain <domain>")
+        print("Example: cca-check-domain example.com")
+        sys.exit(1)
+
+    domain = sys.argv[1].rstrip(".")
+    success = check_domain(domain)
+    sys.exit(0 if success else 1)
+
+
+if __name__ == "__main__":
+    main()

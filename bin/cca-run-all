@@ -1,0 +1,54 @@
+#!/bin/bash
+# Run script on all available servers
+# Usage: ./cca-run-all SCRIPT [SCRIPT_ARGS]
+# Example: ./cca-run-all cca-server-status
+
+set -e
+
+# Get project root directory (handle symlinks correctly)
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+if [ $# -eq 0 ] || [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+    echo "Usage: $0 <script> [script_args...]"
+    echo "Example: $0 cca-server-status"
+    echo ""
+    echo "Runs the specified script on all available servers."
+    exit 0
+fi
+
+SCRIPT="$1"
+shift
+SCRIPT_ARGS="$@"
+
+# Check if script exists in bin/ directory
+if [ ! -f "$PROJECT_ROOT/bin/$SCRIPT" ]; then
+    echo "Error: Script '$PROJECT_ROOT/bin/$SCRIPT' not found"
+    exit 1
+fi
+
+# Get list of servers
+SERVERS=$("$PROJECT_ROOT/bin/cca-run-on-server" --list)
+
+if [ -z "$SERVERS" ]; then
+    echo "Error: No servers available in tmux session"
+    exit 1
+fi
+
+echo "<run-all-execution>"
+echo "<script>$SCRIPT</script>"
+echo "<args>$SCRIPT_ARGS</args>"
+echo "<servers>$(echo $SERVERS | tr '\n' ' ')</servers>"
+echo "<start-time>$(date)</start-time>"
+echo ""
+
+# Run script on each server
+for server in $SERVERS; do
+    echo "<server-result name=\"$server\">"
+    "$PROJECT_ROOT/bin/$SCRIPT" $server $SCRIPT_ARGS
+    echo "</server-result>"
+    echo ""
+done
+
+echo "<end-time>$(date)</end-time>"
+echo "</run-all-execution>"

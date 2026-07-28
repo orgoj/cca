@@ -1,0 +1,770 @@
+#!/bin/bash
+
+set -e
+
+# Version
+VERSION="1.8.0"
+
+# Configuration
+LOG_DIR="logs"
+
+# Load environment files recursively from current dir up to root
+# Priority: .cca-tmux-cli (tool-specific) > .cca-env (CCA project config) > .env (general)
+# .cca-env avoids collisions with other tools that own .env in the same project.
+current_dir="$(pwd)"
+env_loaded=false
+while [ "$current_dir" != "/" ]; do
+    if [ -f "$current_dir/.cca-tmux-cli" ]; then
+        source "$current_dir/.cca-tmux-cli"
+        break
+    fi
+    if [ -f "$current_dir/.cca-env" ]; then
+        source "$current_dir/.cca-env"
+        env_loaded=true
+        # Don't break - continue looking for .cca-tmux-cli (higher priority)
+    elif [ -f "$current_dir/.env" ] && [ "$env_loaded" = false ]; then
+        source "$current_dir/.env"
+        env_loaded=true
+        # Don't break - continue looking for .cca-tmux-cli (higher priority)
+    fi
+    current_dir="$(dirname "$current_dir")"
+done
+unset env_loaded
+
+# Derive session name from current directory
+derive_session_name() {
+    local dir_name
+    dir_name=$(basename "$(pwd)")
+    # Remove common prefixes
+    dir_name=$(echo "$dir_name" | sed 's/^ansible-//')
+    dir_name=$(echo "$dir_name" | sed 's/^infra-//')
+    # Add cca- prefix
+    echo "cca-${dir_name}"
+}
+
+# Check if project is configured for cca-tmux-cli (matches recursive loading logic)
+is_project_configured() {
+    # Check recursively same way as environment loading
+    local check_dir="$(pwd)"
+    local has_config_file=false
+
+    while [ "$check_dir" != "/" ]; do
+        if [ -f "$check_dir/.cca-tmux-cli" ] || [ -f "$check_dir/.cca-env" ] || [ -f "$check_dir/.env" ]; then
+            has_config_file=true
+            break
+        fi
+        check_dir="$(dirname "$check_dir")"
+    done
+
+    # Check required variables (if config file exists)
+    if [ "$has_config_file" = true ] && [ -n "$TMUX_SESSION_NAME" ] && [ -n "$TMUX_SESSION_SERVERS" ]; then
+        return 0  # Configured
+    fi
+    return 1  # Not configured
+}
+
+# Display unified help information
+usage() {
+    local show_warning=""
+
+    # Check if project is configured and add warning if not
+    if ! is_project_configured; then
+        show_warning="
+WARNING: This project is NOT configured for cca-tmux-cli.
+Run: cca-tmux-cli --robot-init"
+    fi
+
+    cat <<EOF
+cca-tmux-cli v1.8.0 - Run commands in visible SSH sessions via tmux
+
+WHAT THIS TOOL DOES:
+  Executes commands on remote servers through tmux SSH windows.
+  Sessions are VISIBLE to users - they can see output and interrupt.
+
+USAGE:
+  cca-tmux-cli [-t server] [-s session] <subcommand> [options]
+
+SUBCOMMANDS:
+  list              List active server windows
+  run "command"     Execute command (visible in tmux session)
+  read              Read screen output from tmux
+  session <srv>     Create SSH windows for servers
+
+GLOBAL OPTIONS:
+  -t server         Target specific server
+  -s session        Target session (default: from env or auto-derived)
+  -x                Enable debug mode (set -x)
+  -h, --help        Show this help
+
+EXAMPLES:
+  cca-tmux-cli list                      Show active servers
+  cca-tmux-cli -t server1 run "uptime"   Run command on server
+  cca-tmux-cli -t server1 read           Read screen output
+
+ENVIRONMENT:
+  Files checked (in priority order):
+    .cca-tmux-cli       Tool-specific config
+    .cca-env            CCA project config (avoids .env collisions)
+    .env                General environment (legacy fallback)
+
+  Variables:
+    TMUX_SESSION_NAME       Tmux session identifier
+    TMUX_SESSION_SERVERS    Space-separated server list
+    CCA_LOGGING             Enable logging (default: false)
+    ADMIN_NAME              Admin name (only if CCA_LOGGING=true)
+
+AGENT COMMANDS (for AI agents):
+  --robot-init    Check if project configured (WARNING if not)
+  --doctor        Validate configuration and show status
+  --robot-help    Show agent-specific documentation
+$show_warning
+
+EOF
+}
+
+# --robot-init: Show configuration template for agents
+robot_init_subcommand() {
+    echo "=== CCA Tmux CLI - Configuration Template ==="
+    echo
+    echo "YOU MUST CREATE .cca-tmux-cli file:"
+    echo
+    echo "STEP 1: Find servers used in this project"
+    echo "→ Check project documentation (README.md, CLAUDE.md)"
+    echo "→ Check inventory files where servers are defined"
+    echo "→ Look for server lists in project configuration"
+    echo
+    echo "STEP 2: Create .cca-tmux-cli with this template:"
+    echo
+    echo '```bash'
+    echo "# CCA Tmux CLI Configuration"
+    echo "TMUX_SESSION_NAME=cca-<PROJECT_NAME>"
+    echo 'TMUX_SESSION_SERVERS="<server1> <server2> <server3>"'
+    echo "CCA_LOGGING=false"
+    echo "# CCA_LOGGING=true"
+    echo "# ADMIN_NAME=<name>  # Required only if CCA_LOGGING=true"
+    echo '```'
+    echo
+    echo "STEP 3: Test each server:"
+    echo "  cca-tmux-cli -t <server> run \"hostname\""
+    echo
+    echo "For detailed help: cca-tmux-cli --robot-help"
+}
+
+# --robot-help: Detailed agent guide
+robot_help_subcommand() {
+    cat <<'EOF'
+# CCA Tmux CLI - Agent Guide
+
+## What This Tool Does
+
+cca-tmux-cli runs commands on remote servers through tmux SSH windows.
+
+**IMPORTANT:** Sessions are VISIBLE to users:
+- Users can see the command output in their terminal
+- Users can interrupt commands with Ctrl-C
+- This is for INTERACTIVE use, not background automation
+
+**Normal use in CCA projects:**
+- Run commands on servers via SSH
+- Read output from tmux scrollback
+- Manage multiple server windows in one session
+
+## Agent Setup Workflow
+
+### Step 1: Check Configuration
+```bash
+cca-tmux-cli --robot-init
+```
+
+If this shows WARNING:
+- Configuration files are missing
+- You must create `.cca-tmux-cli` (or `.cca-env`; `.env` still works as fallback)
+
+### Step 2: Determine Session Name
+
+Derive from current directory:
+```bash
+# Remove common prefixes, add cca-
+basename "$(pwd)" | sed 's/^ansible-//' | sed 's/^infra-//' | sed 's/^/cca-/'
+```
+
+Examples:
+- `/path/to/ansible-example` → `cca-example`
+- `/path/to/infra-production` → `cca-production`
+
+### Step 3: Find Servers
+
+Check project files in order:
+1. `production/hosts` - Ansible inventory [servers] group
+2. `inventory/production/hosts` - Alternative inventory path
+3. `.cca-env.example` - Example configuration
+4. `CLAUDE.md` / `README.md` - Documentation
+
+Parse ansible inventory:
+```bash
+grep -A100 '^\[servers\]' production/hosts | grep -E '^[a-z][a-z0-9]+$'
+```
+
+### Step 4: Create Configuration File
+
+Create `.cca-tmux-cli`:
+```bash
+# CCA Tmux CLI Configuration
+TMUX_SESSION_NAME=cca-projectname
+TMUX_SESSION_SERVERS="server1 server2 server3"
+CCA_LOGGING=false
+# CCA_LOGGING=true
+# ADMIN_NAME=agent  # Required only if CCA_LOGGING=true
+```
+
+### Step 5: Verify
+```bash
+cca-tmux-cli --doctor
+```
+
+## Common Commands
+
+```bash
+# List available servers
+cca-tmux-cli list
+
+# Run command on server (visible to user)
+cca-tmux-cli -t server1 run "uptime"
+
+# Read current screen output
+cca-tmux-cli -t server1 read
+
+# Create SSH session
+cca-tmux-cli session server1 server2
+```
+
+## Troubleshooting
+
+**"No session specified"**
+- Add `TMUX_SESSION_NAME` to config file
+- Or use `-s` option: `cca-tmux-cli -s mysession list`
+
+**"Server not found"**
+- Check server is in `TMUX_SESSION_SERVERS`
+- Use correct server name with `-t`
+
+**"Configuration error"**
+- Run `cca-tmux-cli --doctor`
+- Check all required variables are set
+
+EOF
+}
+
+# --doctor: Validate and show status
+doctor_subcommand() {
+    local exit_code=0
+
+    echo "=== CCA Tmux CLI - Status Check ==="
+    echo
+
+    # 1. Config file
+    echo -n "Config file: "
+    if [ -f ".cca-tmux-cli" ]; then
+        echo "✓ .cca-tmux-cli"
+    elif [ -f ".cca-env" ]; then
+        echo "✓ .cca-env"
+    elif [ -f ".env" ]; then
+        echo "✓ .env"
+    else
+        echo "✗ None found (run --robot-init)"
+        exit_code=1
+    fi
+
+    # 2. Session name
+    echo -n "Session name: "
+    if [ -n "$TMUX_SESSION_NAME" ]; then
+        echo "✓ $TMUX_SESSION_NAME"
+    else
+        local derived=$(derive_session_name)
+        echo "⚠ Derived: $derived (save to config file)"
+    fi
+
+    # 3. Servers
+    echo -n "Servers: "
+    if [ -n "$TMUX_SESSION_SERVERS" ]; then
+        local count=$(echo "$TMUX_SESSION_SERVERS" | wc -w)
+        echo "✓ $count configured"
+        echo "  → $TMUX_SESSION_SERVERS"
+    else
+        echo "✗ None configured"
+        exit_code=1
+    fi
+
+    # 4. Logging (optional)
+    if [ "$CCA_LOGGING" = "true" ]; then
+        echo -n "Logging: "
+        if [ -n "$ADMIN_NAME" ]; then
+            echo "✓ Enabled (ADMIN_NAME=$ADMIN_NAME)"
+        else
+            echo "✗ Enabled but ADMIN_NAME missing"
+            exit_code=1
+        fi
+    else
+        echo "✓ Disabled (default)"
+    fi
+
+    # 5. Tmux check
+    echo -n "Tmux: "
+    if command -v tmux >/dev/null 2>&1; then
+        echo "✓ Installed"
+    else
+        echo "✗ Not found"
+        exit_code=1
+    fi
+
+    echo
+    echo "=== Status: $([ $exit_code -eq 0 ] && echo 'OK' || echo 'ISSUES FOUND') ==="
+
+    return $exit_code
+}
+
+# Find tmux window by server name
+find_window() {
+    local server="$1"
+
+    local window_id=$(tmux list-windows -F '#{window_id} #{window_name}' "${target_session_param[@]}" | awk -v srv="$server" '$2 == srv {print $1}')
+
+    if [ -z "$window_id" ]; then
+        # Window doesn't exist - create SSH connection automatically
+        ensure_ssh_window "$server"
+        # Try to find it again after creation
+        window_id=$(tmux list-windows -F '#{window_id} #{window_name}' "${target_session_param[@]}" | awk -v srv="$server" '$2 == srv {print $1}')
+
+        # If still not found, something went wrong
+        if [ -z "$window_id" ]; then
+            echo "Error: Failed to create window for server '$server'" >&2
+            exit 2
+        fi
+    fi
+
+    echo "$window_id"
+}
+
+# Sanitize command for logging (remove sensitive data)
+sanitize_command() {
+    local cmd="$1"
+
+    # Apply basic regex patterns first - exclude common flags like mkdir -p, cp -p
+    cmd=$(echo "$cmd" | sed -E 's/(^|[[:space:]])(--password)[[:space:]]+[^[:space:]]+/\1\2 [REDACTED]/g')
+    cmd=$(echo "$cmd" | sed -E 's/(password|passwd|token|key|secret)[[:space:]]*=[[:space:]]*[^[:space:]]+/\1=[REDACTED]/gi')
+
+    # If detect-secrets available, do additional check on remaining command
+    if command -v detect-secrets >/dev/null 2>&1; then
+        local secrets_output=$(echo "$cmd" | detect-secrets scan --string 2>/dev/null)
+        if echo "$secrets_output" | grep -q ": True"; then
+            local first_word=$(echo "$cmd" | awk '{print $1}')
+            cmd="$first_word [ADDITIONAL SECRETS DETECTED]"
+        fi
+    fi
+
+    echo "$cmd"
+}
+
+# Log cca-tmux-cli run command execution
+log_run_command() {
+    local target_server="$1"
+    local run_command="$2"
+
+    # Skip logging if logs directory doesn't exist
+    [ -d "$LOG_DIR" ] || return 0
+
+    # Error if ADMIN_NAME not set when logging is required
+    if [ -z "$ADMIN_NAME" ]; then
+        echo "Error: ADMIN_NAME not set in config file" >&2
+        echo "Add it with: echo 'ADMIN_NAME=your_name' >> .cca-env" >&2
+        exit 78
+    fi
+
+    local timestamp=$(date -Iseconds)
+    local log_date=$(date +%Y-%m-%d)
+    local log_file="$LOG_DIR/${log_date}-${ADMIN_NAME}.log"
+    local safe_command=$(sanitize_command "$run_command")
+
+    # Format: TIMESTAMP ADMIN SERVER COMMAND
+    echo "$timestamp $ADMIN_NAME ${target_server:-DEFAULT} $safe_command" >>"$log_file"
+}
+
+# Ensure tmux session exists (create if missing, always detached)
+ensure_session() {
+    # Session name must already be set (via -s option or TMUX_SESSION_NAME from config file)
+    # NO auto-generation - if not set, it's a configuration error
+    if [ -z "$target_session" ]; then
+        echo "Error: No session specified. Use -s option or set TMUX_SESSION_NAME in config file" >&2
+        exit 78
+    fi
+
+    # Create session if it doesn't exist (always detached)
+    if ! tmux has-session -t "$target_session" 2>/dev/null; then
+        tmux new-session -d -s "$target_session"
+        echo "<note>New tmux session \"$target_session\" created. User can attach: tmux attach -t $target_session</note>"
+    fi
+}
+
+# Ensure SSH window exists for server (create if missing, always detached)
+ensure_ssh_window() {
+    local server="$1"
+
+    # Check if window already exists
+    local window_id=$(tmux list-windows -F '#{window_id} #{window_name}' -t "$target_session" | awk -v srv="$server" '$2 == srv {print $1}')
+
+    if [ -z "$window_id" ]; then
+        # Create new SSH window (detached)
+        tmux new-window -t "$target_session" -n "$server" "ssh $server"
+        # Wait for SSH to initialize
+        sleep 2
+    fi
+}
+
+# Determine target session (priority: -s option > TMUX_SESSION_NAME from config file)
+target_session=""
+if [ -n "$TMUX_SESSION_NAME" ]; then
+    target_session="$TMUX_SESSION_NAME"
+fi
+
+# Parse global options
+target_server=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+    -t)
+        target_server="$2"
+        shift 2
+        ;;
+    -s)
+        target_session="$2"
+        shift 2
+        ;;
+    -x)
+        set -x
+        shift
+        ;;
+    -h | --help)
+        usage
+        exit 0
+        ;;
+    -V | --version)
+        echo "$VERSION"
+        exit 0
+        ;;
+    --robot-init)
+        robot_init_subcommand
+        exit $?
+        ;;
+    --robot-help)
+        robot_help_subcommand
+        exit 0
+        ;;
+    --doctor)
+        doctor_subcommand
+        exit $?
+        ;;
+    -*)
+        echo "Error: Unknown global option '$1'" >&2
+        usage >&2
+        exit 64
+        ;;
+    *)
+        # First non-option argument is the subcommand
+        break
+        ;;
+    esac
+done
+
+# Check if subcommand was provided
+if [ $# -eq 0 ]; then
+    echo "Error: Subcommand required" >&2
+    usage >&2
+    exit 64
+fi
+
+# Get subcommand
+subcommand="$1"
+shift
+
+target_session_param=()
+if [ -n "$target_session" ]; then
+    target_session_param=(-t "$target_session")
+fi
+
+# Set up global target window parameter
+target_window_param=()
+# NOTE: target_window_param is set LATER in subcommands that need it (read, run)
+# This avoids calling find_window() for subcommands that don't need windows (list, session)
+
+# Route to subcommand functions
+case "$subcommand" in
+read)
+    # Handle read subcommand
+    # Ensure session exists BEFORE setting target_window_param
+    ensure_session
+
+    # Set up target window parameter (calls find_window which may call ensure_ssh_window)
+    if [ -n "$target_server" ]; then
+        window=$(find_window "$target_server")
+        target_window_param=(-t "$window")
+    fi
+
+    read_history_lines=""
+    read_marker=""
+    read_all=false
+
+    # Parse read arguments
+    while [ $# -gt 0 ]; do
+        case "$1" in
+        --all)
+            read_all=true
+            shift
+            ;;
+        --marker)
+            read_marker="$2"
+            shift 2
+            ;;
+        *)
+            read_history_lines="$1"
+            shift
+            ;;
+        esac
+    done
+
+    # Handle marker option
+    if [ -n "$read_marker" ]; then
+        tmux capture-pane "${target_window_param[@]}" -p -S -5000 | sed -En "/^=== START $read_marker ===/,/^=== END $read_marker (EXITCODE=|INTERRUPTED|TERMINATED|HANGUP|KILLED)/p"
+        exit 0
+    fi
+
+    # Handle --all option
+    if [ "$read_all" = true ]; then
+        tmux capture-pane "${target_window_param[@]}" -p -S -
+        exit 0
+    fi
+
+    # Handle history lines
+    if [ -z "$read_history_lines" ]; then
+        # No parameter - only visible content
+        tmux capture-pane "${target_window_param[@]}" -p
+        exit 0
+    fi
+
+    # Validate parameter is a number
+    if ! [[ "$read_history_lines" =~ ^[0-9]+$ ]]; then
+        echo "Error: Parameter must be a non-negative number" >&2
+        usage >&2
+        exit 64
+    fi
+
+    # Specific number of history lines
+    start_line=$((0 - read_history_lines))
+    tmux capture-pane "${target_window_param[@]}" -p -S "$start_line"
+    ;;
+run)
+    # Handle run subcommand
+    # Ensure session exists BEFORE setting target_window_param
+    ensure_session
+
+    # Set up target window parameter (calls find_window which may call ensure_ssh_window)
+    if [ -n "$target_server" ]; then
+        window=$(find_window "$target_server")
+        target_window_param=(-t "$window")
+    fi
+
+    run_poll_interval=2 # Must be integer - bash arithmetic doesn't support decimals
+    run_max_timeout=300
+    run_command=""
+
+    # Parse run arguments
+    while [ $# -gt 0 ]; do
+        case "$1" in
+        --interval)
+            run_poll_interval="$2"
+            shift 2
+            ;;
+        --timeout)
+            run_max_timeout="$2"
+            shift 2
+            ;;
+        *)
+            run_command="$1"
+            shift
+            ;;
+        esac
+    done
+
+    # Check if command was provided
+    if [ -z "$run_command" ]; then
+        echo "Error: Command parameter required" >&2
+        usage >&2
+        exit 64
+    fi
+
+    # Log the command
+    log_run_command "$target_server" "$run_command"
+
+    # Generate unique marker with timestamp and random component
+    marker="TMUX_MARKER_$(date +%s%N)_$$"
+
+    # Send start marker and command with END marker attached
+    # Split END marker: "echo -n '=== END '; echo '...'" prevents false grep matches in source code
+    # Use base64 encoding to safely handle newlines, quotes, heredocs - everything
+    # Base64 output contains only safe chars (A-Za-z0-9+/=), decoded and executed via pipe
+    # Show decoded command BEFORE marker (visible in terminal, not in captured output)
+    # Trap INT/TERM/HUP ensures END marker prints even on Ctrl-C/kill (subshell restores signals)
+    # Exit codes: 130=SIGINT, 143=SIGTERM, 129=SIGHUP, 137=SIGKILL (SIGKILL can't be trapped but detected)
+    encoded_cmd=$(printf '%s' "$run_command" | base64 | tr -d '\n')
+    tmux send-keys "${target_window_param[@]}" "trap '' INT TERM HUP; echo; echo '# Command:'; echo '$encoded_cmd' | base64 -d; echo; echo '=== START $marker ==='; ( trap - INT TERM HUP; echo '$encoded_cmd' | base64 -d | bash ); exitcode=\$?; trap - INT TERM HUP; echo; echo -n '=== END '; case \$exitcode in 130) echo '$marker INTERRUPTED ===';; 143) echo '$marker TERMINATED ===';; 129) echo '$marker HANGUP ===';; 137) echo '$marker KILLED ===';; *) echo '$marker EXITCODE='\$exitcode' ===';; esac" Enter
+
+    # Wait for command to complete with polling for END marker
+    elapsed=0
+    timeout_reached=false
+    while [[ "$elapsed" -lt "$run_max_timeout" ]]; do
+        sleep "$run_poll_interval"
+        elapsed=$((elapsed + run_poll_interval))
+
+        # Check current screen for END marker at beginning of line
+        current_screen=$(tmux capture-pane "${target_window_param[@]}" -p)
+        if echo "$current_screen" | grep -qE "^=== END $marker (EXITCODE=|INTERRUPTED|TERMINATED|HANGUP|KILLED)" >/dev/null 2>&1; then
+            break
+        fi
+    done
+
+    # Check if timeout was reached
+    if [[ "$elapsed" -ge "$run_max_timeout" ]]; then
+        timeout_reached=true
+    fi
+
+    if [[ "$timeout_reached" == "true" ]]; then
+        echo "ERROR: Command did not complete within timeout of ${run_max_timeout}s"
+        echo "Current output so far:"
+        echo "======================"
+        # Show output from START marker to current state
+        tmux capture-pane "${target_window_param[@]}" -p -S -5000 | sed -n "/^=== START $marker ===/,\$p" | sed '1d'
+        echo "======================"
+        echo "Program still running - I cannot run more commands until user stops it or confirms completion."
+        echo "Check if finished later: cca-tmux-cli read --marker \"$marker\""
+        exit 124
+    else
+        # Normal completion - extract output between markers
+        full_output=$(tmux capture-pane "${target_window_param[@]}" -p -S -5000)
+        marker_content=$(echo "$full_output" | sed -En "/^=== START $marker ===/,/^=== END $marker (EXITCODE=|INTERRUPTED|TERMINATED|HANGUP|KILLED)/p")
+
+        # Extract exit code from END marker (handles EXITCODE=N and signal markers)
+        end_marker_line=$(echo "$marker_content" | tail -1)
+        case "$end_marker_line" in
+        *INTERRUPTED*) command_exit_code=130 ;;
+        *TERMINATED*) command_exit_code=143 ;;
+        *HANGUP*) command_exit_code=129 ;;
+        *KILLED*) command_exit_code=137 ;;
+        *) command_exit_code=$(echo "$end_marker_line" | sed 's/.*EXITCODE=\([0-9][0-9]*\).*/\1/') ;;
+        esac
+
+        # Display command output (remove START and END markers)
+        echo "$marker_content" | sed '1d;$d'
+
+        # Exit with the command's exit code (default to 0 if empty)
+        exit "${command_exit_code:-0}"
+    fi
+    ;;
+session)
+    # Handle session subcommand - create tmux session with SSH connections
+    if [ $# -eq 0 ]; then
+        # No servers specified - use default servers from config file
+        if [ -z "$TMUX_SESSION_SERVERS" ]; then
+            echo "Error: No servers specified and TMUX_SESSION_SERVERS not defined in config file" >&2
+            usage >&2
+            exit 64
+        fi
+        read -ra servers <<<"$TMUX_SESSION_SERVERS"
+    else
+        servers=("$@")
+    fi
+
+    # Determine session name (must be set via -s option or TMUX_SESSION_NAME from config file)
+    if [ -z "$target_session" ]; then
+        echo "Error: No session specified. Use -s option or set TMUX_SESSION_NAME in config file" >&2
+        exit 78
+    fi
+    session_name="$target_session"
+
+    # Create session with SSH connections
+    num_servers=${#servers[@]}
+    session_was_created=0
+
+    for ((i = 0; i < num_servers; i++)); do
+        server="${servers[$i]}"
+        if [ "$i" -eq 0 ] && ! tmux has-session -t "$session_name" 2>/dev/null; then
+            tmux new-session -d -s "$session_name" -n "$server" "ssh $server"
+            session_was_created=1
+        else
+            tmux new-window -t "$session_name" -n "$server" "ssh $server"
+        fi
+    done
+
+    # Attach to the session only if it was newly created
+    if [ "$session_was_created" -eq 1 ]; then
+        tmux attach-session -t "$session_name"
+    fi
+    ;;
+list)
+    # Parse list arguments
+    list_raw=false
+    while [ $# -gt 0 ]; do
+        case "$1" in
+        --raw)
+            list_raw=true
+            shift
+            ;;
+        *)
+            echo "Error: Unknown list option '$1'" >&2
+            usage >&2
+            exit 64
+            ;;
+        esac
+    done
+
+    # Check if session exists without creating it
+    if ! tmux has-session -t "$target_session" 2>/dev/null; then
+        session_exists=false
+    else
+        session_exists=true
+    fi
+
+    if [ "$list_raw" = true ]; then
+        if [ "$session_exists" = "false" ]; then
+            echo "Error: Session '$target_session' does not exist." >&2
+            exit 1
+        fi
+        # Raw output - original detailed format
+        tmux list-windows "${target_session_param[@]}"
+        echo
+        echo "Note: '-' and '*' are tmux indicators (last/active window), not part of server names"
+    else
+        # Default output - just server names, ignore 'bash'
+        if [ "$session_exists" = "true" ]; then
+            windows=$(tmux list-windows "${target_session_param[@]}" -F '#{window_name}' | sed 's/[-*]$//' | grep -v '^bash$' || true)
+        else
+            windows=""
+        fi
+
+        # Always show available servers from env if defined
+        if [ -n "$TMUX_SESSION_SERVERS" ]; then
+            echo "Available servers (TMUX_SESSION_SERVERS): $TMUX_SESSION_SERVERS"
+        fi
+
+        if [ -z "$windows" ]; then
+             echo "No active server windows in '$target_session'."
+             echo "Run a command to start: cca-tmux-cli -t <SERVER> run \"uptime\""
+        else
+            echo "Active windows:"
+            echo "$windows"
+        fi
+    fi
+    ;;
+*)
+    echo "Error: Unknown subcommand '$subcommand'" >&2
+    usage >&2
+    exit 64
+    ;;
+esac

@@ -1,0 +1,584 @@
+#!/bin/bash
+
+# cca-hetrix - HetrixTools API monitoring status checker
+# Requires: HETRIX_API_KEY environment variable or curl-secret setup
+# API docs: https://docs.hetrixtools.com/
+
+show_help() {
+    cat <<EOF
+cca-hetrix - HetrixTools monitoring status checker
+
+Usage: cca-hetrix [OPTION]
+
+Options:
+    --up        Check if everything is UP (exit 0 if all up, exit 1 if any down) [DEFAULT]
+    --down      Show only down monitors with details
+    --all       Show all monitors with status and uptime duration
+    --response-times  Show UP monitors with response times per location
+    --outages   Show recent outages (default: last 24h)
+    --since     TIME  Show outages since time (YYYY-MM-DD or relative: 12h, 7d, 30m)
+    --until     TIME  Show outages until time (YYYY-MM-DD HH:MM or relative: 2h, 1d)
+    --monitor-outages MONITOR  Show detailed outage history for specific monitor
+    --monitor-info MONITOR     Show monitor details incl. target URL
+    --blacklist Show email blacklist status overview
+    --blacklist-ip IP  Show detailed blacklist info for specific IP
+    --help      Show this help
+
+Examples:
+    cca-hetrix --up                              # Quick UP/DOWN check (default)
+    cca-hetrix --down                            # Show what's currently down
+    cca-hetrix --all                             # Show all monitors with durations
+    cca-hetrix --response-times                  # Show UP monitors with response times
+    cca-hetrix --outages                         # Show recent outages (24h)
+    cca-hetrix --outages --since 2025-08-20      # Show outages since date
+    cca-hetrix --outages --since 12h             # Show outages last 12 hours
+    cca-hetrix --outages --since 7d              # Show outages last 7 days
+    cca-hetrix --outages --since 12h --until 6h  # Outages between 12h and 6h ago
+    cca-hetrix --monitor-outages "web-app"       # Show outage history for monitor
+    cca-hetrix --monitor-outages "api" --since 3d   # Monitor outages last 3 days
+    cca-hetrix --monitor-info "search web"       # Show monitor details incl. target URL
+    cca-hetrix --blacklist                       # Show blacklist status overview
+    cca-hetrix --blacklist-ip 203.0.113.10       # Detail for specific IP
+
+Requires:
+    cca-curl-secret   Secure credential management (sops-based)
+    jq                JSON processing
+
+EOF
+}
+
+# API call helper - uses cca-curl-secret for secure credential management
+api_call() {
+    local endpoint="$1"
+    cca-curl-secret -s "https://api.hetrixtools.com/v3${endpoint}"
+}
+
+get_monitors() {
+    local status_filter=""
+    if [ -n "$1" ]; then
+        status_filter="&uptime_status=$1"
+    fi
+    api_call "/uptime-monitors?per_page=200${status_filter}"
+}
+
+get_blacklist_monitors() {
+    local listed_filter=""
+    local target_filter=""
+
+    if [ "$1" = "listed" ]; then
+        listed_filter="?listed=true"
+    fi
+
+    if [ -n "$2" ]; then
+        target_filter="?target=$2"
+    fi
+
+    api_call "/blacklist-monitors${listed_filter}${target_filter}&per_page=200"
+}
+
+# Convert UTC timestamp to local time formatted string
+format_local_time() {
+    local timestamp="$1"
+    date -d "@$timestamp" '+%Y-%m-%d %H:%M %Z'
+}
+
+check_all_ok() {
+    local down_count
+    down_count=$(get_monitors down | jq -r '.monitors | length')
+
+    if [ "$down_count" -eq 0 ]; then
+        echo "✅ All monitors are UP"
+        exit 0
+    else
+        echo "❌ $down_count monitor(s) are DOWN"
+        exit 1
+    fi
+}
+
+show_down_monitors() {
+    echo "🔴 DOWN Monitors:"
+    get_monitors down | jq -r '.monitors[] | [.name, .type, .last_status_change, .target] | @tsv' | while IFS=$'\t' read -r name type timestamp target; do
+        local_time=$(format_local_time "$timestamp")
+        echo "  ❌ $name [$type]: DOWN since $local_time - $target"
+    done
+
+    local down_count
+    down_count=$(get_monitors down | jq -r '.monitors | length')
+
+    if [ "$down_count" -eq 0 ]; then
+        echo "  (No monitors are currently down)"
+    fi
+}
+
+show_all_monitors() {
+    echo "📊 All Monitors Status:"
+    echo ""
+
+    echo "🟢 UP Monitors:"
+    get_monitors up | jq -r '.monitors[] | "  ✅ \(.name) [\(.type)]: UP for \(((now - .last_status_change) / 3600) | floor)h \((((now - .last_status_change) % 3600) / 60) | floor)m (\(.uptime)% uptime)"'
+
+    echo ""
+    echo "🔴 DOWN Monitors:"
+    get_monitors down | jq -r '.monitors[] | [.name, .type, .last_status_change] | @tsv' | while IFS=$'\t' read -r name type timestamp; do
+        local_time=$(format_local_time "$timestamp")
+        echo "  ❌ $name [$type]: DOWN since $local_time"
+    done
+
+    local down_count
+    down_count=$(get_monitors down | jq -r '.monitors | length')
+
+    if [ "$down_count" -eq 0 ]; then
+        echo "  (No monitors are currently down)"
+    fi
+}
+
+parse_since_time() {
+    local input="$1"
+    local now=$(date +%s)
+
+    # Check if it's a relative time format (e.g., 12h, 7d, 30m)
+    if [[ "$input" =~ ^[0-9]+[hmd]$ ]]; then
+        local number=${input%?}
+        local unit=${input: -1}
+
+        case "$unit" in
+        m) echo $((now - number * 60)) ;;
+        h) echo $((now - number * 3600)) ;;
+        d) echo $((now - number * 86400)) ;;
+        esac
+    else
+        # Try to parse as date (YYYY-MM-DD format)
+        date -d "$input" +%s 2>/dev/null
+    fi
+}
+
+show_recent_outages() {
+    local since_timestamp
+    local until_timestamp
+    local display_text
+
+    if [ -n "$since_date" ]; then
+        since_timestamp=$(parse_since_time "$since_date")
+        if [ -z "$since_timestamp" ]; then
+            echo "Error: Invalid --since format. Use YYYY-MM-DD or relative format (e.g., 12h, 7d, 30m)" >&2
+            exit 1
+        fi
+        display_text="since $since_date"
+    else
+        since_timestamp=$(($(date +%s) - 86400))
+        display_text="(last 24 hours)"
+    fi
+
+    if [ -n "$until_date" ]; then
+        until_timestamp=$(parse_since_time "$until_date")
+        if [ -z "$until_timestamp" ]; then
+            echo "Error: Invalid --until format. Use YYYY-MM-DD or relative format (e.g., 12h, 7d, 30m)" >&2
+            exit 1
+        fi
+        display_text="$display_text until $until_date"
+    else
+        until_timestamp=$(date +%s)
+    fi
+
+    echo "🕐 Outages $display_text:"
+
+    echo ""
+    get_monitors | jq -r --arg since "$since_timestamp" --arg until "$until_timestamp" '.monitors | map(select(.last_status_change >= ($since | tonumber) and .last_status_change <= ($until | tonumber))) | sort_by(.last_status_change) | reverse | .[] | [.name, .type, .last_status_change, .uptime_status, ((now - .last_status_change) / 3600 | floor), (((now - .last_status_change) % 3600) / 60 | floor)] | @tsv' | while IFS=$'\t' read -r name type timestamp status hours minutes; do
+        local_time=$(format_local_time "$timestamp")
+        echo "  📉 $name [$type]: Last changed $local_time (${hours}h ${minutes}m ago) - Currently $(echo "$status" | tr '[:lower:]' '[:upper:]')"
+    done
+
+    echo ""
+    echo "Note: Only showing monitors that changed status in specified time range"
+}
+
+show_blacklist_overview() {
+    echo "📧 Email Blacklist Status Overview:"
+    echo ""
+
+    local data
+    data=$(get_blacklist_monitors listed)
+
+    local total_listed
+    total_listed=$(echo "$data" | jq -r '.monitors | length')
+
+    if [ "$total_listed" -eq 0 ]; then
+        echo "✅ No servers currently blacklisted"
+        return
+    fi
+
+    echo "❌ $total_listed server(s) currently on blacklists:"
+    echo ""
+
+    echo "$data" | jq -r '.monitors[] | "  🔴 \(.name) (\(.target)) - \((.listed | length)) blacklist(s)"'
+
+    echo ""
+    echo "⚠️  NOTE: dnsbl-3.uceprotect.net is often ignored (extortion blacklist)"
+    echo "📖 For details: cca-hetrix --blacklist-ip IP_ADDRESS"
+}
+
+show_blacklist_detail() {
+    local ip="$1"
+
+    echo "📧 Detailed Blacklist Info for IP: $ip"
+    echo ""
+
+    local data
+    data=$(get_blacklist_monitors "" "$ip")
+
+    local monitor_count
+    monitor_count=$(echo "$data" | jq -r '.monitors | length')
+
+    if [ "$monitor_count" -eq 0 ]; then
+        echo "❌ No blacklist monitor found for IP: $ip"
+        echo "💡 Check if this IP is monitored in HetrixTools"
+        return 1
+    fi
+
+    local blacklist_count
+    blacklist_count=$(echo "$data" | jq -r '.monitors[0].listed | length')
+
+    local server_name
+    server_name=$(echo "$data" | jq -r '.monitors[0].name')
+
+    if [ "$blacklist_count" -eq 0 ]; then
+        echo "✅ $server_name ($ip) is NOT blacklisted anywhere"
+        return
+    fi
+
+    echo "❌ $server_name ($ip) is on $blacklist_count blacklist(s):"
+    echo ""
+
+    echo "$data" | jq -r '.monitors[0].listed[] | "  🔴 \(.rbl)\n     🌐 Delist: \(.delist)"'
+
+    echo ""
+    echo "⚠️  IMPORTANT:"
+    echo "   • dnsbl-3.uceprotect.net = IGNORE (extortion blacklist)"
+    echo "   • Focus on spamhaus, spamsources, etc."
+    echo "   • Contact your hosting provider if legitimate blacklisting detected"
+}
+
+show_response_times() {
+    echo "⚡ UP Monitors Response Times:"
+    echo ""
+
+    get_monitors up | jq -r '.monitors | sort_by(.name) | .[] | select(.locations != null) | @json' | while IFS= read -r monitor_json; do
+        local name=$(echo "$monitor_json" | jq -r '.name')
+        local type=$(echo "$monitor_json" | jq -r '.type')
+        local uptime=$(echo "$monitor_json" | jq -r '.uptime')
+
+        echo "  ✅ $name [$type] (${uptime}% uptime):"
+
+        # Extract response times for all locations
+        echo "$monitor_json" | jq -r '.locations | to_entries[] | "    📍 \(.key): \(.value.response_time)ms"' | while IFS= read -r location_line; do
+            # Add color coding for slow response times
+            response_time=$(echo "$location_line" | grep -o '[0-9]\+ms' | sed 's/ms//')
+            if [ "$response_time" -gt 5000 ]; then
+                echo -e "\033[31m${location_line}\033[0m"
+            elif [ "$response_time" -gt 3000 ]; then
+                echo -e "\033[33m${location_line}\033[0m"
+            else
+                echo -e "\033[32m${location_line}\033[0m"
+            fi
+        done
+        echo ""
+    done
+}
+
+show_monitor_info() {
+    local monitor_term="$1"
+    local monitor_id
+    monitor_id=$(find_monitor_by_name "$monitor_term")
+
+    if [ -z "$monitor_id" ]; then
+        echo "Error: Could not determine monitor ID for '$monitor_term'" >&2
+        exit 1
+    fi
+
+    local info
+    info=$(get_monitor_info "$monitor_id")
+
+    echo "$info" | jq -r '"📋 Monitor Info:
+  Name:    \(.name)
+  Type:    \(.type)
+  Status:  \(.uptime_status | ascii_upcase)
+  Uptime:  \(.uptime)%
+  Target:  \(.target)
+  ID:      \(.id)"'
+}
+
+find_monitor_by_name() {
+    local search_term="$1"
+
+    # If it looks like a 32-char hex ID, use it directly
+    if [[ "$search_term" =~ ^[a-f0-9]{32}$ ]]; then
+        echo "$search_term"
+        return
+    fi
+
+    # Otherwise search by name (case-insensitive)
+    local matches
+    matches=$(get_monitors | jq -r --arg term "$search_term" '.monitors[] | select(.name | ascii_downcase | contains($term | ascii_downcase)) | .id + "|" + .name')
+
+    local match_count
+    match_count=$(echo "$matches" | grep -c '^' 2>/dev/null || echo "0")
+
+    if [ "$match_count" -eq 0 ]; then
+        echo "Error: No monitor found matching '$search_term'" >&2
+        echo "Use: cca-hetrix --all | grep -i '$search_term' to see available monitors" >&2
+        exit 1
+    elif [ "$match_count" -eq 1 ]; then
+        echo "$matches" | cut -d'|' -f1
+    else
+        echo "Error: Multiple monitors found matching '$search_term':" >&2
+        echo "$matches" | while IFS='|' read -r id name; do
+            echo "  - $name" >&2
+        done
+        echo "Use more specific search term." >&2
+        exit 1
+    fi
+}
+
+get_monitor_info() {
+    local monitor_id="$1"
+    get_monitors | jq -r --arg id "$monitor_id" '.monitors[] | select(.id == $id)'
+}
+
+get_location_fail_log() {
+    local monitor_id="$1"
+    local since_timestamp="$2"
+    local until_timestamp="$3"
+    local base_url="https://api.hetrixtools.com/v3/uptime-monitors/$monitor_id/location-fail-log"
+    local all_entries="[]"
+    local page_end_timestamp=""
+    local page=1
+
+    while true; do
+        local url="$base_url?since=$since_timestamp"
+
+        # For subsequent pages, use page_end_timestamp to get older entries
+        if [ -n "$page_end_timestamp" ]; then
+            url="${url}&end=$page_end_timestamp"
+        fi
+
+        local response
+        response=$(api_call "/uptime-monitors/$monitor_id/location-fail-log?since=$since_timestamp$([ -n "$page_end_timestamp" ] && echo "&end=$page_end_timestamp")")
+
+        # Extract entries and merge
+        local entries
+        entries=$(echo "$response" | jq -r '.entries // []')
+        local entry_count
+        entry_count=$(echo "$entries" | jq 'length')
+
+        if [ "$entry_count" -eq 0 ]; then
+            break
+        fi
+
+        all_entries=$(echo "$all_entries" "$entries" | jq -s 'add')
+
+        # Check for next page
+        page_end_timestamp=$(echo "$response" | jq -r '.meta.next_page_timestamp // empty')
+
+        if [ -z "$page_end_timestamp" ]; then
+            break
+        fi
+
+        page=$((page + 1))
+        if [ "$page" -gt 10 ]; then
+            echo "Warning: Reached max pagination limit (10 pages)" >&2
+            break
+        fi
+    done
+
+    # Filter by until_timestamp if provided, then deduplicate
+    if [ -n "$until_timestamp" ]; then
+        echo "{\"entries\": $(echo "$all_entries" | jq --arg until "$until_timestamp" '[.[] | select(.timestamp <= ($until | tonumber))] | unique')}"
+    else
+        echo "{\"entries\": $(echo "$all_entries" | jq 'unique')}"
+    fi
+}
+
+show_monitor_outages() {
+    local monitor_term="$1"
+    local since_timestamp
+    local until_timestamp=""
+    local display_text
+
+    local monitor_id
+    monitor_id=$(find_monitor_by_name "$monitor_term")
+
+    if [ -z "$monitor_id" ]; then
+        echo "Error: Could not determine monitor ID for '$monitor_term'" >&2
+        exit 1
+    fi
+
+    local monitor_info
+    monitor_info=$(get_monitor_info "$monitor_id")
+    local monitor_name
+    monitor_name=$(echo "$monitor_info" | jq -r '.name')
+    local monitor_type
+    monitor_type=$(echo "$monitor_info" | jq -r '.type')
+
+    if [ "$monitor_name" = "null" ] || [ -z "$monitor_name" ]; then
+        echo "Error: Monitor ID '$monitor_id' not found" >&2
+        exit 1
+    fi
+
+    if [ -n "$since_date" ]; then
+        since_timestamp=$(parse_since_time "$since_date")
+        if [ -z "$since_timestamp" ]; then
+            echo "Error: Invalid --since format. Use YYYY-MM-DD or relative format (e.g., 12h, 7d, 30m)" >&2
+            exit 1
+        fi
+        display_text="since $since_date"
+    else
+        since_timestamp=$(($(date +%s) - 604800))
+        display_text="(last 7 days)"
+    fi
+
+    if [ -n "$until_date" ]; then
+        until_timestamp=$(parse_since_time "$until_date")
+        if [ -z "$until_timestamp" ]; then
+            echo "Error: Invalid --until format. Use YYYY-MM-DD or relative format (e.g., 12h, 7d, 30m)" >&2
+            exit 1
+        fi
+        display_text="$display_text until $until_date"
+    fi
+
+    echo "🔍 Outage History for: $monitor_name [$monitor_type] ($monitor_id)"
+    echo "📅 Period: $display_text"
+    echo ""
+
+    local fail_log
+    fail_log=$(get_location_fail_log "$monitor_id" "$since_timestamp" "$until_timestamp")
+
+    local entry_count
+    entry_count=$(echo "$fail_log" | jq -r '.entries | length')
+
+    if [ "$entry_count" -eq 0 ]; then
+        echo "✅ No outages detected in specified period"
+        return
+    fi
+
+    echo "📉 Detected Failures ($entry_count entries):"
+    echo ""
+
+    echo "$fail_log" | jq -r '.entries[] | [.timestamp, .location, .data] | @tsv' | sort -n | while IFS=$'\t' read -r timestamp location error_data; do
+        local_time=$(format_local_time "$timestamp")
+        echo "  ❌ $local_time [$location]: $error_data"
+    done
+
+    echo ""
+    echo "📊 Analysis:"
+
+    local unique_outages
+    unique_outages=$(echo "$fail_log" | jq -r '.entries[].timestamp' | sort -u | wc -l)
+    echo "  • Total failure incidents: $unique_outages"
+
+    local unique_locations
+    unique_locations=$(echo "$fail_log" | jq -r '.entries[].location' | sort -u | wc -l)
+    echo "  • Affected monitoring locations: $unique_locations"
+
+    local oldest_failure
+    oldest_failure=$(echo "$fail_log" | jq -r '.entries[-1].timestamp')
+    local newest_failure
+    newest_failure=$(echo "$fail_log" | jq -r '.entries[0].timestamp')
+
+    if [ "$oldest_failure" != "null" ] && [ "$newest_failure" != "null" ]; then
+        local oldest_time
+        oldest_time=$(format_local_time "$oldest_failure")
+        local newest_time
+        newest_time=$(format_local_time "$newest_failure")
+        echo "  • Failure period: $oldest_time → $newest_time"
+    fi
+}
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+    -x)
+        set -x
+        shift
+        ;;
+    --up)
+        check_all_ok
+        ;;
+    --down)
+        show_down_monitors
+        exit 0
+        ;;
+    --all)
+        show_all_monitors
+        exit 0
+        ;;
+    --response-times)
+        show_response_times
+        exit 0
+        ;;
+    --outages)
+        outages_mode=1
+        shift
+        ;;
+    --since)
+        since_date="$2"
+        shift 2
+        ;;
+    --until)
+        until_date="$2"
+        shift 2
+        ;;
+    --monitor-outages)
+        monitor_outages="$2"
+        shift 2
+        ;;
+    --monitor-info)
+        monitor_info_term="$2"
+        shift 2
+        ;;
+    --blacklist)
+        blacklist_mode=1
+        shift
+        ;;
+    --blacklist-ip)
+        blacklist_ip="$2"
+        shift 2
+        ;;
+    --help | -h)
+        show_help
+        exit 0
+        ;;
+    *)
+        echo "Unknown option: $1" >&2
+        show_help
+        exit 1
+        ;;
+    esac
+done
+
+if [ "$outages_mode" = "1" ]; then
+    show_recent_outages
+    exit 0
+fi
+
+if [ -n "$monitor_outages" ]; then
+    show_monitor_outages "$monitor_outages"
+    exit 0
+fi
+
+if [ -n "$monitor_info_term" ]; then
+    show_monitor_info "$monitor_info_term"
+    exit 0
+fi
+
+if [ "$blacklist_mode" = "1" ]; then
+    show_blacklist_overview
+    exit 0
+fi
+
+if [ -n "$blacklist_ip" ]; then
+    show_blacklist_detail "$blacklist_ip"
+    exit $?
+fi
+
+# Default action
+check_all_ok

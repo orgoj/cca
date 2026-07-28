@@ -1,0 +1,87 @@
+#!/bin/bash
+# Server Information Gathering Script
+# Usage: ./cca-server-info SERVER_NAME
+# Example: ./cca-server-info server1
+
+set -e
+
+# Get script directory (handle symlinks correctly)
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+
+if [ $# -eq 0 ]; then
+    echo "Usage: $0 <server_name>"
+    echo "Example: $0 server1"
+    exit 1
+fi
+
+SERVER="$1"
+
+# Network interface prefixes to report. Project-specific VPN interfaces belong in
+# project .env, e.g. export CCA_NET_IFACE_PREFIXES="en|eth|myvpn"
+CCA_NET_IFACE_PREFIXES="${CCA_NET_IFACE_PREFIXES:-en|eth}"
+
+echo "=== SERVER IDENTIFICATION ==="
+"$SCRIPT_DIR/cca-run-on-server" "$SERVER" "hostname && hostnamectl | grep -E 'Operating System'"
+
+echo ""
+echo "=== HARDWARE SPECIFICATIONS ==="
+echo "CPU:"
+"$SCRIPT_DIR/cca-run-on-server" "$SERVER" "lscpu | grep -E '^CPU\\(s\\)|^Model name' | head -2"
+
+echo ""
+echo "RAM:"
+"$SCRIPT_DIR/cca-run-on-server" "$SERVER" "free -h | grep Mem"
+
+echo ""
+echo "STORAGE (Physical Disks):"
+"$SCRIPT_DIR/cca-run-on-server" "$SERVER" "lsblk -d -o NAME,SIZE,MODEL,ROTA | grep -E '^(sd|nvme|hd)'"
+
+echo ""
+echo "STORAGE TYPES:"
+"$SCRIPT_DIR/cca-run-on-server" "$SERVER" "lsblk -d -o NAME,ROTA,MODEL | grep -E '^(sd|nvme|hd)'"
+
+echo ""
+echo "ZFS POOLS:"
+"$SCRIPT_DIR/cca-run-on-server" "$SERVER" "zpool list || echo 'ZFS not available'"
+
+echo ""
+echo "ZFS RAID CONFIGURATION:"
+"$SCRIPT_DIR/cca-run-on-server" "$SERVER" "zpool status || echo 'ZFS not available'"
+
+echo ""
+echo "=== NETWORK CONFIGURATION ==="
+echo "Public & VPN interfaces:"
+"$SCRIPT_DIR/cca-run-on-server" "$SERVER" "ip -br addr show | grep -E '^($CCA_NET_IFACE_PREFIXES)' | grep -v '172\\.' || echo 'No network interfaces'"
+
+echo ""
+echo "Loopback aliases (services):"
+"$SCRIPT_DIR/cca-run-on-server" "$SERVER" "ip -br addr show lo | grep -oE '10\\.[0-9]+\\.[0-9]+\\.[0-9]+' || echo 'No loopback aliases'"
+
+echo ""
+echo "=== SERVICES ==="
+echo "Docker containers:"
+"$SCRIPT_DIR/cca-run-on-server" "$SERVER" "docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}' || echo 'Docker not available'"
+
+echo ""
+echo "LXC containers:"
+"$SCRIPT_DIR/cca-run-on-server" "$SERVER" "sudo lxc-ls -f || echo 'LXC not available'"
+
+echo ""
+echo "Docker Swarm services:"
+"$SCRIPT_DIR/cca-run-on-server" "$SERVER" "docker service ls || echo 'Not a Swarm manager'"
+
+echo ""
+echo "KVM/QEMU virtual machines:"
+"$SCRIPT_DIR/cca-run-on-server" "$SERVER" "ps aux | grep qemu | grep -v grep || echo 'No QEMU processes'"
+
+echo ""
+echo "Firebird database processes:"
+"$SCRIPT_DIR/cca-run-on-server" "$SERVER" "ps axu | grep -E [f]b_inet | wc -l"
+
+echo ""
+echo "=== UPTIME & LOAD ==="
+"$SCRIPT_DIR/cca-run-on-server" "$SERVER" "uptime"
+
+echo ""
+echo "=== SCRIPT COMPLETED ==="
+echo "Server information gathering finished at $(date)"

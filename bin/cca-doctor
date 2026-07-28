@@ -1,0 +1,115 @@
+#!/bin/bash
+
+# cca-doctor: Check CCA environment and configuration
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+echo -e "${YELLOW}--- CCA Doctor: Environment Check ---${NC}"
+
+# 1. Directory checks
+echo -n "Directories: "
+MISSING_DIRS=()
+[ -d "cca/guides" ] || MISSING_DIRS+=("cca/guides")
+[ -d "cca/incidents" ] || MISSING_DIRS+=("cca/incidents")
+[ -d "logs" ] || MISSING_DIRS+=("logs")
+
+if [ ${#MISSING_DIRS[@]} -eq 0 ]; then
+    echo -e "${GREEN}OK${NC} (cca/guides, cca/incidents, logs)"
+else
+    echo -e "${RED}MISSING${NC}: ${MISSING_DIRS[*]}"
+fi
+
+# 2. Configuration checks
+# Priority: .cca-env (avoids collisions with other tools owning .env) > .env
+CONFIG_FILE=""
+for candidate in .cca-env .env; do
+    if [ -f "$candidate" ]; then
+        CONFIG_FILE="$candidate"
+        break
+    fi
+done
+
+echo -n "Configuration (${CONFIG_FILE:-.cca-env/.env}): "
+if [ -n "$CONFIG_FILE" ]; then
+    source "$CONFIG_FILE"
+    MISSING_VARS=()
+    [ -n "$ADMIN_NAME" ] || MISSING_VARS+=("ADMIN_NAME")
+    [ -n "$TMUX_SESSION_SERVERS" ] || MISSING_VARS+=("TMUX_SESSION_SERVERS")
+    
+    if [ ${#MISSING_VARS[@]} -eq 0 ]; then
+        echo -e "${GREEN}OK${NC} (ADMIN_NAME, TMUX_SESSION_SERVERS set)"
+    else
+        echo -e "${YELLOW}PARTIAL${NC}: missing ${MISSING_VARS[*]}"
+    fi
+else
+    echo -e "${RED}MISSING${NC} (no .cca-env or .env file)"
+fi
+
+# 3. Tantivy2agents checks
+echo -n "Search (tantivy2agents): "
+if command -v tantivy2agents >/dev/null 2>&1; then
+    if [ -f ".tantivy2agents.json" ]; then
+        # Try search for "server" to verify CCA indexing
+        SEARCH_RESULT=$(tantivy2agents search "server" 2>/dev/null | grep "### FILE: cca/" | head -n 1)
+        if [ -n "$SEARCH_RESULT" ]; then
+            echo -e "${GREEN}OK${NC} (found indexed files in cca/)"
+        else
+            # Try a generic search if "server" returned nothing
+            if tantivy2agents search "test" >/dev/null 2>&1; then
+                 echo -e "${YELLOW}PARTIAL${NC} (search works, but no CCA files found in index. Run 'tantivy2agents install'?)"
+            else
+                 echo -e "${RED}FAILED${NC} (search command failed, check index)"
+            fi
+        fi
+    else
+        echo -e "${YELLOW}MISSING${NC} (.tantivy2agents.json config)"
+    fi
+else
+    echo -e "${RED}NOT INSTALLED${NC} (tantivy2agents command not found)"
+fi
+
+# 4. CLAUDE.md check
+echo -n "Project Documentation (CLAUDE.md): "
+if [ -f "CLAUDE.md" ]; then
+    echo -e "${GREEN}OK${NC} (exists)"
+else
+    echo -e "${RED}MISSING${NC} (CLAUDE.md file)"
+fi
+
+# 5. Skills check
+echo -n "Skills linked (./.claude/skills): "
+if [ -d ".claude/skills" ]; then
+    # Find and remove broken cca-* symlinks
+    BROKEN_LINKS=$(find .claude/skills -maxdepth 1 -type l -name "cca-*" ! -exec test -e {} \; -print)
+    if [ -n "$BROKEN_LINKS" ]; then
+        echo -e "${YELLOW}CLEANING BROKEN LINKS${NC}"
+        for link in $BROKEN_LINKS; do
+            echo "  Removing broken link: $(basename "$link")"
+            rm "$link"
+        done
+        echo -n "Updated status: "
+    fi
+
+    # Count valid linked skills
+    LINKED_CCA_SKILLS=$(find .claude/skills -maxdepth 1 -type l -name "cca-*" -exec test -e {} \; -print | wc -l)
+    if [ "$LINKED_CCA_SKILLS" -gt 0 ]; then
+        echo -e "${GREEN}OK${NC} ($LINKED_CCA_SKILLS cca-* skills active)"
+    else
+        echo -e "${RED}MISSING${NC} (no valid cca-* skills found in .claude/skills)"
+    fi
+else
+    echo -e "${RED}MISSING${NC} (.claude/skills directory not found)"
+fi
+
+echo -e "${YELLOW}--- Check Finished ---${NC}"
+
+if [ ${#MISSING_DIRS[@]} -eq 0 ] && [ -n "$CONFIG_FILE" ] && [ ${#MISSING_VARS[@]} -eq 0 ]; then
+    echo -e "\n${GREEN}CCA looks ready!${NC}"
+    echo "Next steps:"
+    echo "1. Load cca-core: /cca-core"
+    echo "2. Test search: /cca-guide-search \"test\""
+    echo "3. Run on server: cca-tmux-cli -t <SERVER> run \"uptime\""
+fi

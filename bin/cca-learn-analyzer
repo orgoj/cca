@@ -1,0 +1,318 @@
+#!/usr/bin/env python3
+"""
+Analyze incidents and extract learning patterns
+Usage: cca-learn-analyzer [timeframe]
+
+Output: JSON with clusters, patterns, recommendations
+"""
+
+import sys
+import yaml
+import json
+from pathlib import Path
+from datetime import datetime, timedelta
+from collections import Counter, defaultdict
+import re
+
+def load_incidents(timeframe="30d"):
+    """Load incidents from specified timeframe"""
+    # Use absolute path relative to script location
+    project_root = Path(__file__).resolve().parent.parent
+    incidents_dir = project_root / "incidents"
+
+    if not incidents_dir.exists():
+        return []
+
+    # Parse timeframe
+    if timeframe.endswith("d"):
+        days = int(timeframe[:-1])
+        cutoff_date = datetime.now() - timedelta(days=days)
+    elif len(timeframe) == 7:  # YYYY-MM
+        year, month = timeframe.split('-')
+        cutoff_date = datetime(int(year), int(month), 1)
+    else:
+        cutoff_date = datetime.now() - timedelta(days=30)
+
+    incidents = []
+
+    for incident_file in incidents_dir.glob("*.md"):
+        # Skip template
+        if incident_file.name == "TEMPLATE.md":
+            continue
+
+        # Parse date from filename: YYYY-MM-DD-description.md
+        match = re.match(r'(\d{4}-\d{2}-\d{2})', incident_file.name)
+        if not match:
+            continue
+
+        incident_date = datetime.strptime(match.group(1), "%Y-%m-%d")
+
+        if incident_date < cutoff_date:
+            continue
+
+        # Load incident
+        try:
+            with open(incident_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+        except (IOError, UnicodeDecodeError):
+            continue
+
+        # Extract YAML frontmatter
+        if content.startswith('---'):
+            parts = content.split('---', 2)
+            if len(parts) >= 3:
+                try:
+                    metadata = yaml.safe_load(parts[1])
+                    body = parts[2]
+
+                    incidents.append({
+                        "file": incident_file.name,
+                        "date": incident_date,
+                        "metadata": metadata if metadata else {},
+                        "content": body
+                    })
+                except yaml.YAMLError:
+                    continue
+
+    return incidents
+
+def extract_keywords(incident):
+    """Extract keywords from incident"""
+    keywords = set()
+
+    # From metadata
+    metadata = incident.get("metadata", {})
+
+    if "servers" in metadata:
+        servers = metadata["servers"]
+        if isinstance(servers, list):
+            keywords.update(servers)
+        elif isinstance(servers, str):
+            keywords.add(servers)
+
+    if "services" in metadata:
+        services = metadata["services"]
+        if isinstance(services, list):
+            keywords.update(services)
+        elif isinstance(services, str):
+            keywords.add(services)
+
+    # From content (extract common technical terms)
+    content = incident["content"].lower()
+    tech_terms = [
+        "apache", "php", "docker", "mongodb", "nginx", "mysql",
+        "load", "memory", "disk", "slow", "error", "timeout",
+        "high", "crash", "restart", "lag", "failure"
+    ]
+
+    for term in tech_terms:
+        if term in content:
+            keywords.add(term)
+
+    return list(keywords)
+
+def cluster_by_similarity(incidents):
+    """
+    Group incidents by similar keywords/servers
+    Returns clusters with ≥min_size incidents
+    """
+    clusters = defaultdict(list)
+
+    for incident in incidents:
+        keywords = extract_keywords(incident)
+
+        # Create cluster key from server + service
+        metadata = incident.get("metadata", {})
+        servers = metadata.get("servers", [])
+        services = metadata.get("services", [])
+
+        # Normalize to lists
+        if not isinstance(servers, list):
+            servers = [servers] if servers else []
+        if not isinstance(services, list):
+            services = [services] if services else []
+
+        # Cluster by server + service combinations
+        for server in servers:
+            for service in services:
+                key = (server, service)
+                clusters[key].append(incident)
+
+    # Load min_size from config
+    try:
+        project_root = Path(__file__).resolve().parent.parent
+        config_path = project_root / ".claude/config/ai-config.yaml"
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+            min_size = config.get("learning", {}).get("cluster_min_size", 3)
+    except (IOError, yaml.YAMLError):
+        min_size = 3
+
+    # Filter: only clusters with ≥min_size incidents
+    return {k: v for k, v in clusters.items() if len(v) >= min_size}
+
+def find_recurring_solutions(incidents):
+    """
+    Find commands/solutions that repeat across incidents
+    Returns commands with ≥min_freq occurrences
+    """
+    solutions = []
+
+    for incident in incidents:
+        # Extract code blocks from markdown
+        commands = extract_code_blocks(incident["content"])
+        solutions.extend(commands)
+
+    # Count frequency
+    command_freq = Counter(solutions)
+
+    # Load min_freq from config
+    try:
+        project_root = Path(__file__).resolve().parent.parent
+        config_path = project_root / ".claude/config/ai-config.yaml"
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+            min_freq = config.get("learning", {}).get("pattern_min_frequency", 3)
+    except (IOError, yaml.YAMLError):
+        min_freq = 3
+
+    # Filter by minimum frequency
+    return [
+        {"command": cmd, "frequency": count}
+        for cmd, count in command_freq.most_common()
+        if count >= min_freq
+    ]
+
+def extract_code_blocks(markdown):
+    """Extract bash commands from markdown code blocks"""
+    commands = []
+
+    # Find ```bash ... ``` blocks
+    pattern = r'```(?:bash|sh)\n(.*?)```'
+    matches = re.findall(pattern, markdown, re.DOTALL)
+
+    for match in matches:
+        # Split by lines, clean up
+        lines = match.strip().split('\n')
+        for line in lines:
+            line = line.strip()
+            # Skip comments, empty lines, and prompts
+            if line and not line.startswith('#') and not line.startswith('$'):
+                # Remove $ prompt if present at start
+                if line.startswith('$ '):
+                    line = line[2:]
+                commands.append(line)
+
+    return commands
+
+def identify_guide_gaps(clusters):
+    """
+    Identify which clusters don't have corresponding guides
+    Returns recommendations for guide creation
+    """
+    project_root = Path(__file__).resolve().parent.parent
+    guides_dir = project_root / "guides"
+
+    if not guides_dir.exists():
+        existing_guides = []
+    else:
+        existing_guides = [g.stem for g in guides_dir.glob("*.md")]
+
+    recommendations = []
+
+    for cluster_key, cluster_incidents in clusters.items():
+        server, service = cluster_key
+
+        # Check if guide exists for this combination
+        potential_guide_names = [
+            f"{server}-{service}",
+            f"{service}-{server}",
+            f"{service}-troubleshooting",
+            f"{server}-{service}-performance",
+            f"{server}-{service}-issues"
+        ]
+
+        has_guide = any(
+            any(pg in guide for pg in potential_guide_names)
+            for guide in existing_guides
+        )
+
+        if not has_guide:
+            recommendations.append({
+                "cluster": cluster_key,
+                "incident_count": len(cluster_incidents),
+                "incidents": [i["file"] for i in cluster_incidents],
+                "suggested_guide": f"{server}-{service}-troubleshooting.md",
+                "priority": "high" if len(cluster_incidents) >= 5 else "medium"
+            })
+
+    return recommendations
+
+def analyze_incidents(timeframe="30d"):
+    """Main analysis function"""
+    incidents = load_incidents(timeframe)
+
+    if not incidents:
+        return {
+            "error": "No incidents found",
+            "timeframe": timeframe
+        }
+
+    # Analysis
+    clusters = cluster_by_similarity(incidents)
+    patterns = find_recurring_solutions(incidents)
+    guide_gaps = identify_guide_gaps(clusters)
+
+    # Statistics
+    servers = Counter()
+    services = Counter()
+    severities = Counter()
+
+    for incident in incidents:
+        metadata = incident.get("metadata", {})
+
+        # Count servers
+        incident_servers = metadata.get("servers", [])
+        if not isinstance(incident_servers, list):
+            incident_servers = [incident_servers] if incident_servers else []
+        servers.update(incident_servers)
+
+        # Count services
+        incident_services = metadata.get("services", [])
+        if not isinstance(incident_services, list):
+            incident_services = [incident_services] if incident_services else []
+        services.update(incident_services)
+
+        # Count severities
+        severity = metadata.get("severity", "unknown")
+        severities[severity] += 1
+
+    return {
+        "timeframe": timeframe,
+        "total_incidents": len(incidents),
+        "statistics": {
+            "servers": dict(servers.most_common()),
+            "services": dict(services.most_common()),
+            "severities": dict(severities)
+        },
+        "clusters": {
+            str(k): {
+                "count": len(v),
+                "incidents": [i["file"] for i in v],
+                "dates": [i["date"].strftime("%Y-%m-%d") for i in v]
+            }
+            for k, v in clusters.items()
+        },
+        "recurring_solutions": patterns,
+        "guide_recommendations": guide_gaps
+    }
+
+def main():
+    timeframe = sys.argv[1] if len(sys.argv) > 1 else "30d"
+
+    result = analyze_incidents(timeframe)
+
+    print(json.dumps(result, indent=2, default=str))
+
+if __name__ == "__main__":
+    main()

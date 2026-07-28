@@ -1,0 +1,116 @@
+#!/usr/bin/env python3
+"""Check that this shared CCA repo contains no project-specific identifiers.
+
+CCA is shared across projects and published publicly. Names of concrete servers,
+clients, domains or internal tools of ONE project must never be committed here —
+project-specific values belong in that project's .env as CCA_* variables.
+
+The denylist deliberately lives in the PROJECT (current working directory), not
+in this repo: keeping it here would leak the very names it is meant to guard.
+
+Usage:
+    cd /path/to/your/project && cca-check-shared-clean [CCA_REPO]
+
+Denylist lookup (first hit wins):
+    $CCA_DENYLIST
+    ./cca-shared-denylist.txt
+    ./.cca-shared-denylist.txt
+
+Denylist format: one case-insensitive extended-regex per line, '#' = comment.
+
+Exit codes: 0 = clean, 1 = leak found, 2 = usage/runtime error.
+"""
+
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+DENYLIST_CANDIDATES = ["cca-shared-denylist.txt", ".cca-shared-denylist.txt"]
+
+# What to scan in the shared repo. tmp/ and logs/ are gitignored scratch.
+SCAN_DIRS = ["bin", "skills", "tests", "tmux_cli_python"]
+SCAN_FILES = ["README.md", "AGENTS.md", "CLAUDE.md", "GEMINI.md", "TODO.md"]
+
+
+def find_denylist() -> Path:
+    env_path = os.environ.get("CCA_DENYLIST", "").strip()
+    if env_path:
+        p = Path(env_path).expanduser()
+        if not p.exists():
+            sys.exit(f"ERROR: CCA_DENYLIST points to missing file: {p}")
+        return p
+
+    cwd = Path.cwd()
+    for name in DENYLIST_CANDIDATES:
+        p = cwd / name
+        if p.exists():
+            return p
+
+    sys.exit(
+        f"ERROR: no denylist found in {cwd}\n"
+        f"       expected one of {DENYLIST_CANDIDATES} or $CCA_DENYLIST\n"
+        f"       The list of your internal names belongs in YOUR project, not in this repo."
+    )
+
+
+def load_patterns(denylist: Path):
+    patterns = []
+    for lineno, line in enumerate(denylist.read_text().splitlines(), 1):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        try:
+            patterns.append(re.compile(line, re.IGNORECASE))
+        except re.error as e:
+            sys.exit(f"ERROR: bad regex in {denylist}:{lineno}: {line!r} ({e})")
+    if not patterns:
+        sys.exit(f"ERROR: denylist {denylist} has no patterns")
+    return patterns
+
+
+def tracked_files(repo: Path):
+    """Only git-tracked files - untracked scratch is not our problem."""
+    proc = subprocess.run(
+        ["git", "-C", str(repo), "ls-files", "-z", "--", *SCAN_DIRS, *SCAN_FILES],
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        sys.exit(f"ERROR: git ls-files failed in {repo}: {proc.stderr.strip()}")
+    return [repo / f for f in proc.stdout.split("\0") if f]
+
+
+def main() -> int:
+    repo = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path(__file__).resolve().parent.parent
+    if not (repo / ".git").exists():
+        sys.exit(f"ERROR: {repo} is not a git repo (pass the CCA repo path as argument)")
+
+    denylist = find_denylist()
+    patterns = load_patterns(denylist)
+
+    hits = []
+    for path in tracked_files(repo):
+        try:
+            text = path.read_text(errors="replace")
+        except OSError:
+            continue
+        for lineno, line in enumerate(text.splitlines(), 1):
+            if any(p.search(line) for p in patterns):
+                hits.append(f"{path.relative_to(repo)}:{lineno}: {line.strip()[:100]}")
+
+    if hits:
+        print(f"❌ LEAK: project-specific names found in shared repo {repo}")
+        print(f"   (denylist: {denylist})\n")
+        for h in hits:
+            print(f"  {h}")
+        print(f"\n{len(hits)} hit(s). Move project values to your project .env as CCA_* variables.")
+        return 1
+
+    print(f"✅ {repo} is clean against {denylist} ({len(patterns)} patterns).")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
