@@ -18,9 +18,9 @@ ENV_FILENAMES = (".cca-env", ".env")
 
 
 # Load config file
-def load_env():
-    """Load first available config file from current or parent directories"""
-    path = Path(__file__).resolve().parent
+def _load_env_from(start: Path) -> bool:
+    """Load first available config file from start dir upwards. True if loaded."""
+    path = start.resolve()
     while path != path.parent:
         for name in ENV_FILENAMES:
             env_file = path / name
@@ -34,8 +34,16 @@ def load_env():
                             key, value = line.split("=", 1)
                             if key not in os.environ:
                                 os.environ[key] = value.strip("'\"")
-                return
+                return True
         path = path.parent
+    return False
+
+
+def load_env():
+    """Load project config: cwd first (the project), then next to the script."""
+    if _load_env_from(Path.cwd()):
+        return
+    _load_env_from(Path(__file__).resolve().parent)
 
 load_env()
 
