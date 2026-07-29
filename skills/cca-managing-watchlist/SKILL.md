@@ -25,7 +25,7 @@ Query cca-watchlist script and return raw JSON output for main session to proces
 - Get all items (`cca-watchlist search ""`).
 - Filter JSON by `last_check` field using calculated cutoff.
 
-### 3. Verification
+### 3. Output
 **Return Output:**
 - Return raw JSON output with timestamp context.
 - **Include current_time** in JSON output.

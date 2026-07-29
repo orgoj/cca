@@ -2,7 +2,7 @@
 name: cca-diagnosing
 description: Context-aware troubleshooting with data aggregation
 argument-hint: "[server] [symptom]"
-allowed-tools: Task(*), Bash(*), Read(*), Glob(*), Grep(*)
+allowed-tools: Bash(*), Read(*), Glob(*), Grep(*)
 ---
 
 # Diagnose - Context-Aware Troubleshooting
@@ -21,10 +21,11 @@ AI-powered troubleshooting that aggregates data from multiple sources.
 **Gather current state** - Use `cca-diagnose-gather SERVER "SYMPTOMS"` to get JSON report of system state, services, and recent commands.
 **Search similar incidents** - Tantivy search for historical matches
 
-### 3. Verification
+### 3. Diagnostic report
 **Correlate data** - Compare current state with historical incidents
 **Present diagnosis** - Current state, historical match (with file reference), recommended action.
 Any fix/change still requires the standard approval flow — this skill NEVER executes fixes.
+Separate what the data shows from what you infer from it, and say which parts are still unverified.
 
 ## Data Gathering
 

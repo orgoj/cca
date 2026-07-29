@@ -42,7 +42,7 @@ Analyze log files to identify read-only commands that could be auto-approved.
    - Compare extracted commands with existing patterns
    - Identify which commands are NOT yet covered
 
-### 3. Verification
+### 3. Suggestions
 **Generate suggestions:**
    - Create regex patterns for new read-only commands found
    - Group similar commands (e.g., all grep variations)

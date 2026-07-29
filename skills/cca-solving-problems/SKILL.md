@@ -2,7 +2,7 @@
 name: cca-solving-problems
 description: Solve any server problem - unified intelligent workflow
 argument-hint: "\"description of the problem\""
-allowed-tools: Task(*), Bash(*), Read(*), Write(*), Edit(*), Glob(*), Grep(*), TaskCreate(*), TaskUpdate(*)
+allowed-tools: Bash(*), Read(*), Write(*), Edit(*), Glob(*), Grep(*), TaskCreate(*), TaskUpdate(*)
 ---
 
 # Problem - Unified Problem Resolution
@@ -73,10 +73,15 @@ který má konkrétní příkazy a SQL dotazy. Postupuj podle něj.
 - Peak hours protection?
 - Critical servers?
 
-### 3. Verification
-**Documentation & Learning**
+### 3. Documentation
 - `/cca:creating-incidents` - Document the fix.
 - `/cca:saving-guides` - Create guide immediately.
+
+Both write per `cca-core` → *Written Knowledge: Evidence & Length*.
+
+**Functional testing of a change is a separate, non-negotiable step** (see the project rules): after
+any live change, test behaviour and check error logs. That is a real-world check, not a re-reading
+of your own reasoning — do not skip it, and do not replace it with re-reviewing your own output.
 
 ## Usage Examples
 

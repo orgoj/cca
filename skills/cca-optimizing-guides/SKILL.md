@@ -40,10 +40,13 @@ Monthly maintenance tool to keep knowledge base clean, complete, and optimized.
 - `consolidate-incidents`: Cluster recurring incidents, fold their pattern into the relevant project
   playbook guide, then archive the mined incident files. See dedicated section below.
 
-### 3. Verification
-**Report results:**
-- Present comprehensive report of findings.
+### 3. Report
+- One line per finding: what, where, proposed action. Detail only where it is needed to decide.
 - Ask for approval to apply changes (merges, new guides, links).
+- **Prune while you are in there:** unverified claims, speculative causes, duplicated rules and
+  padding are findings too — measured against `cca-core` → *Written Knowledge: Evidence & Length*.
+  Reversing an existing decision, however, needs evidence and the user's approval: flag the
+  conflict, do not resolve it yourself.
 
 ## Usage Examples
 
@@ -51,7 +54,7 @@ Monthly maintenance tool to keep knowledge base clean, complete, and optimized.
 ```
 /cca:optimizing-guides optimize
 → Runs all checks
-→ Presents comprehensive report
+→ Reports findings (one line each)
 → Asks for approval to apply changes
 ```
 

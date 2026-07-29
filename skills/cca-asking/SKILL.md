@@ -2,7 +2,7 @@
 name: cca-asking
 description: Natural language interface for server administration
 argument-hint: "\"question in natural language\""
-allowed-tools: Task(*), Bash(*), Read(*), Glob(*), Grep(*), mcp__*
+allowed-tools: Bash(*), Read(*), Glob(*), Grep(*), mcp__*
 ---
 
 # Ask - Conversational Admin Interface
@@ -24,8 +24,10 @@ Ask questions in natural language, get intelligent answers.
 - Run server commands, search files, check status for other queries.
 **Interpret results** - Analyze output and provide context.
 
-### 3. Verification
-**Answer in user's language** - Respond naturally.
+### 3. Answer
+Respond in the user's language, naturally and briefly — answer first, supporting detail after.
+Answer only from data you actually retrieved. If a command did not run or returned nothing usable,
+say what is missing instead of filling the gap with a plausible answer.
 
 ## Supported Intents
 

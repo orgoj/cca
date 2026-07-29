@@ -35,9 +35,8 @@ project:
 ln -s "$SHARED/cca-{name}" .claude/skills/cca-{name}
 ```
 
-### 3. Verification
-**Verify the link works:** `Read .claude/skills/cca-{name}/SKILL.md`.
-**Test the skill:** invoke it by name.
+### 3. Test
+Invoke the new skill by name and see that it loads and does what it claims.
 
 ## Critical Understanding
 
@@ -61,8 +60,26 @@ allowed-tools: ...
 ## Steps
 ### 1. Analysis
 ### 2. Execution
-### 3. Verification
+### 3. <what the last step really is: Report / Output / Answer / Test / Documentation>
 ```
+
+### Rules for writing skills
+
+**Name the third step after what it actually does.** Most skills end by producing output — call it
+`Report`, `Output`, `Answer`. Call it `Verification` **only when something real is being checked**
+(a deployed change is tested, a migration is compared against its source). Models take the heading
+literally: a step labelled "Verification" that only prints a summary makes agents invent extra
+checking rounds that cost tokens and find nothing. Current models already re-check their own work —
+do not ask them to double-check, re-verify or review their own reasoning.
+
+**Do not put `Task(*)` in `allowed-tools`** unless the skill genuinely needs to fan out over
+independent, parallel work. Current models delegate readily, and a subagent spawned for a job the
+model could finish in a few tool calls multiplies cost and time. Never delegate purely to have
+someone check the main agent's work.
+
+**Written output follows `cca-core` → *Written Knowledge: Evidence & Length*.** If a skill produces
+guides, incidents or reports, say so in the skill and point at that section — every agent and model
+using this repo has to hold to the same bar.
 
 
 <!-- SHARED SKILL: Keep project-agnostic. For project-specific extensions, create a local skill. -->

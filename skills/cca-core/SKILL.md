@@ -168,7 +168,42 @@ daneho nastroje — over ho (viz Guide-First nize). Bez ohledu na nastroj plati:
   - **JSON in bash = `jq`**, not python. Several items = ONE tool run with multiple arguments, not a `for` loop around the wrapper.
   - Example: `asn-wrap -s IP [IP...]` prints one compact line per IP (org, ASN, CC, dc/proxy/mobile, reputation, reverse). Without `-s` it returns full JSON for fields the short form omits.
 
-### 3. Traffic Analysis & Rate-Limiting Accuracy
+### 3. Written Knowledge: Evidence & Length (guides, incidents, reports)
+
+**The single source for this rule.** It covers every written artifact — guides, incidents, TODO
+entries, research output, reports in chat — and it is not restated anywhere else; other skills point
+here. A guide or incident is a durable record that people and agents act on for years, so a
+plausible-sounding sentence nobody checked is worse than a missing one.
+
+**Only verified information.**
+- Write what you **observed** (command output, log line, file content, user statement) — not what
+  you concluded it probably means. Keep the two apart in the text.
+- Every number, timestamp, version, path, hostname and limit must come from a command you actually
+  ran or a file you actually read. **Never estimate, never reconstruct from memory, never round a
+  number you did not measure.**
+- No invented metrics: no "confidence 85 %", no "match 95 %", no severity score — you have no
+  mechanism computing them. State the concrete overlap instead ("same service, same symptom").
+- **Unverified belongs in the text only when it is labelled and actionable:** mark it
+  `neovereno`/`unverified` **and add how to verify it** (the exact command or query). An unlabelled
+  guess becomes a fact for the next reader.
+- Anything already marked `neovereno` / `assumed` / `probably` in an existing guide is a **task to
+  verify, not a fact to build on**. Verifying is usually cheaper than the consequences.
+- Do not paraphrase someone else's statement into your own interpretation. Record what they said;
+  mark what you inferred as your inference.
+- Contradicting an existing entry needs evidence, not a new opinion. `Read` the current text first;
+  do not overwrite a decision someone made because your partial finding points elsewhere.
+
+**Short and factual.**
+- Length follows content: cover the substance, then stop. No filler sections, no restating the same
+  thing in an intro and a summary, no boilerplate headings kept empty "for completeness".
+- Drop a template section that has nothing verified to put in it — an empty or speculative
+  `Root Cause` is worse than no section.
+- Each command, path and rule appears **once**, in the place it belongs. Moving content elsewhere
+  leaves a link (`→ path/to/guide.md`), never a shortened copy.
+- Prose that explains what the command already shows is noise. Show the command and its real output.
+- No dated changelog inside a guide — history is in git. The guide reads as current as a whole.
+
+### 4. Traffic Analysis & Rate-Limiting Accuracy
 - Bot/crawler handling rules (which bots to allow, what URLs may be blocked, rate-limit patterns)
   are PROJECT-specific — always find them via `tantivy2agents search` in the project guides
   before proposing any blocking. Never invent blocking rules from general knowledge.

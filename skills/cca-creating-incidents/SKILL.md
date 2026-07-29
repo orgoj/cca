@@ -11,6 +11,9 @@ Create structured incident documentation after manually resolving a problem.
 
 **Quick create arguments:** $ARGUMENTS
 
+> **MANDATORY: `cca-core` → *Written Knowledge: Evidence & Length*.** Read it before writing.
+> An incident is an immutable record — it is never edited into shape later.
+
 ## Steps
 
 ### 1. Analysis
@@ -39,12 +42,23 @@ Create structured incident documentation after manually resolving a problem.
 **Create file** - in the project's CCA incidents directory: `<cca-root>/incidents/YYYY-MM-DD-brief-description.md`. When CCA lives in a subdir, this is `cca/incidents/`. Verify where existing incidents live and write there — never invent a new top-level `incidents/`.
 **Pre-fill template** - YAML frontmatter + sections ready to fill.
 
-### 3. Verification
+### 3. Output
 **Auto-indexed** - Search index updates automatically, no manual action needed.
-**Confirm file creation** - Output the path to the created file.
+**Report the path** to the created file.
 
 **Mitigation status** - A mitigation applied after the incident traffic ended is `monitoring`, not
 verified `resolved`. Record the deployment timestamp and the exact condition for future verification.
+
+## Incident-specific rules
+
+On top of `cca-core` → *Written Knowledge: Evidence & Length*:
+
+- **Root Cause is filled in only when it was proven.** No proof → symptom, evidence collected, and
+  `Root Cause: neovereno — <open question>, over pres: <command/query>`.
+- **`Status:` is the state at the time of writing, not a live state.** Nobody comes back to update
+  it. Later work building on an old incident verifies the current state and appends a dated note.
+- **Shape:** symptom → evidence → what was done → what remains open. No narration of the debugging
+  journey.
 
 ## Usage Examples
 
@@ -85,20 +99,23 @@ tags: [apache, performance, load]
 **Duration:** [fill in]
 
 ## Problem Description
-[What happened]
+[What happened — observed symptoms only]
 
 ## Investigation
-[What you checked]
+[Commands actually run + their real output]
 
 ## Root Cause
-[What caused the issue]
+[Proven cause. Not proven? Write: neovereno — <open question>, over pres: <command>]
 
 ## Solution
-[What fixed it]
+[What was actually done, and by whom]
 
 ## Prevention
-[How to prevent in future]
+[Only if something concrete was decided. Otherwise omit this section.]
 ```
+
+Delete every heading you have nothing verified to put under — an empty or speculative section is
+worse than a missing one.
 
 ## When to Use
 

@@ -32,12 +32,12 @@ Skill for migrating CCA (Claude Code Admin) systems between repositories. Handle
 3. Configure `ai-config.yaml`; migrate `.claude/danger/` patterns ONLY if the source project uses them.
 4. Setup search index (`tantivy2agents install`).
 
-### 3. Verification
-**Post-Migration Checklist**:
-1. Check all files copied correctly.
-2. Verify server name replacements complete.
-3. Test `tantivy2agents search`.
-4. Verify hooks work (run safe command).
+### 3. Post-migration checks
+Real checks against the source repo and a working target — not a re-reading of your own work:
+1. Compare file counts/paths between source and target.
+2. Grep the target for leftover source server names.
+3. Run `tantivy2agents search` and see that it returns migrated content.
+4. Run one safe command to confirm hooks fire.
 
 ## CCA Structure Variants
 

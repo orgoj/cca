@@ -2,7 +2,7 @@
 name: cca-learning
 description: Extract and integrate learnings from current session into project knowledge base
 argument-hint: "[optional: source to process]"
-allowed-tools: Task(*), Read(*), Write(*), Edit(*), Glob(*), Grep(*), Bash(*)
+allowed-tools: Read(*), Write(*), Edit(*), Glob(*), Grep(*), Bash(*)
 ---
 
 # Learn - Session-Based Learning
@@ -26,14 +26,18 @@ Analyze current session for mistakes, new procedures, and better approaches. Upd
 - **Anything else** → Text content to process
 
 **Analyze content** - Extract mistakes, new procedures, better approaches, critical rules.
+**Keep only what actually happened** - a lesson comes from a real failure with a real cause. A rule
+that "sounds sensible" but was never triggered in the session only dilutes the rules everyone else
+has to read.
 **Search related guides** - Use tantivy2agents search to find guides to update.
 
 ### 2. Execution
 **Determine update strategy** - Update existing guide, create new, or add to the project rules file (AGENTS.md/CLAUDE.md).
-**Apply updates** - Intelligent deduplication (check if info already exists).
+**Apply updates** - Intelligent deduplication (check if info already exists). One rule = one place;
+write per `cca-core` → *Written Knowledge: Evidence & Length*.
 
-### 3. Verification
-**Report** - Show what was updated and why.
+### 3. Report
+Show what was updated and why.
 
 ## Learning Categories
 

@@ -25,16 +25,14 @@ allowed-tools: Bash(*), Read(*), Glob(*)
 - **Incidents:** `tantivy2agents search "keywords incident"`
 - **Specific Server:** `tantivy2agents search "server_name keywords"`
 
-### 3. Verification
-**Analyze results:**
+### 3. Using the results
 - Review ranked results (BM25).
-- If no results, broaden keywords.
-- If too many results, refine keywords or use `--limit`.
-- Read the selected guide in full. Verify the current content of directly referenced
-  files, scripts, and related guides that are relevant to the requested behavior;
-  do not infer their current state from the guide alone.
-- Follow only relevant cross-references. Do not recursively inspect unrelated
-  references or build a separate behavior map.
+- If no results, broaden keywords. If too many, refine them or use `--limit`.
+- Read the selected guide in full, then follow only the cross-references that matter for the task —
+  no recursive sweep, no separate behavior map.
+- **A guide describes intent, not necessarily today's state.** For files you are about to change or
+  claims you are about to repeat as fact, open the actual file. Anything the guide labels
+  `neovereno`/`assumed` is an open question, not a fact to build on.
 
 ## Search Syntax
 

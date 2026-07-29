@@ -1,7 +1,7 @@
 ---
 name: cca-watching
 description: Daily watchlist check - routine monitoring and active incident verification
-allowed-tools: TaskCreate(*), TaskUpdate(*), Task(*), Bash(*), Read(*)
+allowed-tools: TaskCreate(*), TaskUpdate(*), Bash(*), Read(*)
 ---
 
 # Watch - Daily Watchlist Check
@@ -19,7 +19,7 @@ Query watchlist, create task list (TaskCreate), display summary.
 - **Load server context**: If checking incidents, identify affected server -> read the project's `server-{servername}/SKILL.md` doc (find via `tantivy2agents search "{servername}"`).
 - **Execute Routines**: If description contains slash command, execute it.
 
-### 3. Verification
+### 3. Tasks & summary
 **Create tasks**: Each item as separate task (TaskCreate; TaskUpdate in_progress/completed during checks).
 **Display summary**: Task names and last check times.
 **Update timestamps**: Use `cca-watchlist update` after checks complete.

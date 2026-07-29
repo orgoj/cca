@@ -2,7 +2,7 @@
 name: cca-saving-guides
 description: Automatically save solved issue as systematic guide
 argument-hint: "[optional: guide focus]"
-allowed-tools: Task(*), Read(*), Write(*), Edit(*), Glob(*), Grep(*), Bash(*)
+allowed-tools: Read(*), Write(*), Edit(*), Glob(*), Grep(*), Bash(*)
 ---
 
 # Guide Save - Auto-capture Solved Issue
@@ -10,6 +10,8 @@ allowed-tools: Task(*), Read(*), Write(*), Edit(*), Glob(*), Grep(*), Bash(*)
 Analyze conversation and create structured guide for solving similar issues in the future.
 
 **Guide focus:** $ARGUMENTS
+
+> **MANDATORY: `cca-core` → *Written Knowledge: Evidence & Length*.** Read it before writing.
 
 ## Steps
 
@@ -22,9 +24,8 @@ Analyze conversation and create structured guide for solving similar issues in t
 **Structure content** - Organize into standard guide sections
 **Save to guides/** - Create `guides/lowercase-guide-name.md` with YAML frontmatter
 
-### 3. Verification
+### 3. Follow-up
 **Update server docs** - If server-specific, update relevant server skills
-**Verify creation** - Confirm the file exists and is correctly formatted
 
 ## Guide Structure
 
@@ -36,6 +37,9 @@ Created guides include:
 - **Common traps** - Warnings about mistakes
 - **Prevention** - How to avoid the issue
 - **Related incidents** - File references only (not detailed content)
+
+**The list is a menu, not a checklist — include a section only if you have verified content for it.**
+Four solid sections beat eight where half are guesses.
 
 ## Findability conventions (tantivy must find guide on 1st try with 1 word)
 
