@@ -11,17 +11,21 @@ Create structured incident documentation after manually resolving a problem.
 
 **Quick create arguments:** $ARGUMENTS
 
-> **MANDATORY: `cca-core` → *Written Knowledge: Evidence & Length*.** Read it before writing.
+> **MANDATORY: `cca-core` → *Written Knowledge: Evidence & Length*.** If `cca-core` is not already
+> loaded in the active conversation context, read it before writing. Never reload it redundantly.
 > An incident is an immutable record — it is never edited into shape later.
 
 ## Steps
 
 ### 1. Analysis
-**NEJDŘÍV OVĚŘ, ZE INCIDENT UZ NEEXISTUJE:**
-- `tantivy2agents search "klicova slova tematu"` (2-4 slova) — pokud tema jiz ma incident (i castecny/
-  rozpracovany, napr. TODO polozka s vlastni sekci), **NEZAKLADAT NOVY** — otevri a doplň existujici
-  soubor (novou sekci/dodatek s datem), NEnahrazuj puvodni zaznam.
-- Pouze kdyz opravdu nic relevantniho neexistuje, pokracuj zalozenim noveho souboru.
+**NEJDŘÍV OVĚŘ, ZE STEJNÝ INCIDENT UŽ NEEXISTUJE:**
+- `tantivy2agents search "klicova slova tematu"` (2-4 slova).
+- Existující soubor doplň pouze tehdy, když popisuje stejnou konkrétní událost nebo její pokračování
+  (stejné časové okno/problém). Pouhá shoda serveru, služby, symptomu nebo historické podobnosti
+  nestačí. Nová událost v jiném čase je samostatný incident, pokud už nemá vlastní rozpracovaný záznam.
+- Pokud stejná událost už má incident (i částečný/rozpracovaný, například TODO položku s vlastní
+  sekcí), **NEZAKLÁDAT NOVÝ** — otevři a doplň existující soubor novou sekcí/dodatkem s datem;
+  nenahrazuj původní záznam.
 
 **NEJDŘÍV OVĚŘ ČASOVOU OSU:**
 - Spusť `date` pro aktuální čas
