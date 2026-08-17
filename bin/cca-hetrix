@@ -20,6 +20,7 @@ Options:
     --until     TIME  Show outages until time (YYYY-MM-DD HH:MM or relative: 2h, 1d)
     --monitor-outages MONITOR  Show detailed outage history for specific monitor
     --monitor-info MONITOR     Show monitor details incl. target URL
+    --server-stats MONITOR     Show Server Monitor agent data (CPU/RAM/disk usage, RAID)
     --blacklist Show email blacklist status overview
     --blacklist-ip IP  Show detailed blacklist info for specific IP
     --help      Show this help
@@ -307,6 +308,59 @@ show_monitor_info() {
   ID:      \(.id)"'
 }
 
+# Server Monitor (agent) data — CPU/RAM/disk usage.
+# Only the v1 API exposes agent stats; v3 covers uptime and blacklist monitors only.
+# Endpoint: https://api.hetrixtools.com/v1/<API_TOKEN>/server/stats/<UPTIME_MONITOR_ID>/
+# The API key needs this call enabled under "Configure Access" in the client area.
+get_server_stats() {
+    local monitor_id="$1"
+    cca-curl-secret -s "https://api.hetrixtools.com/v1/{TOKEN}/server/stats/$monitor_id/"
+}
+
+format_pct() {
+    # usage percentage from used/size, one decimal
+    awk -v u="$1" -v s="$2" 'BEGIN { if (s > 0) printf "%.1f", u * 100 / s; else printf "0.0" }'
+}
+
+show_server_stats() {
+    local monitor_term="$1"
+    local monitor_id
+    monitor_id=$(find_monitor_by_name "$monitor_term")
+
+    local stats
+    stats=$(get_server_stats "$monitor_id")
+
+    if echo "$stats" | jq -e '.status == "ERROR"' >/dev/null 2>&1; then
+        echo "Error: $(echo "$stats" | jq -r '.error_message')" >&2
+        echo "Hint: enable the 'v1 Server Stats' call for this API key ('Configure Access' in the client area)." >&2
+        exit 1
+    fi
+
+    if ! echo "$stats" | jq -e '.AgentID' >/dev/null 2>&1; then
+        echo "No Server Monitor agent attached to this uptime monitor." >&2
+        exit 1
+    fi
+
+    echo "$stats" | jq -r '"🖥  Server Stats: \(.UptimeMonitorName)
+  Agent:   \(.AgentVersion) [\(.AgentType)], last data \(.AgentLastData | strftime("%Y-%m-%d %H:%M:%S"))
+  System:  \(.OperatingSystem), kernel \(.Kernel), reboot required: \(.RebootRequired)
+  Uptime:  \((.SystemUptime / 86400) | floor) days"'
+
+    echo "  Disks:"
+    echo "$stats" | jq -r '.Disks[]? | "\(.Mount)|\(.Size)|\(.Used)|\(.Available)"' | while IFS='|' read -r mount size used avail; do
+        local pct
+        pct=$(format_pct "$used" "$size")
+        local flag=""
+        awk -v p="$pct" 'BEGIN { exit !(p >= 90) }' && flag=" ⛔ CRITICAL"
+        [ -z "$flag" ] && { awk -v p="$pct" 'BEGIN { exit !(p >= 80) }' && flag=" ⚠️  WARNING"; }
+        printf "    %-24s %5s%% used (%s free of %s)%s\n" \
+            "$mount" "$pct" \
+            "$(numfmt --to=iec "$avail")" "$(numfmt --to=iec "$size")" "$flag"
+    done
+
+    echo "$stats" | jq -r '.Disks[]? | select(.RAID != null) | "  RAID \(.Mount): \(.RAID.Type) \(.RAID.Health) (\(.RAID.ActiveDrives)/\(.RAID.TotalDrives) active, \(.RAID.FailedDrives) failed)"'
+}
+
 find_monitor_by_name() {
     local search_term="$1"
 
@@ -535,6 +589,10 @@ while [[ $# -gt 0 ]]; do
         monitor_info_term="$2"
         shift 2
         ;;
+    --server-stats)
+        server_stats_term="$2"
+        shift 2
+        ;;
     --blacklist)
         blacklist_mode=1
         shift
@@ -567,6 +625,11 @@ fi
 
 if [ -n "$monitor_info_term" ]; then
     show_monitor_info "$monitor_info_term"
+    exit 0
+fi
+
+if [ -n "$server_stats_term" ]; then
+    show_server_stats "$server_stats_term"
     exit 0
 fi
 
