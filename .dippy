@@ -1,0 +1,3 @@
+allow bash -n *
+allow bash tests/test-shared-clean.sh
+allow ./tests/test-shared-clean.sh

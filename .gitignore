@@ -1,6 +1,5 @@
 # Claude Code local files
 .claude/
-.dippy
 
 # Tantivy search index
 .tantivy-data/
@@ -28,4 +27,4 @@ logs/
 .env.local
 
 tmp/
-.claude/CLAUDE.md
+.omc/
