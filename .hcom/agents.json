@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "defaults": {
+    "session": "cc-cca",
+    "resume": false
+  },
+  "agents": {
+    "cca_dev": {
+      "dir": "."
+    }
+  }
+}
