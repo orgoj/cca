@@ -22,7 +22,6 @@ export PATH="$PATH:/path/to/cca/bin"
 | `cca-watchlist` | Manage monitoring watchlist |
 | `cca-diagnose-gather` | Gather system diagnostics |
 | `cca-check-domain` | Domain health checks |
-| `cca-learn-analyzer` | Analyze sessions for learnings |
 | `cca-run-all` | Run command on all servers |
 | `cca-server-hostname` | Get server hostname |
 | `cca-server-info` | Get server information |
@@ -124,17 +123,13 @@ Use `cca-ask` skill for questions like:
 
 ```
 project/
-├── servers.json           # Server configuration
-├── watchlist.json         # Monitoring tasks
-├── guides/                # Knowledge base
-├── incidents/             # Incident documentation
+├── .cca-env               # Server configuration (or servers.json)
+├── cca/
+│   ├── guides/            # Knowledge base (incl. guides/servers/<name>.md)
+│   ├── incidents/         # Incident documentation
+│   └── watchlist.json     # Monitoring tasks
 ├── logs/                  # Session logs
-├── .claude/
-│   ├── config/
-│   │   └── ai-config.yaml # Safety rules
-│   ├── danger/            # Auto-approval patterns
-│   └── skills/
-│       └── server-*/      # Server-specific skills
+├── .claude/skills/        # Symlinks to shared cca-* skills
 └── .tantivy-data/         # Search index
 ```
 

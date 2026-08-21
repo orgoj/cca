@@ -1,8 +1,8 @@
 ---
 name: cca-optimizing-guides
 description: Optimize and evolve knowledge base - monthly maintenance
-argument-hint: "[optimize|analyze-gaps|suggest-improvements|find-duplicates|suggest-links|suggest-patterns|consolidate-incidents]"
-allowed-tools: Task(*), Bash(*), Read(*), Write(*), Edit(*), Glob(*), Grep(*)
+argument-hint: "[optimize|analyze-gaps|suggest-improvements|find-duplicates|suggest-links|consolidate-incidents]"
+allowed-tools: Bash(*), Read(*), Write(*), Edit(*), Glob(*), Grep(*)
 ---
 
 # Guide Optimize - Knowledge Base Maintenance
@@ -14,19 +14,20 @@ Monthly maintenance tool to keep knowledge base clean, complete, and optimized.
 ## Steps
 
 ### 1. Analysis
-**Analyze repositories:** `incidents/`, `guides/`, and `logs/`.
+**Analyze repositories:** `incidents/` and `guides/`.
 **Identify goals:**
 1. **Find gaps** - Repeated incidents without guides
 2. **Suggest improvements** - Missing info in existing guides
 3. **Find duplicates** - Overlapping content to merge
 4. **Suggest links** - Missing cross-references
-5. **Propose patterns** - New auto-approval patterns from logs
-6. **Consolidate incidents** - Fold recurring incident patterns into a playbook guide, then archive the
+5. **Consolidate incidents** - Fold recurring incident patterns into a playbook guide, then archive the
    vytěžené (mined) incidents so the active set stays small and searchable
 
 ### 2. Execution
 **Run operations:**
-- `analyze-gaps`: Use `cca-learn-analyzer` to find repeated incidents and patterns.
+- `analyze-gaps`: Cluster incidents by frontmatter `tags:` (plus `servers:`/`services:`) and by
+  `tantivy2agents search` on the recurring symptom; a cluster of ≥2 incidents with the same root
+  cause and no playbook guide covering it is a gap. Do not cluster by filename or by date.
 - `suggest-improvements`: Compare guides with recent incidents to find missing information.
   **Includes stale-guide audit:** freshness is judged from git history (`git log -1` date of the
   guide's last meaningful change), NOT from any changelog section inside the guide. Any guide whose
@@ -35,8 +36,9 @@ Monthly maintenance tool to keep knowledge base clean, complete, and optimized.
   guides (or fold it in). Rationale: a stale playbook once survived 7 months while giving advice
   (UA-version bot rule, geo-block) that newer guides explicitly forbid because it caused outages.
 - `find-duplicates`: Identify guides covering similar topics that could be merged.
+  **Merge nesmí ubrat znalost:** před sloučením vypiš řádky, které jsou JEN v rušeném guide, a ověř,
+  že všechny jsou v cílovém. Rušené místo nemaž — nech z něj tenký router na cílový guide.
 - `suggest-links`: Find related guides that should reference each other.
-- `suggest-patterns`: Analyze logs for safe read-only commands to add to auto-approval.
 - `consolidate-incidents`: Cluster recurring incidents, fold their pattern into the relevant project
   playbook guide, then archive the mined incident files. See dedicated section below.
 
@@ -52,7 +54,7 @@ Monthly maintenance tool to keep knowledge base clean, complete, and optimized.
 
 **Full optimization (monthly):**
 ```
-/cca:optimizing-guides optimize
+cca-optimizing-guides optimize
 → Runs all checks
 → Reports findings (one line each)
 → Asks for approval to apply changes
@@ -60,13 +62,13 @@ Monthly maintenance tool to keep knowledge base clean, complete, and optimized.
 
 **Specific checks:**
 ```
-/cca:optimizing-guides analyze-gaps
+cca-optimizing-guides analyze-gaps
 → Finds incidents without guides
 
-/cca:optimizing-guides suggest-improvements
+cca-optimizing-guides suggest-improvements
 → Analyzes guides vs recent incidents
 
-/cca:optimizing-guides consolidate-incidents
+cca-optimizing-guides consolidate-incidents
 → Najde VSECHNY incidenty stejneho problemu (e.g. 15× scraper outage)
 → Do nejnovejsiho (head) incidentu prida retez referenci na predchozi vyskyty
 → Slozi pattern do playbook guide (prida radky pokud chybi)

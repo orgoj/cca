@@ -65,8 +65,8 @@ logs/                    # Session logs (cca-tmux-cli LOG_DIR="logs")
 **NOT created (optional/deprecated):**
 - ❌ `cca/knowledge/` - not used in practice
 - ❌ `cca/logs/` - cca-tmux-cli uses root `logs/` directory
-- ❌ `watchlist.json` - monitoring not universally used
-- ❌ `.claude/danger/` - auto-approval patterns not needed
+- ❌ `cca/watchlist.json` - monitoring not universally used; create it (template in
+  `cca-setting-up/templates/`) only when the project runs `cca-watching`
 - ❌ `RULES.md` - safety rules in skills
 - ❌ `CLAUDE.md` CCA section - instructions are in `cca-core` skill
 
@@ -79,10 +79,10 @@ Show user:
 CCA Setup Complete!
 
 Next steps:
-1. Load cca-core: /cca-core (mandatory before ANY server work)
+1. Load the cca-core skill (mandatory before ANY server work)
 2. Run diagnostic: cca-doctor
 3. Search guides: tantivy2agents search "keywords" (see cca-searching skill)
-4. Problem workflow: /cca:solving-problems "description"
+4. Problem workflow: cca-solving-problems "description"
 
 Documentation:
 - Workflow: See `cca-core` skill

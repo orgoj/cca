@@ -30,7 +30,8 @@ Create structured incident documentation after manually resolving a problem.
 **NEJDŘÍV OVĚŘ ČASOVOU OSU:**
 - Spusť `date` pro aktuální čas
 - Zeptej se uživatele na klíčové timestampy (kdy nahlášeno, kdy vyřešeno)
-- **NIKDY nevymýšlej/neodhaduj časy** — fabricated timestamps = user bude naštvaný (incident Feb 12)
+- **NIKDY nevymýšlej/neodhaduj časy** — vymyšlený timestamp v incidentu přežije roky a nikdo ho
+  jako vymyšlený nepozná. Neznáš čas? Zeptej se, nebo napiš, že chybí.
 - **Kdyz user behem konverzace odkazuje na prave provedenou/aktualni akci** ("ted", "prave ted",
   "prave jsem") — spust `date` OKAMZITE v tu chvili, ne az na konci. Neodvozuj cas z drivejsich
   timestampu v konverzaci.
@@ -68,7 +69,7 @@ On top of `cca-core` → *Written Knowledge: Evidence & Length*:
 
 **Interactive mode (recommended):**
 ```
-/cca:creating-incidents
+cca-creating-incidents
 → Which server(s) were affected?
 → Which service(s)?
 → ...
@@ -77,7 +78,7 @@ On top of `cca-core` → *Written Knowledge: Evidence & Length*:
 
 **Quick mode:**
 ```
-/cca:creating-incidents server1 Apache "high load"
+cca-creating-incidents server1 Apache "high load"
 → Skips questions
 → Creates file immediately with defaults
 ```
@@ -127,7 +128,7 @@ After manually fixing a problem - document it so AI can auto-resolve next time.
 
 ---
 
-If a reusable guide would help, recommend `/cca:saving-guides`, but invoke it only when the user
+If a reusable guide would help, recommend `cca-saving-guides`, but invoke it only when the user
 explicitly requests that skill.
 
 

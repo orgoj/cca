@@ -6,7 +6,7 @@ allowed-tools: Bash(*), Read(*), Glob(*), Grep(*)
 
 # Server Discovery - Careful Unknown Server Investigation
 
-**PREREQUISITE:** Load `/cca-core` for system overview and safety rules.
+**PREREQUISITE:** Load `cca-core` for system overview and safety rules.
 
 **Purpose:** Systematically discover what runs on an unknown server WITHOUT assumptions. Never guess the tech stack - discover it step by step.
 
@@ -42,9 +42,10 @@ cca-tmux-cli -t SERVER run "df -h"
 ## Step 2: Full Process Tree
 
 ```bash
-# FULL process tree - save to file, read ALL of it
-cca-tmux-cli -t SERVER run "ps axuf" > /tmp/SERVER-ps.txt 2>&1
-# Read the ENTIRE file - don't skip anything!
+# FULL process tree - read ALL of it, don't skip anything
+cca-tmux-cli -t SERVER run "ps axuf"
+# Saving it? Only into the PROJECT's gitignored tmp/ (tmp/SERVER-ps.txt),
+# never into the shared system /tmp.
 ```
 
 **What to look for in process tree:**
@@ -113,8 +114,9 @@ cca-tmux-cli -t SERVER run "ls -la /var/www/ /home/*/www/ /opt/ /data/ 2>/dev/nu
 ```bash
 # Find log locations based on what you discovered
 cca-tmux-cli -t SERVER run "ls /var/log/"
-# For uwsgi apps:
-cca-tmux-cli -t SERVER run "find /home -name '*.log' -newer /tmp -type f 2>/dev/null"
+# App logs: ask the process, don't sweep the filesystem. `find /home` or `find /` over a large
+# tree is forbidden - the paths are in the app config you already read (Step 4), or here:
+cca-tmux-cli -t SERVER run "ls -l /proc/<PID>/fd | grep -i log"
 ```
 
 ## Step 7: Create Server Guide

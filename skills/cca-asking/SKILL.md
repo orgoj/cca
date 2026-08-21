@@ -42,19 +42,19 @@ say what is missing instead of filling the gap with a plausible answer.
 
 **Health check:**
 ```
-/cca:ask "is MongoDB healthy?"
+cca-asking "is MongoDB healthy?"
 → MongoDB is healthy. Primary: server1, all replicas responding.
 ```
 
 **Disk space:**
 ```
-/cca:ask "which server has most free space?"
+cca-asking "which server has most free space?"
 → Server3 has most free space (8.2TB free of 12TB).
 ```
 
 **Safety check:**
 ```
-/cca:ask "can I safely restart server1?"
+cca-asking "can I safely restart server1?"
 → NO - server1 is NOT safe to restart:
   - It's MongoDB PRIMARY (failover needed)
   - Running 15 Docker services
@@ -63,7 +63,7 @@ say what is missing instead of filling the gap with a plausible answer.
 
 **Recent incidents:**
 ```
-/cca:ask "when was the last incident on server1?"
+cca-asking "when was the last incident on server1?"
 → Last incident on server1: 2025-10-01 - Apache high load
 ```
 

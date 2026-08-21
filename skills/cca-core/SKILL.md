@@ -21,14 +21,12 @@ Used for real-time diagnostics and troubleshooting via persistent tmux sessions.
 **⚠️ CRITICAL SYNTAX RULES:**
 - `-t` MUST come BEFORE the subcommand: `cca-tmux-cli -t server1 run "..."` ✅
 - `run` returns output directly — do NOT read tmux screen after it
-- **Do not run `read` proactively before a command.** The next command's type is irrelevant.
-- Use `read` only after an earlier `run` timed out, was interrupted, lost its final marker, or otherwise
-  left it unclear whether the shared terminal is still busy. Read the screen before issuing another `run`.
 - If output contains only `[sudo] password for ...:`, the command did NOT run. Never interpret empty
   output after such a run as success.
 - When the user says "retry" after completing sudo authorization, immediately repeat the EXACT same
   approved command. Do not investigate guides, permissions, or alternative approaches in between.
-- **Interactive terminal serialization:** `cca-tmux-cli` targets a persistent interactive tmux terminal. Never send a second command to the same target while a previous `run` is still running or its final output and exit code are not known. After a timeout, do not start another `run`; first use `read` to determine whether the previous command is still running. Only issue the next command after the previous one is confirmed finished.
+- **One command per target at a time, and `read` only to recover an ambiguous earlier `run`** —
+  full rule in the `cca-tmux-cli` skill (*When to use `read`*).
 
 #### Multi-line `run` with `cat <<'EOF'`
 ```bash
@@ -68,16 +66,11 @@ always look it up there first. **MANDATORY** — edit + diff must happen in ONE 
 cca-tmux-cli -t server1 run "cd /opt/app/config-repo && git status && git diff --stat"
 # If dirty → stop, resolve first (foreign uncommitted change!)
 
-# 2. Edit + immediate diff in ONE command
-cca-tmux-cli -t server1 run "$(cat <<'EOF'
-python3 -c "
-import re
-with open('conf/example.conf') as f: content = f.read()
-# ... edit ...
-with open('conf/example.conf', 'w') as f: f.write(content)
-" && cd /opt/app/config-repo && git diff
-EOF
-)"
+# 2. Edit + immediate diff in ONE command. Use a targeted, reviewable edit (a single `sed`
+#    substitution, or `git apply` of a patch) — never a script that rewrites the whole file,
+#    which hides what changed. If the same repo is also checked out locally, edit it there
+#    with the harness's file-editing tool and deploy per the project guide instead.
+cca-tmux-cli -t server1 run "cd /opt/app/config-repo && sed -i 's/^worker_processes 4;/worker_processes 8;/' conf/example.conf && git diff"
 
 # 3. After diff approved: apply per PROJECT guide (test/reload script = LIVE CHANGE,
 #    needs its own explicit user approval!), then commit
@@ -100,31 +93,19 @@ Full-text search across guides, incidents, and documentation.
 4.  **Fix**: Use `ap` for permanent fixes or `cca-tmux-cli` for troubleshooting.
 5.  **Document**: Save findings as guides in `cca/guides/`.
 
-## Decision Matrix
+## Log Analysis
 
-| Task | Tool | Example |
-|------|------|---------|
-| Check if server is alive | `cca-tmux-cli` | `cca-tmux-cli -t server1 run "uptime"` |
-| Install software | project deployment tool | Follow the project's deployment guide |
-| Check service status | `cca-tmux-cli` | `cca-tmux-cli -t server1 run "systemctl status nginx"` |
-| View logs | `cca-tmux-cli` | `cca-tmux-cli -t server1 run "tail -20 /var/log/syslog"` |
+**Never `tail -100` a log and read random lines** — targeted counting and filtering finds the problem,
+random tail just burns context on normal traffic. Procedure, per-project formats, timezones and tools:
+**`cca-server-logs` skill** (its first step is finding the project's log guide).
 
-## Log Analysis Rules
+## Config Files of a Running Service
 
-**NIKDY neděj tail -100 na log a nečti náhodné řádky!**
-
-1. **Zjisti formát** - `tail -5 /var/log/service.log` (max 5 řádků)
-2. **Spočítej chyby** - `grep -c 'ERROR\|500\|Traceback' logfile`
-3. **Zobraz jen chyby** - `grep 'ERROR\|500' logfile | tail -10`
-4. **Časové rozložení** - `grep 'ERROR' logfile | grep -oP 'timestamp_pattern' | uniq -c`
-
-**Proč:** Random tail plýtvá kontextem normálními requesty. Cílený grep najde problém okamžitě.
-
-## nginx Rules
-
-- **sites-enabled**: nginx parsuje VŠECHNY soubory v tomto adresáři - NIKDY tam vytvářet .bak!
-- **Zálohy**: vždy do `/tmp/`, nikdy do sites-enabled/
-- **Test před reload**: `nginx -t && nginx -s reload`
+- A service usually parses **every** file in its config directory — never leave `.bak`/`.orig` there.
+  Keep copies outside the directory the service reads.
+- **How a config is tested and applied is defined by the project guide for that tool**, not by
+  general knowledge of the daemon. Do not substitute a reload command you know from elsewhere for the
+  project's test/reload script.
 
 ## Safety Rules
 
@@ -157,7 +138,10 @@ daneho nastroje — over ho (viz Guide-First nize). Bez ohledu na nastroj plati:
 
 ### 1. Zero Redundancy & Token-Saving
 - **NEVER repeat listing or information commands** (like `ls`, `git status`, or duplicate searches) if the data is already present in your active conversation history.
-- **NEVER run Git status or Git diff** in general analytical or chat turns unless explicitly requested by the user, or when performing a final commit.
+- **NEVER run Git status or Git diff** in general analytical or chat turns unless explicitly requested
+  by the user, when performing a final commit, or in the server-config workflow above (there the
+  before-edit `git status` and the after-edit `git diff` are mandatory — they catch a foreign
+  uncommitted change on a live config).
 - **Laser Focus on User Request**: If the user asks for a specific, narrow action (e.g. "write the change to the incident report"), do ONLY that. Do NOT run additional diagnostic queries, logs analysis, or background scans unless requested.
 
 ### 2. Guide-First & Tool Discipline

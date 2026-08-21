@@ -109,7 +109,7 @@ echo -e "${YELLOW}--- Check Finished ---${NC}"
 if [ ${#MISSING_DIRS[@]} -eq 0 ] && [ -n "$CONFIG_FILE" ] && [ ${#MISSING_VARS[@]} -eq 0 ]; then
     echo -e "\n${GREEN}CCA looks ready!${NC}"
     echo "Next steps:"
-    echo "1. Load cca-core: /cca-core"
-    echo "2. Test search: /cca-guide-search \"test\""
+    echo "1. Load the cca-core skill (mandatory before any server work)"
+    echo "2. Test search: tantivy2agents search \"test\""
     echo "3. Run on server: cca-tmux-cli -t <SERVER> run \"uptime\""
 fi

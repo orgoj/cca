@@ -6,6 +6,7 @@ Watchlist management script - manages watchlist.json with proper data parsing an
 import argparse
 from datetime import datetime, timedelta, timezone
 import json
+import os
 from pathlib import Path
 import re
 import sys
@@ -13,14 +14,36 @@ import traceback
 from typing import Any, Dict, List, Optional
 import unicodedata
 
-# Default paths
-WATCHLIST_FILE = Path(__file__).parent.parent / "watchlist.json"
+CREATING_COMMANDS = {"add-routine", "add-incident"}
+
+
+def resolve_watchlist_path(explicit: Optional[str] = None) -> Path:
+    """Resolve watchlist.json in the PROJECT the script is called from.
+
+    Never relative to this script: it is installed as a symlink in PATH and shared
+    between projects, so a script-relative path reads someone else's data (or none).
+    Order: --watchlist / $CCA_WATCHLIST -> ./cca/watchlist.json -> ./watchlist.json
+    """
+    if explicit:
+        return Path(explicit).expanduser()
+
+    env_path = os.environ.get("CCA_WATCHLIST")
+    if env_path:
+        return Path(env_path).expanduser()
+
+    cwd = Path.cwd()
+    for candidate in (cwd / "cca" / "watchlist.json", cwd / "watchlist.json"):
+        if candidate.exists():
+            return candidate
+
+    # Nothing exists yet: prefer cca/ when the project keeps CCA in a subdir.
+    return cwd / "cca" / "watchlist.json" if (cwd / "cca").is_dir() else cwd / "watchlist.json"
 
 
 class Watchlist:
     """Manages watchlist.json operations"""
 
-    def __init__(self, filepath: Path = WATCHLIST_FILE, debug: bool = False):
+    def __init__(self, filepath: Path, debug: bool = False):
         self.filepath = filepath
         self.debug = debug
         if self.debug:
@@ -407,6 +430,10 @@ def main():
 
     # Add --debug as global flag BEFORE subparsers
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
+    parser.add_argument(
+        "--watchlist",
+        help="Path to watchlist.json (default: $CCA_WATCHLIST, ./cca/watchlist.json, ./watchlist.json)",
+    )
 
     subparsers = parser.add_subparsers(dest="command", help="Commands")
 
@@ -529,7 +556,17 @@ Examples:
         print(f"[DEBUG MAIN] Debug mode enabled: {debug}")
         print(f"[DEBUG MAIN] Command: {args.command}")
 
-    watchlist = Watchlist(debug=debug)
+    filepath = resolve_watchlist_path(getattr(args, "watchlist", None))
+    if not filepath.exists() and args.command not in CREATING_COMMANDS:
+        print(
+            f"ERROR: watchlist not found: {filepath}\n"
+            "Run this from the project root, or set $CCA_WATCHLIST / --watchlist. "
+            "An empty result would look like 'nothing to check today'.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    watchlist = Watchlist(filepath, debug=debug)
 
     if debug:
         print(f"[DEBUG MAIN] Watchlist created, calling command: {args.command}")

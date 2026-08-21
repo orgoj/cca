@@ -5,8 +5,8 @@ Agent-agnostic toolkit: bin scripts for PATH, skills in SKILL.md format.
 ## Architecture
 
 ```
-bin/           # 17 shell scripts (cca-* prefixed), add to PATH via cca-install
-skills/        # 19 skills in skill-name/SKILL.md format (agentskills.io spec)
+bin/           # cca-* prefixed scripts, add to PATH via cca-install
+skills/        # skills in skill-name/SKILL.md format (agentskills.io spec)
 tests/         # Test scripts (bash + python)
 ```
 
@@ -53,5 +53,11 @@ tests/         # Test scripts (bash + python)
 ## Gotchas
 
 - Some bin scripts still have internal references using old (unprefixed) names - audit in progress
-- `bin/cca-diagnose-gather` references `mongodb-status` which never existed (dead ref)
+- ⛔ **Scripts must resolve PROJECT data from the CWD, never relative to `Path(__file__)`** — they are
+  installed as symlinks in PATH and shared across projects, so a script-relative path silently reads
+  the wrong project's data (or none). Order: `$CCA_*` var → `./cca/<thing>` → `./<thing>`, and exit
+  non-zero when nothing is found. An empty result reads as "nothing to do" and hides the bug for
+  months (`cca-watchlist`, `cca-diagnose-gather`, `cca-learn-analyzer` all had it).
 - `cca-install` errors if target directory doesn't exist (by design, won't auto-create)
+- `tests/test_watchlist.py` is broken independently of this: it imports a module `cca_watchlist`
+  that does not exist (the script has no `.py` name)

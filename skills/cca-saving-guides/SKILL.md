@@ -59,7 +59,7 @@ inline so the reader sees how fresh the info is.
 
 **After solving problem:**
 ```
-/cca:saving-guides
+cca-saving-guides
 → Analyzes session
 → Suggests: guides/apache-performance.md
 → Creates structured guide
@@ -67,7 +67,7 @@ inline so the reader sees how fresh the info is.
 
 **With focus:**
 ```
-/cca:saving-guides "Focus on Docker networking troubleshooting"
+cca-saving-guides "Focus on Docker networking troubleshooting"
 → Emphasizes Docker network aspects in guide
 ```
 

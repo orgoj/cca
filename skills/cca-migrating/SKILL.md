@@ -17,20 +17,21 @@ Skill for migrating CCA (Claude Code Admin) systems between repositories. Handle
 
 ### 2. Execution
 **Target Preparation**:
-1. Create directory structure (`guides/`, `incidents/`, `logs/`) — same minimal set as
-   `cca-setting-up` (no `.claude/danger/`, no `knowledge/` unless the source actually uses them).
-2. Copy CCA plugin templates.
+1. Create the directory structure (`cca/guides/`, `cca/incidents/`, `logs/`) — same minimal set as
+   `cca-setting-up`, and nothing beyond it.
+2. Link the shared `cca-*` skills with `cca-install skills`.
 
 **Content Migration**:
-1. **Server skills**: Copy/rename `.claude/skills/server-*`, update internal references.
-2. **Guides**: Copy from `guides/` or `knowledge/` to `guides/`, update content references.
-3. **Incidents**: Copy to `incidents/`, rename files/references.
+1. **Server docs**: old CCA versions kept them as `.claude/skills/server-*`; today they are guides —
+   move them to `cca/guides/servers/<name>.md` and update references.
+2. **Guides**: Copy from `guides/` or `knowledge/` to `cca/guides/`, update content references.
+3. **Incidents**: Copy to `cca/incidents/` (with `archive/YYYY/` if the source has one), rename
+   files/references.
 
 **Configuration**:
-1. Setup `servers.json`.
-2. Merge `CLAUDE.md`.
-3. Configure `ai-config.yaml`; migrate `.claude/danger/` patterns ONLY if the source project uses them.
-4. Setup search index (`tantivy2agents install`).
+1. Server configuration: `.cca-env` (Ansible projects) or `servers.json`.
+2. Search index: create `.tantivy2agents.json`, then `tantivy2agents install`.
+3. `cca/watchlist.json` only if the source project actually uses `cca-watching`.
 
 ### 3. Post-migration checks
 Real checks against the source repo and a working target — not a re-reading of your own work:
@@ -45,12 +46,12 @@ Different CCA repositories organize content differently. **ALWAYS analyze source
 
 ### Content Location Patterns
 
-| Content Type | Variant A | Variant B | Variant C |
-|--------------|-----------|-----------|-----------|
-| Server info | `.claude/skills/server-*` | `servers.json` only | `servers/` directory |
-| Guides | `.claude/skills/guide-*` | `guides/` | `knowledge/` |
-| Incidents | `incidents/` | `logs/incidents/` | `.claude/incidents/` |
-| Config | `.claude/config/` | root `*.json` files | `config/` |
+| Content Type | Variant A (old) | Variant B | Variant C | Target |
+|--------------|-----------------|-----------|-----------|--------|
+| Server info | `.claude/skills/server-*` | `servers.json` only | `servers/` directory | `cca/guides/servers/` |
+| Guides | `.claude/skills/guide-*` | `guides/` | `knowledge/` | `cca/guides/` |
+| Incidents | `incidents/` | `logs/incidents/` | `.claude/incidents/` | `cca/incidents/` |
+| Config | `.claude/config/` | root `*.json` files | `config/` | `.cca-env` / `servers.json` |
 
 ## Server Name Mapping
 

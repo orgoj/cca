@@ -9,7 +9,9 @@ allowed-tools: Bash(*), Read(*), Glob(*)
 
 **Purpose:** Search through CCA knowledge base (guides, incidents, documentation) using full-text search.
 
-**CRITICAL:** This is the ONLY way to search CCA documentation. NEVER use Glob or grep for searching guides!
+**CRITICAL:** Topic search in CCA documentation goes through `tantivy2agents` — never Glob or grep to
+find out which guide covers a subject. (Opening a file whose exact path you already know is not
+searching: `Read` it directly.)
 
 ## Steps
 
@@ -108,14 +110,15 @@ Jméno incidentu je jedinečné (prefix data), takže je vždy dohledatelný —
 
 ## Setup in CCA Project
 
-Run during `/cca:setting-up`:
+Run during `cca-setting-up`:
 ```bash
 tantivy2agents install   # creates config + registers the Claude Code hook
 ```
 
 ---
 
-**Remember:** This is the ONLY way to search CCA documentation. tantivy2agents provides intelligent ranked search - never use Glob/grep for guides!
+**Remember:** one concept per query, 2-4 words. A long mix of symptom + service + tool sinks the
+relevant guide in the ranking — run a separate short search for each guide you need.
 
 
 <!-- SHARED SKILL: Keep project-agnostic. For project-specific extensions, create a local skill. -->

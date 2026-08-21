@@ -47,7 +47,7 @@ cca-tmux-cli --robot-help
 
 ## Configuration
 
-Required environment variables (in `.cca-tmux-cli` or `.env`):
+Required environment variables (in the project's `.cca-env`; legacy `.env` is still read as fallback):
 
 ```bash
 TMUX_SESSION_NAME=cca-projectname

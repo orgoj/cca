@@ -7,7 +7,7 @@ allowed-tools: Bash(*), Read(*), Write(*), Edit(*), Glob(*), Grep(*), TaskCreate
 
 # Problem - Unified Problem Resolution
 
-**PREREQUISITE:** Load `/cca-core` for system overview and safety rules.
+**PREREQUISITE:** Load `cca-core` for system overview and safety rules.
 
 **The ONLY entry point for solving ANY server problem.**
 
@@ -32,7 +32,7 @@ který má konkrétní příkazy a SQL dotazy. Postupuj podle něj.
 ## Steps
 
 ### 1. Analysis
-**Load CCA Core (MANDATORY)** - `/cca-core`
+**Load CCA Core (MANDATORY)** - `cca-core`
 - Tool selection guide (cca-tmux-cli vs ap)
 - Safety rules and best practices
 
@@ -74,8 +74,8 @@ který má konkrétní příkazy a SQL dotazy. Postupuj podle něj.
 - Critical servers?
 
 ### 3. Documentation
-- `/cca:creating-incidents` - Document the fix.
-- `/cca:saving-guides` - Create guide immediately.
+- `cca-creating-incidents` - Document the fix.
+- `cca-saving-guides` - Create guide immediately.
 
 Both write per `cca-core` → *Written Knowledge: Evidence & Length*.
 
@@ -87,7 +87,7 @@ of your own reasoning — do not skip it, and do not replace it with re-reviewin
 
 **Known problem (guide exists):**
 ```
-/cca:solving-problems "server1 Apache high load"
+cca-solving-problems "server1 Apache high load"
 → Found: guides/apache-performance.md (95%)
 → Following guide...
 → Problem resolved!
@@ -95,7 +95,7 @@ of your own reasoning — do not skip it, and do not replace it with re-reviewin
 
 **Similar to past incident:**
 ```
-/cca:solving-problems "MongoDB replica lag"
+cca-solving-problems "MongoDB replica lag"
 → Found similar incident: incidents/2025-10-01-....md (same service + symptom)
 → Proposing solution from incident, waiting for user approval...
 → Approved → executing → verified → Problem resolved!
@@ -112,11 +112,11 @@ AI determines affected server from:
 
 ## Workflow Commands
 
-Called automatically by `/cca:solving-problems`:
+Called automatically by `cca-solving-problems`:
 - `tantivy2agents search` - Guide/incident search
-- `/cca:diagnosing` - Multi-source diagnostics
-- `/cca:creating-incidents` - Incident documentation
-- `/cca:saving-guides` - Guide creation
+- `cca-diagnosing` - Multi-source diagnostics
+- `cca-creating-incidents` - Incident documentation
+- `cca-saving-guides` - Guide creation
 
 ---
 

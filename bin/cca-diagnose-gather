@@ -9,7 +9,6 @@ Output: JSON with system state, services, recent commands
 from datetime import datetime, timezone
 import json
 import os
-from pathlib import Path
 import re
 import subprocess
 import sys
@@ -185,56 +184,6 @@ def parse_docker_ps(output):
     return containers
 
 
-def get_recent_commands(server, last_n=20):
-    """Extract recent commands from logs/"""
-    commands = []
-    # Use absolute path relative to script location
-    log_dir = Path(__file__).resolve().parent.parent / "logs"
-
-    if not log_dir.exists():
-        return []
-
-    # Find most recent log file
-    try:
-        log_files = sorted(log_dir.glob("*.log"), key=lambda x: x.stat().st_mtime, reverse=True)
-    except OSError:
-        return []
-
-    if not log_files:
-        return []
-
-    latest_log = log_files[0]
-
-    # Extract commands for this server
-    try:
-        with latest_log.open(encoding="utf-8", errors="ignore") as f:
-            for line in f:
-                # Look for lines mentioning this server
-                if server in line:
-                    # Try to extract command part
-                    # Format is typically: timestamp user server command
-                    try:
-                        parts = line.strip().split()
-                        if len(parts) >= 4:
-                            # Extract timestamp and command
-                            timestamp = parts[0]
-                            # Command is everything after server name
-                            cmd_start = line.find(server) + len(server)
-                            cmd = line[cmd_start:].strip()
-
-                            if cmd and not cmd.startswith("cca-run-on-server"):
-                                commands.append({"timestamp": timestamp, "command": cmd})
-
-                                if len(commands) >= last_n:
-                                    break
-                    except (IndexError, ValueError):
-                        continue
-    except (OSError, UnicodeDecodeError):
-        pass
-
-    return commands
-
-
 def gather_data(server, symptom_keywords):
     """Main data gathering function"""
     # Validate server name first to prevent command injection
@@ -253,7 +202,6 @@ def gather_data(server, symptom_keywords):
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "system": {},
         "services": {},
-        "recent_commands": [],
     }
 
     # 1. System basics
@@ -285,19 +233,21 @@ def gather_data(server, symptom_keywords):
             data["services"]["docker"] = {"error": result.get("error", "Failed to get status")}
 
     if any(k in ["mongodb", "mongo", "db", "database"] for k in keywords):
-        print("Gathering MongoDB status...", file=sys.stderr)
-        result = run_cmd(["mongodb-status"])
-        if result["success"]:
+        mongo_cmd = os.environ.get("CCA_MONGODB_STATUS_CMD")
+        if not mongo_cmd:
             data["services"]["mongodb"] = {
-                "status": "checked",
-                "output": result["stdout"][:500],  # First 500 chars
+                "skipped": "set CCA_MONGODB_STATUS_CMD to the project's MongoDB status command"
             }
         else:
-            data["services"]["mongodb"] = {"error": result.get("error", "Failed to get status")}
-
-    # 3. Recent commands
-    print("Extracting recent commands...", file=sys.stderr)
-    data["recent_commands"] = get_recent_commands(server, last_n=20)
+            print("Gathering MongoDB status...", file=sys.stderr)
+            result = run_cmd([mongo_cmd])
+            if result["success"]:
+                data["services"]["mongodb"] = {
+                    "status": "checked",
+                    "output": result["stdout"][:500],  # First 500 chars
+                }
+            else:
+                data["services"]["mongodb"] = {"error": result.get("error", "Failed to get status")}
 
     return data
 

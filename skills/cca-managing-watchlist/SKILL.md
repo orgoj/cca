@@ -15,6 +15,11 @@ Query cca-watchlist script and return raw JSON output for main session to proces
 - Needed for time-based filtering and relative time calculations.
 
 ### 2. Execution
+**Run it from the project root.** The script resolves `watchlist.json` from the current directory
+(`$CCA_WATCHLIST` → `./cca/watchlist.json` → `./watchlist.json`) and exits non-zero when it finds
+none. If that error appears, fix the working directory — never treat an empty list as "nothing to
+check today".
+
 **Operations:**
 - `cca-watchlist list-today` - All tasks needing check today.
 - `cca-watchlist search "query"` - Search specific items.

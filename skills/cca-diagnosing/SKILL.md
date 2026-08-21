@@ -14,11 +14,15 @@ AI-powered troubleshooting that aggregates data from multiple sources.
 ## Steps
 
 ### 1. Analysis
-**Load server context** - Read the project's `server-{servername}/SKILL.md` doc (specs, services, known issues); find it via `tantivy2agents search "{servername}"` (location varies per project)
+**Load server context** - Read the server's guide (specs, services, known issues), typically
+`cca/guides/servers/{name}.md`; find it via `tantivy2agents search "{servername}"`. Server docs are
+guides read with `Read` — `Skill({ skill: "server-{name}" })` does not exist.
 **Parse symptom** - Extract keywords: server, symptom words (slow, high, error, etc.)
 
 ### 2. Execution
-**Gather current state** - Use `cca-diagnose-gather SERVER "SYMPTOMS"` to get JSON report of system state, services, and recent commands.
+**Gather current state** - Use `cca-diagnose-gather SERVER "SYMPTOMS"` to get a JSON report of system
+state and services. MongoDB is checked only when `$CCA_MONGODB_STATUS_CMD` names the project's status
+command; otherwise the report says `skipped`.
 **Search similar incidents** - Tantivy search for historical matches
 
 ### 3. Diagnostic report
@@ -37,9 +41,6 @@ Separate what the data shows from what you infer from it, and say which parts ar
 - docker/container → docker ps + stats
 - mongodb/mongo/db → service-specific status commands
 
-**Recent commands:**
-- Extract from latest log file
-
 ## Search Strategy
 
 **Tantivy search:**
@@ -52,7 +53,7 @@ Separate what the data shows from what you infer from it, and say which parts ar
 
 **Basic diagnosis:**
 ```
-/cca:diagnose server1 "high load"
+cca-diagnosing server1 "high load"
 → Server1 status:
   Load: 45.2 (CPU: 24 cores) - CRITICAL
   Memory: 89% used
@@ -74,7 +75,7 @@ computing it. State the concrete overlap (same symptom, same service, same serve
 
 ---
 
-*Automatically called by `/cca:problem` when no guide found - you rarely need to run this directly.*
+*Used by `cca-solving-problems` when no guide is found - you rarely need to run this directly.*
 
 
 <!-- SHARED SKILL: Keep project-agnostic. For project-specific extensions, create a local skill. -->
