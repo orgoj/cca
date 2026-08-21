@@ -1,6 +1,6 @@
 ---
 name: cca-setting-up
-description: Setup CCA (Claude Code Admin) system in project for server management, incident resolution, knowledge management. Use when initializing CCA system, setting up server management, or preparing project for infrastructure administration. Creates minimal required structure - guides, incidents, logs, and search index.
+description: Setup CCA (Cyber-CLI Admin) system in project for server management, incident resolution, knowledge management. Use when initializing CCA system, setting up server management, or preparing project for infrastructure administration. Creates minimal required structure - guides, incidents, logs, and search index.
 ---
 
 # CCA System Setup

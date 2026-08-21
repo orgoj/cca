@@ -1,4 +1,4 @@
-# CCA - Claude Code Admin
+# CCA - Cyber-CLI Admin
 
 **Agent-agnostic server management, incident resolution, and knowledge management system.**
 

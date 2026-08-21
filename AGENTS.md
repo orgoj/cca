@@ -1,4 +1,4 @@
-# CCA - Claude Code Admin Toolkit
+# CCA - Cyber-CLI Admin Toolkit
 
 Agent-agnostic toolkit: bin scripts for PATH, skills in SKILL.md format.
 

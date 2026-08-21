@@ -1,6 +1,6 @@
 ---
 name: cca-core
-description: CCA (Claude Code Admin) Core - MANDATORY entry point for ANY work on servers. Read this before running any command on any server. Covers cca-tmux-cli syntax, git workflow for server files, safety rules, and core workflows.
+description: CCA (Cyber-CLI Admin) Core - MANDATORY entry point for ANY work on servers. Read this before running any command on any server. Covers cca-tmux-cli syntax, git workflow for server files, safety rules, and core workflows.
 allowed-tools: Bash(*), Read(*), Glob(*), Grep(*)
 ---
 

@@ -5,7 +5,7 @@ description: Skill for migrating CCA systems between repositories. Use when migr
 
 # CCA Migration Skill
 
-Skill for migrating CCA (Claude Code Admin) systems between repositories. Handles various CCA organization patterns and structures.
+Skill for migrating CCA (Cyber-CLI Admin) systems between repositories. Handles various CCA organization patterns and structures.
 
 ## Steps
 
