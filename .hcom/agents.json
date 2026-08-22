@@ -6,6 +6,7 @@
   },
   "agents": {
     "cca_dev": {
+      "description": "Develops the CCA agent-agnostic administration toolkit in this repo — scripts, skills, tests, docs; keeps it generic and public-safe.",
       "dir": "."
     }
   }
