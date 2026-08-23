@@ -31,20 +31,34 @@ cca-hetrix --outages --since YYYY-MM-DD
 - Each monitor = separate task for detailed investigation
 
 ### Step 4: Investigate each problematic monitor (mark as in_progress)
-- **Zjisti přesnou URL a typ monitoru:**
-  ```bash
-  cca-hetrix --monitor-info "monitor-name"
-  ```
-- Get detailed outage history (zjisti typ chyby — timeout/refused/5xx — **nepředpokládej!**):
-  ```bash
-  cca-hetrix --monitor-outages "monitor-name" --since YYYY-MM-DD
-  ```
-- Hledej přesnou URL z `--monitor-info` v lokálních log datech (dle projektového log guide, např. DuckDB) — **nikdy ne grep na serveru!**
+
+**Nejdřív rozhodni z přehledu, teprve pak vyjížděj detail.** Přehled ze Step 2 už dává
+monitor, čas a délku výpadku — to na většinu rozhodnutí stačí.
+
 - Check if outage is already documented (incidents dir, logs, etc.)
 - Match by **DATE + SERVICE** - incident from Oct 8 does not explain outage Oct 15
 - **Decision**:
-  - Already documented (date + service match) → reference incident, mark completed
-  - New outage (no matching incident) → report for investigation
+  - Sedí na existující incident (datum + služba) → odkaž incident, mark completed.
+    **Detail nevyjížděj.**
+  - Nový, nezdokumentovaný výpadek → pokračuj níž
+
+⛔ **`--monitor-outages` a `--monitor-info` pouštěj jen tehdy, když to mění rozhodnutí** —
+tedy u nového výpadku, kde potřebuješ typ chyby (timeout / refused / 5xx / keyword) nebo
+rozsah lokalit, případně cílovou URL pro dohledání v logu. Detail stojí násobně víc než
+přehled; u výpadku, který už má incident, nepřinese nic nového.
+
+- **Typ chyby a rozsah lokalit** (nikdy nepředpokládej — timeout, refused a 5xx mají různé
+  příčiny):
+  ```bash
+  cca-hetrix --monitor-outages "monitor-name" --since YYYY-MM-DD
+  ```
+  Výstup je seskupený do oken výpadku; `--full` vypíše každou jednotlivou sondu (potřeba
+  jen výjimečně).
+- **Přesná URL a typ monitoru** — jen když ji budeš hledat v logu:
+  ```bash
+  cca-hetrix --monitor-info "monitor-name"
+  ```
+- Hledej přesnou URL z `--monitor-info` v lokálních log datech (dle projektového log guide, např. DuckDB) — **nikdy ne grep na serveru!**
 
 ### Step 5: Final summary
 - Current status (all UP or issues found)
@@ -63,7 +77,8 @@ cca-hetrix --outages --since YYYY-MM-DD
 | `cca-hetrix --outages --since 7d` | Outages last 7 days |
 | `cca-hetrix --outages --since 12h --until 6h` | Outages in time range |
 | `cca-hetrix --monitor-info "name"` | Monitor details incl. target URL |
-| `cca-hetrix --monitor-outages "name"` | Detailed outage history for monitor |
+| `cca-hetrix --monitor-outages "name"` | Outage history grouped into outage windows |
+| `cca-hetrix --monitor-outages "name" --full` | ... one line per probe (rarely needed) |
 | `cca-hetrix --blacklist` | Email blacklist overview |
 | `cca-hetrix --blacklist-ip 203.0.113.10` | Blacklist detail for IP |
 

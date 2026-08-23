@@ -18,7 +18,9 @@ Options:
     --outages   Show recent outages (default: last 24h)
     --since     TIME  Show outages since time (YYYY-MM-DD or relative: 12h, 7d, 30m)
     --until     TIME  Show outages until time (YYYY-MM-DD HH:MM or relative: 2h, 1d)
-    --monitor-outages MONITOR  Show detailed outage history for specific monitor
+    --monitor-outages MONITOR  Show outage history for specific monitor (grouped)
+    --full      With --monitor-outages: one line per probe instead of grouping
+    --gap       SECONDS  Gap that separates two outage windows (default: 900)
     --monitor-info MONITOR     Show monitor details incl. target URL
     --server-stats MONITOR     Show Server Monitor agent data (CPU/RAM/disk usage, RAID)
     --blacklist Show email blacklist status overview
@@ -37,6 +39,7 @@ Examples:
     cca-hetrix --outages --since 12h --until 6h  # Outages between 12h and 6h ago
     cca-hetrix --monitor-outages "web-app"       # Show outage history for monitor
     cca-hetrix --monitor-outages "api" --since 3d   # Monitor outages last 3 days
+    cca-hetrix --monitor-outages "api" --since 3d --full  # ... every single probe
     cca-hetrix --monitor-info "search web"       # Show monitor details incl. target URL
     cca-hetrix --blacklist                       # Show blacklist status overview
     cca-hetrix --blacklist-ip 203.0.113.10       # Detail for specific IP
@@ -47,6 +50,9 @@ Requires:
 
 EOF
 }
+
+# Gap (seconds) that separates two outage windows in --monitor-outages
+OUTAGE_WINDOW_GAP=${OUTAGE_WINDOW_GAP:-900}
 
 # API call helper - uses cca-curl-secret for secure credential management
 api_call() {
@@ -406,15 +412,11 @@ get_location_fail_log() {
     local all_entries="[]"
     local page_end_timestamp=""
     local page=1
+    local truncated=0
+
+    local prev_end_timestamp=""
 
     while true; do
-        local url="$base_url?since=$since_timestamp"
-
-        # For subsequent pages, use page_end_timestamp to get older entries
-        if [ -n "$page_end_timestamp" ]; then
-            url="${url}&end=$page_end_timestamp"
-        fi
-
         local response
         response=$(api_call "/uptime-monitors/$monitor_id/location-fail-log?since=$since_timestamp$([ -n "$page_end_timestamp" ] && echo "&end=$page_end_timestamp")")
 
@@ -431,25 +433,40 @@ get_location_fail_log() {
         all_entries=$(echo "$all_entries" "$entries" | jq -s 'add')
 
         # Check for next page
+        prev_end_timestamp="$page_end_timestamp"
         page_end_timestamp=$(echo "$response" | jq -r '.meta.next_page_timestamp // empty')
 
         if [ -z "$page_end_timestamp" ]; then
             break
         fi
 
+        # The API silently ignores both "since" and "end" on this endpoint: it always
+        # returns the same newest page. Without these guards the loop refetches the
+        # very same page until the page limit and gets rate-limited (empty response).
+        if [ "$page_end_timestamp" = "$prev_end_timestamp" ]; then
+            break
+        fi
+
+        # Nothing older than the requested window is needed
+        if [ "$page_end_timestamp" -lt "$since_timestamp" ]; then
+            break
+        fi
+
         page=$((page + 1))
         if [ "$page" -gt 10 ]; then
-            echo "Warning: Reached max pagination limit (10 pages)" >&2
+            truncated=1
             break
         fi
     done
 
-    # Filter by until_timestamp if provided, then deduplicate
-    if [ -n "$until_timestamp" ]; then
-        echo "{\"entries\": $(echo "$all_entries" | jq --arg until "$until_timestamp" '[.[] | select(.timestamp <= ($until | tonumber))] | unique')}"
-    else
-        echo "{\"entries\": $(echo "$all_entries" | jq 'unique')}"
-    fi
+    # The API ignores "since", so the window has to be applied here
+    echo "$all_entries" | jq \
+        --argjson since "$since_timestamp" \
+        --arg until "$until_timestamp" \
+        --argjson truncated "$truncated" \
+        '{truncated: ($truncated == 1), entries: [ .[]
+            | select(.timestamp >= $since)
+            | select($until == "" or .timestamp <= ($until | tonumber)) ] | unique}'
 }
 
 show_monitor_outages() {
@@ -514,13 +531,64 @@ show_monitor_outages() {
         return
     fi
 
-    echo "📉 Detected Failures ($entry_count entries):"
-    echo ""
+    if [ "$(echo "$fail_log" | jq -r '.truncated')" = "true" ]; then
+        echo "⚠️  Pagination limit reached - data are INCOMPLETE (narrow the window with --since)"
+        echo ""
+    fi
 
-    echo "$fail_log" | jq -r '.entries[] | [.timestamp, .location, .data] | @tsv' | sort -n | while IFS=$'\t' read -r timestamp location error_data; do
-        local_time=$(format_local_time "$timestamp")
-        echo "  ❌ $local_time [$location]: $error_data"
-    done
+    if [ -n "$full_output" ]; then
+        echo "📉 Detected Failures ($entry_count entries):"
+        echo ""
+
+        echo "$fail_log" | jq -r '.entries[] | [.timestamp, .location, .data] | @tsv' | sort -n | while IFS=$'\t' read -r timestamp location error_data; do
+            local_time=$(format_local_time "$timestamp")
+            echo "  ❌ $local_time [$location]: $error_data"
+        done
+    else
+        local windows
+        windows=$(echo "$fail_log" | jq -r --argjson gap "$OUTAGE_WINDOW_GAP" '
+            def sig:
+                sub(" \\(\\d+ms\\)$"; "")
+                | sub(" after \\d+ milliseconds.*$"; "")
+                | sub(" Error 0: *$"; "");
+            [ .entries[] | {timestamp, location, err: (.data | sig)} ]
+            | sort_by(.timestamp)
+            | reduce .[] as $e ([];
+                if (length == 0) or (($e.timestamp - .[-1].last) > $gap)
+                then . + [{first: $e.timestamp, last: $e.timestamp, items: [$e]}]
+                else .[:-1] + [ .[-1] | .last = $e.timestamp | .items += [$e] ]
+                end)
+            | .[]
+            | [ .first,
+                .last,
+                (.items | length),
+                (.items | group_by(.err) | sort_by(-length) | map("\(length)x \(.[0].err)") | join(", ")),
+                (.items | map(.location) | unique | length),
+                (.items | map(.location) | unique | join(", ")) ]
+            | @tsv')
+
+        local window_count
+        window_count=$(echo "$windows" | grep -c . || true)
+        echo "📉 Detected Failures ($entry_count entries in $window_count outage window$([ "$window_count" -eq 1 ] || echo s)):"
+        echo ""
+
+        echo "$windows" | while IFS=$'\t' read -r first last count errors loc_count locations; do
+            [ -z "$first" ] && continue
+            local from_time to_time when
+            from_time=$(format_local_time "$first")
+            to_time=$(format_local_time "$last")
+            if [ "$from_time" = "$to_time" ]; then
+                when="$from_time"
+            elif [ "$(date -d "@$first" '+%F')" = "$(date -d "@$last" '+%F')" ]; then
+                # same day - print the date once: 2026-08-21 09:55-09:56 CEST
+                when="${from_time% *}-$(date -d "@$last" '+%H:%M %Z')"
+            else
+                when="$from_time - $to_time"
+            fi
+            echo "  ❌ $when | $count entr$([ "$count" -eq 1 ] && echo y || echo ies) | $errors"
+            echo "       $loc_count location$([ "$loc_count" -eq 1 ] || echo s): $locations"
+        done
+    fi
 
     echo ""
     echo "📊 Analysis:"
@@ -533,10 +601,11 @@ show_monitor_outages() {
     unique_locations=$(echo "$fail_log" | jq -r '.entries[].location' | sort -u | wc -l)
     echo "  • Affected monitoring locations: $unique_locations"
 
+    # entries are deduplicated with jq "unique", which does NOT sort by timestamp
     local oldest_failure
-    oldest_failure=$(echo "$fail_log" | jq -r '.entries[-1].timestamp')
+    oldest_failure=$(echo "$fail_log" | jq -r '[.entries[].timestamp] | min')
     local newest_failure
-    newest_failure=$(echo "$fail_log" | jq -r '.entries[0].timestamp')
+    newest_failure=$(echo "$fail_log" | jq -r '[.entries[].timestamp] | max')
 
     if [ "$oldest_failure" != "null" ] && [ "$newest_failure" != "null" ]; then
         local oldest_time
@@ -583,6 +652,14 @@ while [[ $# -gt 0 ]]; do
         ;;
     --monitor-outages)
         monitor_outages="$2"
+        shift 2
+        ;;
+    --full)
+        full_output=1
+        shift
+        ;;
+    --gap)
+        OUTAGE_WINDOW_GAP="$2"
         shift 2
         ;;
     --monitor-info)
