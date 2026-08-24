@@ -75,6 +75,11 @@ tantivy2agents search "docker" --format json
 it does NOT rebuild. The rebuild happens automatically on the next `search`
 (`_ensure_search_index`). There are NO git hooks involved.
 
+Edits made outside Claude Code (for example `apply_patch`, another CLI, or a manual editor) do not
+run this hook. After such an edit, do not assume the index was marked outdated. When the new or
+changed document must be searchable immediately, run `tantivy2agents status`; if it reports an
+index problem or stale/missing files, rebuild according to the troubleshooting procedure below.
+
 ### Check Index Status
 ```bash
 tantivy2agents status   # shows "Up to date" / "Out of date" + missing files

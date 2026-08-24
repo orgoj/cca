@@ -21,8 +21,11 @@ Used for real-time diagnostics and troubleshooting via persistent tmux sessions.
 **⚠️ CRITICAL SYNTAX RULES:**
 - `-t` MUST come BEFORE the subcommand: `cca-tmux-cli -t server1 run "..."` ✅
 - `run` returns output directly — do NOT read tmux screen after it
-- If output contains only `[sudo] password for ...:`, the command did NOT run. Never interpret empty
-  output after such a run as success.
+- If the immediate output contains only `[sudo] password for ...:`, the state is ambiguous, not a
+  harness failure: use `cca-tmux-cli -t SERVER read`. If the preserved output contains a final
+  `EXITCODE=0` marker and the user confirms entering the password, the command completed normally.
+  Do not stop and do not repeat it; verify its effect read-only and continue. An active prompt
+  without a final marker means the command is still unfinished.
 - When the user says "retry" after completing sudo authorization, immediately repeat the EXACT same
   approved command. Do not investigate guides, permissions, or alternative approaches in between.
 - **One command per target at a time, and `read` only to recover an ambiguous earlier `run`** —
