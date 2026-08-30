@@ -32,18 +32,32 @@ has to read. Where an incident file for the failure already exists, reference it
 just to have an ID.
 **Distill before you write** - for each candidate lesson produce a one-line causal template first:
 `what failed → why it failed → what actually fixed it`. If the "why" is missing, it is not a lesson
-yet: either verify the cause or drop it. Write guides from these lines, not from the raw transcript.
+yet: either verify the cause or drop it. This template is analysis only; convert it to the output
+format below instead of copying its narrative into a guide or rules file.
 **Search related guides** - Use tantivy2agents search to find guides to update.
 
 ### 2. Execution
 **Determine update strategy** - Update existing guide, create new, or add to the project rules file (AGENTS.md/CLAUDE.md).
 **Apply updates** - Intelligent deduplication (check if info already exists). One rule = one place;
 write per `cca-core` → *Written Knowledge: Evidence & Length*.
+
+**Output format contract (guides, rules files, and agent bundles):**
+- Write each rule as a one-line imperative. Add at most one evidence sentence in this exact shape:
+  `Chyba <YYYY-MM-DD>: <what happened>`.
+- Put root cause, the troubleshooting/remediation narrative, and human-readable context exclusively
+  in the incident; do not copy them into a guide or rules file.
+- Do not quote the user, narrate the course of the session, or explain why a rule exists in a rule entry.
+- Apply the same format to agent bundle knowledge (`SOUL.md` and `MEMORY/`).
+
 **Do not regress older lessons** - before editing an existing guide, search for the 2-5 earlier
 incidents/guides on the same topic and check the change does not contradict how they were resolved.
 If the old rule still holds in a different context (other OS, version, service), branch the guide
 instead of rewriting the general rule. If it genuinely conflicts, report the conflict and wait for
 approval - never silently reverse a decision someone already made.
+
+**Pre-commit format check** - Read every edited file in full, not only the inserted blocks. Verify
+that every new rule or evidence entry follows the contract above and is no longer than about three
+lines.
 
 ### 3. Report
 Show what was updated and why.
@@ -56,7 +70,8 @@ Show what was updated and why.
 - Example: "NEVER kill processes without verification"
 
 **Procedures → guides/:**
-- Step-by-step procedures for common tasks
+- Reusable imperative steps for common tasks; keep incident-specific investigation and remediation
+  sequence in the incident
 - Example: "Domain setup procedure"
 
 **Tips & Tricks → guides/:**
