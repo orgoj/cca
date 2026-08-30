@@ -23,6 +23,7 @@ searching: `Read` it directly.)
 
 ### 2. Execution
 **Execute search using `tantivy2agents`:**
+Run the first search sequentially when index readiness is unknown; if a search exits successfully with empty output, retry that query once sequentially before concluding there are no matches.
 - **Guides/Docs:** `tantivy2agents search "keywords"`
 - **Incidents:** `tantivy2agents search "keywords incident"`
 - **Specific Server:** `tantivy2agents search "server_name keywords"`
