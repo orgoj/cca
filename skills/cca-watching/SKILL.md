@@ -11,10 +11,14 @@ Query watchlist, create task list (TaskCreate), display summary.
 ## Steps
 
 ### 1. Analysis
-**Query watchlist:** Use `cca-watchlist` script (from PATH), run from the project root — it reads
-`watchlist.json` from the current directory and exits non-zero if there is none. An error here means
-a wrong working directory, not an empty day.
+**Query watchlist:** Use `cca-watchlist list-today` (from PATH), run from the project root — it
+reads `watchlist.json` from the current directory and exits non-zero if there is none. An error here
+means a wrong working directory, not an empty day.
 **Parse JSON:** Extract today's tasks (routines and active incidents).
+
+⛔ **`list-today` returns only `state=active` items.** The same register also holds `idle` backlog
+work, which is deliberately NOT part of the daily check — do not pull it in with `list`/`search`
+unless the user asks for it. States and commands: skill `cca-managing-watchlist`.
 
 ### 2. Execution
 **Process Items:**

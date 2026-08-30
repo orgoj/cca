@@ -1,23 +1,41 @@
 #!/usr/bin/env python3
-"""
-Watchlist management script - manages watchlist.json with proper data parsing and filtering
+"""Watchlist management - single register of open work (daily checks + backlog).
+
+Schema v2: every item carries a `state`:
+  active - takes part in the daily check (`list-today`), subject to check_after/monitor_until
+  idle   - backlog: never in `list-today`, but findable via `search` / `list`
+  done   - finished, kept only for history; hidden unless --all
+
+v1 files (no `state`, `enabled` flag) are NOT read - run `cca-watchlist migrate` once.
 """
 
 import argparse
-from datetime import datetime, timedelta, timezone
 import json
 import os
-from pathlib import Path
 import re
+import stat
 import sys
+import tempfile
 import traceback
-from typing import Any, Dict, List, Optional
 import unicodedata
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any
 
-CREATING_COMMANDS = {"add-routine", "add-incident"}
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
+
+SCHEMA_VERSION = "2.0"
+SCHEMA_MAJOR = 2
+CREATING_COMMANDS = {"add-routine", "add-incident", "add-task"}
+STATES = ("active", "idle", "done")
+TYPES = ("routine", "incident", "task")
 
 
-def resolve_watchlist_path(explicit: Optional[str] = None) -> Path:
+def resolve_watchlist_path(explicit: str | None = None) -> Path:
     """Resolve watchlist.json in the PROJECT the script is called from.
 
     Never relative to this script: it is installed as a symlink in PATH and shared
@@ -40,169 +58,232 @@ def resolve_watchlist_path(explicit: Optional[str] = None) -> Path:
     return cwd / "cca" / "watchlist.json" if (cwd / "cca").is_dir() else cwd / "watchlist.json"
 
 
+def die(message: str) -> None:
+    print(f"ERROR: {message}", file=sys.stderr)
+    sys.exit(1)
+
+
 class Watchlist:
     """Manages watchlist.json operations"""
 
-    def __init__(self, filepath: Path, debug: bool = False):
+    def __init__(self, filepath: Path, debug: bool = False, allow_legacy: bool = False):
         self.filepath = filepath
         self.debug = debug
+        self.allow_legacy = allow_legacy
         if self.debug:
             print(f"[DEBUG] Using watchlist file: {self.filepath}")
             print(f"[DEBUG] File exists: {self.filepath.exists()}")
         self.data = self._load()
 
-    def _load(self) -> Dict[str, Any]:
-        """Load watchlist.json or create new if doesn't exist"""
-        if self.filepath.exists():
-            if self.debug:
-                print("[DEBUG] Loading existing watchlist")
-            with self.filepath.open() as f:
-                data = json.load(f)
-                if self.debug:
-                    print(f"[DEBUG] Loaded {len(data.get('items', []))} items")
-                return data
-        else:
+    # ------------------------------------------------------------------ IO
+
+    def _load(self) -> dict[str, Any]:
+        """Load watchlist.json or create new if it doesn't exist."""
+        if not self.filepath.exists():
             if self.debug:
                 print("[DEBUG] Creating new watchlist")
-            return {"version": "1.0", "items": []}
+            return {"version": SCHEMA_VERSION, "items": []}
+
+        try:
+            with self.filepath.open(encoding="utf-8") as f:
+                data = json.load(f)
+        except json.JSONDecodeError as exc:
+            die(f"{self.filepath} is not valid JSON: {exc}")
+
+        if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+            die(f"{self.filepath}: expected an object with an 'items' list")
+
+        self._check_version(data)
+        if self.debug:
+            print(f"[DEBUG] Loaded {len(data['items'])} items")
+        return data
+
+    def _check_version(self, data: dict[str, Any]) -> None:
+        raw = str(data.get("version", "1.0"))
+        try:
+            major = int(raw.split(".")[0])
+        except ValueError:
+            die(f"{self.filepath}: unreadable version {raw!r}")
+        if major == SCHEMA_MAJOR or (self.allow_legacy and major == 1):
+            return
+        if major == 1:
+            die(
+                f"{self.filepath} is schema v{raw}, this tool needs v{SCHEMA_VERSION}. "
+                "Run `cca-watchlist migrate` once to upgrade it."
+            )
+        die(
+            f"{self.filepath} is schema v{raw}, this tool supports schema v{SCHEMA_MAJOR}.x. "
+            "Refusing to rewrite an unknown schema version."
+        )
+
+    @staticmethod
+    def _lock_file(lock) -> None:
+        if os.name == "nt":
+            lock.seek(0)
+            if not lock.read(1):
+                lock.write(b"\0")
+                lock.flush()
+            lock.seek(0)
+            msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+
+    @staticmethod
+    def _unlock_file(lock) -> None:
+        if os.name == "nt":
+            lock.seek(0)
+            msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+    @contextmanager
+    def _locked(self):
+        """Serialize read-modify-write against other agents working in the same repo."""
+        self.filepath.parent.mkdir(parents=True, exist_ok=True)
+        lock_path = self.filepath.with_suffix(self.filepath.suffix + ".lock")
+        with lock_path.open("a+b") as lock:
+            self._lock_file(lock)
+            try:
+                # Re-read under the lock: another process may have written meanwhile.
+                self.data = self._load()
+                yield
+            finally:
+                self._unlock_file(lock)
 
     def _save(self):
-        """Save watchlist.json"""
-        if self.debug:
-            print("[DEBUG _save] Starting save")
-            print(f"[DEBUG _save] Filepath: {self.filepath}")
-            print(f"[DEBUG _save] Filepath type: {type(self.filepath)}")
-            print(f"[DEBUG _save] Items to save: {len(self.data.get('items', []))}")
-            print(f"[DEBUG _save] Data structure: {list(self.data.keys())}")
+        """Write atomically: temp file in the same directory, then rename."""
+        self.data.setdefault("version", SCHEMA_VERSION)
+        payload = json.dumps(self.data, indent=2, ensure_ascii=False) + "\n"
+        parent = self.filepath.parent
+        parent.mkdir(parents=True, exist_ok=True)
+        tmp_fd, tmp_name = tempfile.mkstemp(dir=parent, prefix=".watchlist-", suffix=".tmp")
         try:
-            # Ensure parent directory exists
-            parent = self.filepath.parent
-            if self.debug:
-                print(f"[DEBUG _save] Parent directory: {parent}")
-                print(f"[DEBUG _save] Parent exists: {parent.exists()}")
-
-            parent.mkdir(parents=True, exist_ok=True)
-
-            if self.debug:
-                print("[DEBUG _save] Parent directory created/verified")
-                print(f"[DEBUG _save] Opening file for writing: {self.filepath}")
-
-            with self.filepath.open("w") as f:
-                if self.debug:
-                    print("[DEBUG _save] File opened successfully")
-                json_str = json.dumps(self.data, indent=2)
-                if self.debug:
-                    print(f"[DEBUG _save] JSON serialized, size: {len(json_str)} bytes")
-                    print(f"[DEBUG _save] First 200 chars: {json_str[:200]}")
-                f.write(json_str)
-                if self.debug:
-                    print("[DEBUG _save] JSON written to file")
-
-            if self.debug:
-                print("[DEBUG _save] File closed successfully")
-                print(f"[DEBUG _save] File exists after save: {self.filepath.exists()}")
-                print(
-                    f"[DEBUG _save] File size: {self.filepath.stat().st_size if self.filepath.exists() else 'N/A'}"
-                )
-                print(f"[DEBUG _save] Saved: {self.filepath}")
-        except Exception as e:
-            print(f"ERROR: Failed to save: {e}")
+            if self.filepath.exists():
+                os.chmod(tmp_name, stat.S_IMODE(self.filepath.stat().st_mode))
+            with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+                f.write(payload)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_name, self.filepath)
+        except Exception as exc:  # original file stays untouched
+            if os.path.exists(tmp_name):
+                os.unlink(tmp_name)
             if self.debug:
                 traceback.print_exc()
-            sys.exit(1)
+            die(f"failed to save {self.filepath}: {exc}")
+        if self.debug:
+            print(f"[DEBUG] Saved: {self.filepath} ({len(payload)} bytes)")
+
+    # ------------------------------------------------------------- helpers
 
     @staticmethod
     def slugify(name: str) -> str:
-        """Convert name to slug format (remove diacritics, lowercase, replace non-alphanumeric with dash)"""
-        # Remove diacritics (ě→e, š→s, č→c, etc.)
+        """Convert name to slug (strip diacritics, lowercase, non-alnum -> dash)."""
         slug = unicodedata.normalize("NFKD", name)
         slug = slug.encode("ascii", "ignore").decode("ascii")
-
         slug = slug.lower()
         slug = re.sub(r"[^a-z0-9]", "-", slug)
         slug = re.sub(r"-+", "-", slug)
         return slug.strip("-")
 
     @staticmethod
-    def parse_check_after(input_str: str) -> Optional[str]:
-        """Parse 'YYYY-MM-DD [morning|afternoon]' -> ISO timestamp"""
+    def parse_check_after(input_str: str) -> str | None:
+        """Parse 'YYYY-MM-DD [morning|afternoon]' -> ISO timestamp."""
         if not input_str:
             return None
-
         match = re.match(r"^(\d{4}-\d{2}-\d{2})\s*(morning|afternoon)?$", input_str)
         if not match:
             return None
-
         date_str = match.group(1)
-        time_part = match.group(2) or "morning"
-
-        if time_part == "morning":
-            time_str = "06:00:00"
-        elif time_part == "afternoon":
-            time_str = "12:00:00"
-        else:
-            time_str = "06:00:00"
-
+        try:
+            datetime.strptime(date_str, "%Y-%m-%d")
+        except ValueError:
+            return None
+        time_str = "12:00:00" if match.group(2) == "afternoon" else "06:00:00"
         return f"{date_str}T{time_str}"
 
     @staticmethod
-    def parse_monitor_until(input_str: str) -> Optional[str]:
-        """Parse 'X week(s)|day(s)' -> ISO timestamp (from today)"""
+    def parse_monitor_until(input_str: str) -> str | None:
+        """Parse 'X week(s)|day(s)' -> ISO timestamp (from today)."""
         if not input_str:
             return None
-
         match = re.match(r"^(\d+)\s*(week|day)s?$", input_str)
         if not match:
             return None
-
         count = int(match.group(1))
-        unit = match.group(2)
-
         today = datetime.now(timezone.utc).date()
-        if unit == "week":
-            end_date = today + timedelta(days=count * 7)
-        else:  # day
-            end_date = today + timedelta(days=count)
+        days = count * 7 if match.group(2) == "week" else count
+        return f"{today + timedelta(days=days)}T00:00:00"
 
-        return f"{end_date}T00:00:00"
+    def _parse_schedule(self, check_after: str | None, monitor_until: str | None):
+        """Parse both schedule inputs, refusing silently-ignored garbage."""
+        check_after_iso = None
+        monitor_until_iso = None
+        if check_after:
+            check_after_iso = self.parse_check_after(check_after)
+            if not check_after_iso:
+                die(
+                    f"unparseable --check-after {check_after!r} "
+                    "(expected 'YYYY-MM-DD [morning|afternoon]')"
+                )
+        if monitor_until:
+            monitor_until_iso = self.parse_monitor_until(monitor_until)
+            if not monitor_until_iso:
+                die(f"unparseable --monitor-until {monitor_until!r} (expected 'X week(s)|day(s)')")
+        return check_after_iso, monitor_until_iso
 
-    def list_today(self, item_type: Optional[str] = None) -> List[Dict[str, Any]]:
-        """
-        List tasks for today
-        item_type: 'routine' or 'incident' to filter, None for all
-        """
+    def _find(self, item_id: str) -> dict[str, Any]:
+        for item in self.data["items"]:
+            if item.get("id") == item_id:
+                return item
+        die(f"item {item_id!r} not found")
+
+    def _project_root(self) -> Path:
+        """Project root = parent of cca/, so refs can be written repo-relative."""
+        parent = self.filepath.parent
+        return parent.parent if parent.name == "cca" else parent
+
+    def _warn_missing_refs(self, refs: list[str]) -> None:
+        root = self._project_root()
+        for ref in refs:
+            if not (root / ref).exists():
+                print(f"WARNING: ref not found on disk: {ref}", file=sys.stderr)
+
+    def _validate_state(self, item: dict[str, Any]) -> None:
+        state = item.get("state")
+        if state not in STATES:
+            die(f"state must be one of {', '.join(STATES)}")
+        if state == "idle" and not item.get("refs"):
+            die(
+                "an idle item needs at least one --refs entry "
+                "(the full context belongs in an incident or guide, not in the register)"
+            )
+
+    # -------------------------------------------------------------- queries
+
+    def list_today(self, item_type: str | None = None) -> list[dict[str, Any]]:
+        """List items due for a check today (state=active only)."""
         today_str = datetime.now(timezone.utc).date().isoformat()
         now_iso = datetime.now(timezone.utc).isoformat()
 
         results = []
-        for item in self.data.get("items", []):
-            # Check enabled
-            if not item.get("enabled", True):
+        for item in self.data["items"]:
+            if item.get("state") != "active":
                 continue
 
-            # Filter by type
-            if item_type == "routine":
-                if item.get("type") != "routine":
-                    continue
-            elif item_type == "incident":
-                if item.get("type") != "incident" or item.get("status") != "monitoring":
-                    continue
-            elif item.get("type") == "incident" and item.get("status") != "monitoring":
+            if item_type and item.get("type") != item_type:
+                continue
+            if item.get("type") == "incident" and item.get("status") != "monitoring":
                 continue
 
-            # Check if needs checking today (not already checked today)
             last_check = item.get("last_check", "never")
-            if last_check != "never":
-                last_check_date = last_check.split("T")[0]
-                if last_check_date >= today_str:
-                    continue
+            if last_check != "never" and last_check.split("T")[0] >= today_str:
+                continue
 
-            # Check if scheduled (check_after)
             check_after = item.get("check_after")
             if check_after and check_after > now_iso:
                 continue
 
-            # Check if still monitoring (monitor_until)
             monitor_until = item.get("monitor_until")
             if monitor_until and monitor_until <= now_iso:
                 continue
@@ -211,339 +292,491 @@ class Watchlist:
 
         return results
 
-    def update_timestamp(self, item_id: str, timestamp: Optional[str] = None) -> Dict[str, Any]:
-        """Update last_check timestamp for an item, return updated item"""
-        timestamp_iso = timestamp if timestamp else datetime.now(timezone.utc).isoformat()
-        found_item = None
-
-        for item in self.data.get("items", []):
-            if item.get("id") == item_id:
-                item["last_check"] = timestamp_iso
-                # Auto-disable one-time tasks after first check
-                if item.get("once", False):
-                    item["enabled"] = False
-                found_item = item
-                break
-
-        if not found_item:
-            print(json.dumps({"error": f"Item '{item_id}' not found"}))
-            sys.exit(1)
-
-        self._save()
-        return found_item
-
-    def search(self, query: str) -> List[Dict[str, Any]]:
-        """Search items by name (case-insensitive substring match)"""
-        query_lower = query.lower()
+    def list_items(
+        self,
+        area: str | None = None,
+        state: str | None = None,
+        item_type: str | None = None,
+        include_done: bool = False,
+    ) -> list[dict[str, Any]]:
         results = []
-
-        for item in self.data.get("items", []):
-            if not item.get("enabled", True):
+        for item in self.data["items"]:
+            if state and item.get("state") != state:
                 continue
-            if query_lower in item.get("name", "").lower():
-                results.append(item)
+            if not state and not include_done and item.get("state") == "done":
+                continue
+            if area and item.get("area", "") != area:
+                continue
+            if item_type and item.get("type") != item_type:
+                continue
+            results.append(item)
+        return sorted(results, key=lambda i: (i.get("area") or "~", i.get("id", "")))
 
+    def search(self, query: str, include_done: bool = False) -> list[dict[str, Any]]:
+        """Case-insensitive substring match across every text field, idle included."""
+        needle = query.lower()
+        results = []
+        for item in self.data["items"]:
+            if not include_done and item.get("state") == "done":
+                continue
+            haystack = [
+                str(item.get(field, ""))
+                for field in (
+                    "id",
+                    "name",
+                    "description",
+                    "area",
+                    "blocked_on",
+                    "next_action",
+                    "guide_keywords",
+                    "file",
+                )
+            ]
+            haystack.extend(str(ref) for ref in item.get("refs", []))
+            if any(needle in value.lower() for value in haystack):
+                results.append(item)
         return results
+
+    # ------------------------------------------------------------ mutations
+
+    def _add(self, item: dict[str, Any]) -> dict[str, Any]:
+        with self._locked():
+            if any(existing.get("id") == item["id"] for existing in self.data["items"]):
+                die(f"item {item['id']!r} already exists (use `edit` or pick another name)")
+            self._validate_state(item)
+            self._warn_missing_refs(item.get("refs", []))
+            self.data["items"].append(item)
+            self._save()
+        return item
+
+    def _base_item(
+        self,
+        item_id: str,
+        item_type: str,
+        name: str,
+        description: str,
+        area: str,
+        state: str,
+        refs: list[str],
+        blocked_on: str,
+        next_action: str,
+        keywords: str,
+        check_after: str | None,
+        monitor_until: str | None,
+        once: bool,
+    ) -> dict[str, Any]:
+        return {
+            "id": item_id,
+            "type": item_type,
+            "name": name,
+            "area": area,
+            "state": state,
+            "description": description,
+            "refs": refs,
+            "blocked_on": blocked_on,
+            "next_action": next_action,
+            "guide_keywords": keywords,
+            "last_check": "never",
+            "check_after": check_after,
+            "monitor_until": monitor_until,
+            "once": once,
+        }
 
     def add_routine(
         self,
-        name: str,
-        description: str,
-        keywords: Optional[str] = None,
-        check_after: Optional[str] = None,
-        monitor_until: Optional[str] = None,
-        once: bool = False,
-    ) -> Dict[str, Any]:
-        """Add new routine check, return created item"""
-        if self.debug:
-            print(
-                f"[DEBUG] add_routine called: name={name}, description={description}, keywords={keywords}"
-            )
+        name,
+        description,
+        keywords=None,
+        area="",
+        state="active",
+        refs=None,
+        blocked_on="",
+        next_action="",
+        check_after=None,
+        monitor_until=None,
+        once=False,
+    ) -> dict[str, Any]:
+        check_after_iso, monitor_until_iso = self._parse_schedule(check_after, monitor_until)
+        item = self._base_item(
+            self.slugify(name),
+            "routine",
+            name,
+            description,
+            area,
+            state,
+            list(refs or []),
+            blocked_on,
+            next_action,
+            keywords or name.lower(),
+            check_after_iso,
+            monitor_until_iso,
+            once,
+        )
+        return self._add(item)
 
-        keywords = keywords or name.lower()
-        item_id = self.slugify(name)
-
-        if self.debug:
-            print(f"[DEBUG] Generated ID: {item_id}")
-            print(f"[DEBUG] Keywords: {keywords}")
-
-        # Parse check_after and monitor_until
-        check_after_iso = self.parse_check_after(check_after) if check_after else None
-        monitor_until_iso = self.parse_monitor_until(monitor_until) if monitor_until else None
-
-        item = {
-            "id": item_id,
-            "type": "routine",
-            "name": name,
-            "description": description,
-            "guide_keywords": keywords,
-            "last_check": "never",
-            "check_after": check_after_iso,
-            "monitor_until": monitor_until_iso,
-            "once": once,
-            "enabled": True,
-        }
-
-        if self.debug:
-            print(f"[DEBUG] Item object created: {item}")
-            print(f"[DEBUG] Current items count before append: {len(self.data.get('items', []))}")
-
-        self.data["items"].append(item)
-
-        if self.debug:
-            print(f"[DEBUG] Item appended. Items count after: {len(self.data.get('items', []))}")
-            print(f"[DEBUG] Full data before save: {json.dumps(self.data, indent=2)}")
-
-        self._save()
-        return item
+    def add_task(
+        self,
+        name,
+        description,
+        area="",
+        state="idle",
+        refs=None,
+        blocked_on="",
+        next_action="",
+        keywords=None,
+        check_after=None,
+        monitor_until=None,
+    ) -> dict[str, Any]:
+        check_after_iso, monitor_until_iso = self._parse_schedule(check_after, monitor_until)
+        item = self._base_item(
+            self.slugify(name),
+            "task",
+            name,
+            description,
+            area,
+            state,
+            list(refs or []),
+            blocked_on,
+            next_action,
+            keywords or name.lower(),
+            check_after_iso,
+            monitor_until_iso,
+            False,
+        )
+        return self._add(item)
 
     def add_incident(
         self,
-        name: str,
-        file: str,
-        status: str,
-        risk: str = "MEDIUM",
-        description: str = "",
-        next_action: str = "Monitor",
-        check_after: Optional[str] = None,
-        monitor_until: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Add new incident, return created item"""
-        # Generate ID: slug + date
+        name,
+        file,
+        status,
+        risk="MEDIUM",
+        description="",
+        area="",
+        state="active",
+        refs=None,
+        blocked_on="",
+        next_action="Monitor",
+        keywords=None,
+        check_after=None,
+        monitor_until=None,
+    ) -> dict[str, Any]:
+        check_after_iso, monitor_until_iso = self._parse_schedule(check_after, monitor_until)
         date_part = datetime.now(timezone.utc).strftime("%Y%m%d")
-        item_id = f"{self.slugify(name)}-{date_part}"
+        refs = list(refs or [])
+        if file and file not in refs:
+            refs.insert(0, file)
+        item = self._base_item(
+            f"{self.slugify(name)}-{date_part}",
+            "incident",
+            name,
+            description,
+            area,
+            state,
+            refs,
+            blocked_on,
+            next_action,
+            keywords or name.lower(),
+            check_after_iso,
+            monitor_until_iso,
+            False,
+        )
+        item["file"] = file
+        item["status"] = status
+        item["risk"] = risk
+        return self._add(item)
 
-        # Parse check_after and monitor_until
-        check_after_iso = self.parse_check_after(check_after) if check_after else None
-        monitor_until_iso = self.parse_monitor_until(monitor_until) if monitor_until else None
-
-        item = {
-            "id": item_id,
-            "type": "incident",
-            "name": name,
-            "file": file,
-            "status": status,
-            "risk": risk,
-            "description": description,
-            "last_check": "never",
-            "check_after": check_after_iso,
-            "monitor_until": monitor_until_iso,
-            "next_action": next_action,
-            "enabled": True,
-        }
-
-        self.data["items"].append(item)
-        self._save()
+    def update_timestamp(self, item_id: str, timestamp: str | None = None) -> dict[str, Any]:
+        stamp = timestamp if timestamp else datetime.now(timezone.utc).isoformat()
+        with self._locked():
+            item = self._find(item_id)
+            item["last_check"] = stamp
+            if item.get("once", False):
+                item["state"] = "done"
+            self._save()
         return item
 
-    def remove_item(self, item_id: str) -> Dict[str, Any]:
-        """Remove item by ID, return removed item"""
-        found_item = None
-        new_items = []
+    def set_state(
+        self,
+        item_id: str,
+        state: str,
+        blocked_on: str | None = None,
+        check_after: str | None = None,
+    ) -> dict[str, Any]:
+        check_after_iso, _ = self._parse_schedule(check_after, None)
+        with self._locked():
+            item = self._find(item_id)
+            item["state"] = state
+            if blocked_on is not None:
+                item["blocked_on"] = blocked_on
+            if check_after_iso:
+                item["check_after"] = check_after_iso
+            self._validate_state(item)
+            self._save()
+        return item
 
-        for item in self.data.get("items", []):
-            if item.get("id") == item_id:
-                found_item = item
-            else:
-                new_items.append(item)
+    def edit(
+        self,
+        item_id: str,
+        changes: dict[str, Any],
+        add_ref: list[str] | None = None,
+        remove_ref: list[str] | None = None,
+    ) -> dict[str, Any]:
+        if not changes and not add_ref and not remove_ref:
+            die("edit needs at least one field to change")
+        with self._locked():
+            item = self._find(item_id)
+            for field, value in changes.items():
+                item[field] = value
+            for ref in add_ref or []:
+                if ref not in item.setdefault("refs", []):
+                    item["refs"].append(ref)
+            for ref in remove_ref or []:
+                if ref in item.get("refs", []):
+                    item["refs"].remove(ref)
+            self._validate_state(item)
+            self._warn_missing_refs(item.get("refs", []))
+            self._save()
+        return item
 
-        if not found_item:
-            print(json.dumps({"error": f"Item '{item_id}' not found"}))
-            sys.exit(1)
+    def remove_item(self, item_id: str) -> dict[str, Any]:
+        with self._locked():
+            item = self._find(item_id)
+            self.data["items"] = [i for i in self.data["items"] if i.get("id") != item_id]
+            self._save()
+        return item
 
-        self.data["items"] = new_items
-        self._save()
-        return found_item
-
-    def disable_item(self, item_id: str) -> Dict[str, Any]:
-        """Disable item by ID (set enabled=false), return updated item"""
-        found_item = None
-
-        for item in self.data.get("items", []):
-            if item.get("id") == item_id:
-                item["enabled"] = False
-                found_item = item
-                break
-
-        if not found_item:
-            print(json.dumps({"error": f"Item '{item_id}' not found"}))
-            sys.exit(1)
-
-        self._save()
-        return found_item
-
-    def enable_item(self, item_id: str) -> Dict[str, Any]:
-        """Enable item by ID (set enabled=true), return updated item"""
-        found_item = None
-
-        for item in self.data.get("items", []):
-            if item.get("id") == item_id:
-                item["enabled"] = True
-                found_item = item
-                break
-
-        if not found_item:
-            print(json.dumps({"error": f"Item '{item_id}' not found"}))
-            sys.exit(1)
-
-        self._save()
-        return found_item
+    def migrate(self) -> dict[str, Any]:
+        """Upgrade a v1 file in place: enabled -> state, add v2 fields."""
+        with self._locked():
+            migrated = 0
+            for item in self.data["items"]:
+                if "state" not in item:
+                    item["state"] = "active" if item.pop("enabled", True) else "done"
+                    migrated += 1
+                item.pop("enabled", None)
+                item.setdefault("area", "")
+                item.setdefault("blocked_on", "")
+                item.setdefault("next_action", "")
+                refs = item.setdefault("refs", [])
+                if item.get("file") and item["file"] not in refs:
+                    refs.insert(0, item["file"])
+                item.setdefault("once", False)
+            self.data["version"] = SCHEMA_VERSION
+            self._save()
+        return {"migrated": migrated, "total": len(self.data["items"]), "version": SCHEMA_VERSION}
 
 
-def format_items(items: List[Dict[str, Any]]):
-    """Format items for display"""
+# ---------------------------------------------------------------- rendering
+
+
+def format_items(items: list[dict[str, Any]]):
+    """Detailed rendering, one block per item."""
     if not items:
         print("No items found")
         return
 
     for item in items:
         item_type = item.get("type", "unknown")
-        name = item.get("name", "unknown")
-        item_id = item.get("id", "unknown")
-
-        if item_type == "routine":
-            print(f"[ROUTINE] {name}")
-            print(f"  ID: {item_id}")
+        print(f"[{item_type.upper()}] {item.get('name', 'unknown')}")
+        print(f"  ID: {item.get('id')}")
+        print(f"  State: {item.get('state')}   Area: {item.get('area') or '-'}")
+        if item.get("description"):
             print(f"  Description: {item.get('description')}")
+        if item_type == "incident":
+            print(f"  Status: {item.get('status')}   Risk: {item.get('risk')}")
+        if item.get("blocked_on"):
+            print(f"  Blocked on: {item.get('blocked_on')}")
+        if item.get("next_action"):
+            print(f"  Next action: {item.get('next_action')}")
+        for ref in item.get("refs", []):
+            print(f"  Ref: {ref}")
+        if item.get("guide_keywords"):
             print(f"  Keywords: {item.get('guide_keywords')}")
-        else:  # incident
-            print(f"[INCIDENT] {name}")
-            print(f"  ID: {item_id}")
-            print(f"  File: {item.get('file')}")
-            print(f"  Status: {item.get('status')}")
-            print(f"  Risk: {item.get('risk')}")
-            print(f"  Description: {item.get('description')}")
-            print(f"  Next Action: {item.get('next_action')}")
-
-        print(f"  Last Check: {item.get('last_check')}")
+        print(f"  Last check: {item.get('last_check')}")
         if item.get("check_after"):
-            print(f"  Check After: {item.get('check_after')}")
+            print(f"  Check after: {item.get('check_after')}")
         if item.get("monitor_until"):
-            print(f"  Monitor Until: {item.get('monitor_until')}")
+            print(f"  Monitor until: {item.get('monitor_until')}")
         print()
+
+
+def format_list(items: list[dict[str, Any]]):
+    """Compact rendering grouped by area - the readable replacement for TODO.md."""
+    if not items:
+        print("No items found")
+        return
+
+    current_area = object()
+    for item in items:
+        area = item.get("area") or "(no area)"
+        if area != current_area:
+            current_area = area
+            print(f"\n## {area}")
+        flags = [item.get("state", "?")]
+        if item.get("check_after"):
+            flags.append(f"check after {item['check_after'].split('T')[0]}")
+        if item.get("blocked_on"):
+            flags.append(f"blocked: {item['blocked_on']}")
+        print(f"  - [{item.get('type')}] {item.get('name')}  ({', '.join(flags)})")
+        print(f"      id: {item.get('id')}")
+        for ref in item.get("refs", []):
+            print(f"      ref: {ref}")
+    print()
+
+
+# -------------------------------------------------------------------- CLI
+
+
+def add_common_item_args(sub, default_state: str):
+    sub.add_argument("--area", default="", help="Area/grouping, e.g. a server or subsystem")
+    sub.add_argument(
+        "--state",
+        choices=STATES,
+        default=default_state,
+        help=f"Item state (default: {default_state})",
+    )
+    sub.add_argument(
+        "--refs", nargs="*", default=[], help="Paths to incident/guide with the full context"
+    )
+    sub.add_argument("--blocked-on", dest="blocked_on", default="", help="What this is waiting for")
+    sub.add_argument("--next-action", dest="next_action", default="", help="The remaining step")
+    sub.add_argument(
+        "--check-after", dest="check_after", help='Check after: "YYYY-MM-DD [morning|afternoon]"'
+    )
+    sub.add_argument(
+        "--monitor-until", dest="monitor_until", help='Monitor until: "X [week|day](s)"'
+    )
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Watchlist management", formatter_class=argparse.RawDescriptionHelpFormatter
+        description="Watchlist management (schema v2: daily checks + backlog in one register)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-
-    # Add --debug as global flag BEFORE subparsers
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     parser.add_argument(
         "--watchlist",
-        help="Path to watchlist.json (default: $CCA_WATCHLIST, ./cca/watchlist.json, ./watchlist.json)",
+        help=(
+            "Path to watchlist.json "
+            "(default: $CCA_WATCHLIST, ./cca/watchlist.json, ./watchlist.json)"
+        ),
     )
+
+    parser.epilog = """
+States:
+  active  - part of the daily check (list-today)
+  idle    - backlog: never in list-today, still found by search/list (needs --refs)
+  done    - finished, hidden unless --all
+
+Examples:
+  cca-watchlist list-today
+  cca-watchlist list --area server1
+  cca-watchlist list --state idle
+  cca-watchlist show hetrix-status
+  cca-watchlist search openresty
+  cca-watchlist update hetrix-status
+
+  cca-watchlist add-task \\
+    --name "server1 web limits" \\
+    --description "Deploy the reviewed anti-scan limits" \\
+    --area server1 \\
+    --refs incidents/2026-07-05-web-limits.md \\
+    --blocked-on "user approval"
+
+  cca-watchlist add-routine --name "Status check" --description "..." \\
+    --keywords "status monitoring"
+  cca-watchlist add-incident --name "server1 OOM" --file "incidents/x.md" --status monitoring
+
+  cca-watchlist park server1-web-limits --blocked-on "user approval"
+  cca-watchlist activate server2-delete-volume --check-after "2026-09-04 morning"
+  cca-watchlist done old-task
+  cca-watchlist edit server1-web-limits --area server1 --add-ref incidents/y.md
+  cca-watchlist migrate
+    """
 
     subparsers = parser.add_subparsers(dest="command", help="Commands")
 
-    parser.epilog = """
-Examples:
-  watchlist list-today
-  watchlist list-today --type routine
-  watchlist list-today --type incident
-  watchlist update hetrix-status
-  watchlist search server1
+    p = subparsers.add_parser("list-today", help="List items to check today")
+    p.add_argument("--type", choices=TYPES, help="Filter by type")
 
-  watchlist add-routine \\
-    --name "Hetrix status" \\
-    --description "Check all server outages and status changes since last check" \\
-    --keywords "hetrix monitoring"
+    p = subparsers.add_parser("list", help="List items (grouped by area)")
+    p.add_argument("--area", help="Filter by area")
+    p.add_argument("--state", choices=STATES, help="Filter by state")
+    p.add_argument("--type", choices=TYPES, help="Filter by type")
+    p.add_argument("--all", action="store_true", help="Include done items")
+    p.add_argument("--json", action="store_true", help="JSON output")
 
-  watchlist add-routine \\
-    --name "Check example.com sites" \\
-    --description "Check example.com domain and related sites" \\
-    --keywords "example.com web server1" \\
-    --once
+    p = subparsers.add_parser("show", help="Show one item")
+    p.add_argument("id", help="Item ID")
+    p.add_argument("--json", action="store_true", help="JSON output")
 
-  watchlist add-incident \\
-    --name "server1 OOM kills" \\
-    --file "incidents/2025-10-14-oom-kill-server1-services.md" \\
-    --status monitoring \\
-    --risk MEDIUM \\
-    --description "Memory pressure on server1 - monitor for stability" \\
-    --next-action "Monitor 1 week" \\
-    --monitor-until "1 week"
+    p = subparsers.add_parser("search", help="Search across all text fields")
+    p.add_argument("query", help="Search query")
+    p.add_argument("--all", action="store_true", help="Include done items")
+    p.add_argument("--json", action="store_true", help="JSON output")
 
-  watchlist add-incident \\
-    --name "server1 database maintenance" \\
-    --file "incidents/2025-10-14-server1-database-maintenance-long-runtime.md" \\
-    --status monitoring \\
-    --risk LOW \\
-    --description "Long-running database maintenance task" \\
-    --next-action "Check 2025-10-16 morning" \\
-    --check-after "2025-10-16 morning"
+    p = subparsers.add_parser("update", help="Update last_check timestamp")
+    p.add_argument("id", help="Item ID")
+    p.add_argument("--timestamp", help="ISO timestamp (default: NOW)")
 
-  watchlist disable server1-database-maintenance-20251016
-  watchlist enable server2-memory-usage
-  watchlist remove old-incident-20251001
-    """
-
-    # list-today
-    list_today_parser = subparsers.add_parser("list-today", help="List tasks to check today")
-    list_today_parser.add_argument("--type", choices=["routine", "incident"], help="Filter by type")
-
-    # update
-    update_parser = subparsers.add_parser("update", help="Update last_check timestamp")
-    update_parser.add_argument("id", help="Item ID")
-    update_parser.add_argument("--timestamp", help="ISO timestamp (default: NOW)")
-
-    # search
-    search_parser = subparsers.add_parser("search", help="Search items by name")
-    search_parser.add_argument("query", help="Search query")
-
-    # add-routine
-    add_routine_parser = subparsers.add_parser("add-routine", help="Add routine check")
-    add_routine_parser.add_argument("--name", required=True, help="Routine name")
-    add_routine_parser.add_argument("--description", required=True, help="Job description")
-    add_routine_parser.add_argument(
-        "--keywords", help="Guide keywords (optional, defaults to name.lower())"
+    p = subparsers.add_parser("add-routine", help="Add routine check")
+    p.add_argument("--name", required=True, help="Routine name")
+    p.add_argument("--description", required=True, help="Job description")
+    p.add_argument("--keywords", help="Guide keywords (optional, defaults to name.lower())")
+    p.add_argument(
+        "--once", action="store_true", help="One-time task (marked done after first check)"
     )
-    add_routine_parser.add_argument(
-        "--check-after", dest="check_after", help='Check after: "YYYY-MM-DD [morning|afternoon]"'
-    )
-    add_routine_parser.add_argument(
-        "--monitor-until", dest="monitor_until", help='Monitor until: "X [week|day](s)"'
-    )
-    add_routine_parser.add_argument(
-        "--once", action="store_true", help="One-time task (auto-disable after first check)"
-    )
+    add_common_item_args(p, default_state="active")
 
-    # add-incident
-    add_incident_parser = subparsers.add_parser("add-incident", help="Add incident")
-    add_incident_parser.add_argument("--name", required=True, help="Incident name")
-    add_incident_parser.add_argument("--file", required=True, help="Incident file path")
-    add_incident_parser.add_argument(
-        "--status", required=True, help="Status (monitoring/blocked/resolved)"
-    )
-    add_incident_parser.add_argument(
-        "--risk", default="MEDIUM", help="Risk level (default: MEDIUM)"
-    )
-    add_incident_parser.add_argument("--description", default="", help="Job description (optional)")
-    add_incident_parser.add_argument(
-        "--next-action",
-        dest="next_action",
-        default="Monitor",
-        help="Next action (default: Monitor)",
-    )
-    add_incident_parser.add_argument(
-        "--check-after", dest="check_after", help='Check after: "YYYY-MM-DD [morning|afternoon]"'
-    )
-    add_incident_parser.add_argument(
-        "--monitor-until", dest="monitor_until", help='Monitor until: "X [week|day](s)"'
-    )
+    p = subparsers.add_parser("add-task", help="Add a task / backlog item")
+    p.add_argument("--name", required=True, help="Task name")
+    p.add_argument("--description", required=True, help="Job description")
+    p.add_argument("--keywords", help="Guide keywords (optional, defaults to name.lower())")
+    add_common_item_args(p, default_state="idle")
 
-    # remove
-    remove_parser = subparsers.add_parser("remove", help="Remove item by ID")
-    remove_parser.add_argument("id", help="Item ID")
+    p = subparsers.add_parser("add-incident", help="Add incident")
+    p.add_argument("--name", required=True, help="Incident name")
+    p.add_argument("--file", required=True, help="Incident file path")
+    p.add_argument("--status", required=True, help="Status (monitoring/blocked/resolved)")
+    p.add_argument("--risk", default="MEDIUM", help="Risk level (default: MEDIUM)")
+    p.add_argument("--description", default="", help="Job description (optional)")
+    p.add_argument("--keywords", help="Guide keywords (optional, defaults to name.lower())")
+    add_common_item_args(p, default_state="active")
 
-    # disable
-    disable_parser = subparsers.add_parser("disable", help="Disable item (set enabled=false)")
-    disable_parser.add_argument("id", help="Item ID")
+    p = subparsers.add_parser("edit", help="Edit fields of an existing item")
+    p.add_argument("id", help="Item ID")
+    p.add_argument("--name")
+    p.add_argument("--description")
+    p.add_argument("--area")
+    p.add_argument("--keywords", dest="guide_keywords")
+    p.add_argument("--blocked-on", dest="blocked_on")
+    p.add_argument("--next-action", dest="next_action")
+    p.add_argument("--status")
+    p.add_argument("--risk")
+    p.add_argument("--file")
+    p.add_argument("--state", choices=STATES)
+    p.add_argument("--refs", nargs="*", help="Replace the whole refs list")
+    p.add_argument("--add-ref", dest="add_ref", nargs="*", default=[], help="Append refs")
+    p.add_argument("--remove-ref", dest="remove_ref", nargs="*", default=[], help="Drop refs")
+    p.add_argument("--check-after", dest="check_after", help='"YYYY-MM-DD [morning|afternoon]"')
+    p.add_argument("--monitor-until", dest="monitor_until", help='"X [week|day](s)"')
 
-    # enable
-    enable_parser = subparsers.add_parser("enable", help="Enable item (set enabled=true)")
-    enable_parser.add_argument("id", help="Item ID")
+    p = subparsers.add_parser("park", help="Move item to backlog (state=idle)")
+    p.add_argument("id", help="Item ID")
+    p.add_argument("--blocked-on", dest="blocked_on", help="What this is waiting for")
+
+    p = subparsers.add_parser("activate", help="Move item into the daily check (state=active)")
+    p.add_argument("id", help="Item ID")
+    p.add_argument("--check-after", dest="check_after", help='"YYYY-MM-DD [morning|afternoon]"')
+
+    p = subparsers.add_parser("done", help="Mark item finished (state=done)")
+    p.add_argument("id", help="Item ID")
+
+    p = subparsers.add_parser("remove", help="Remove item by ID")
+    p.add_argument("id", help="Item ID")
+
+    subparsers.add_parser("migrate", help="Upgrade a v1 watchlist.json to v2 in place")
 
     args = parser.parse_args()
 
@@ -552,53 +785,76 @@ Examples:
         sys.exit(0)
 
     debug = getattr(args, "debug", False)
-    if debug:
-        print(f"[DEBUG MAIN] Debug mode enabled: {debug}")
-        print(f"[DEBUG MAIN] Command: {args.command}")
-
     filepath = resolve_watchlist_path(getattr(args, "watchlist", None))
     if not filepath.exists() and args.command not in CREATING_COMMANDS:
-        print(
-            f"ERROR: watchlist not found: {filepath}\n"
+        die(
+            f"watchlist not found: {filepath}\n"
             "Run this from the project root, or set $CCA_WATCHLIST / --watchlist. "
-            "An empty result would look like 'nothing to check today'.",
-            file=sys.stderr,
+            "An empty result would look like 'nothing to check today'."
         )
-        sys.exit(1)
 
-    watchlist = Watchlist(filepath, debug=debug)
-
-    if debug:
-        print(f"[DEBUG MAIN] Watchlist created, calling command: {args.command}")
+    watchlist = Watchlist(filepath, debug=debug, allow_legacy=(args.command == "migrate"))
 
     if args.command == "list-today":
-        items = watchlist.list_today(item_type=args.type)
-        print(json.dumps(items, indent=2))
+        print(json.dumps(watchlist.list_today(item_type=args.type), indent=2, ensure_ascii=False))
+
+    elif args.command == "list":
+        items = watchlist.list_items(
+            area=args.area, state=args.state, item_type=args.type, include_done=args.all
+        )
+        if args.json:
+            print(json.dumps(items, indent=2, ensure_ascii=False))
+        else:
+            format_list(items)
+
+    elif args.command == "show":
+        item = watchlist._find(args.id)
+        if args.json:
+            print(json.dumps(item, indent=2, ensure_ascii=False))
+        else:
+            format_items([item])
+
+    elif args.command == "search":
+        items = watchlist.search(args.query, include_done=args.all)
+        if args.json:
+            print(json.dumps(items, indent=2, ensure_ascii=False))
+        else:
+            format_list(items)
 
     elif args.command == "update":
         item = watchlist.update_timestamp(args.id, timestamp=args.timestamp)
-        print(json.dumps(item, indent=2))
-
-    elif args.command == "search":
-        items = watchlist.search(args.query)
-        print(json.dumps(items, indent=2))
+        print(json.dumps(item, indent=2, ensure_ascii=False))
 
     elif args.command == "add-routine":
-        if debug:
-            print(
-                f"[DEBUG MAIN] add-routine: name={args.name}, description={args.description}, keywords={args.keywords}"
-            )
         item = watchlist.add_routine(
             name=args.name,
             description=args.description,
             keywords=args.keywords,
+            area=args.area,
+            state=args.state,
+            refs=args.refs,
+            blocked_on=args.blocked_on,
+            next_action=args.next_action,
             check_after=args.check_after,
             monitor_until=args.monitor_until,
             once=args.once,
         )
-        if debug:
-            print("[DEBUG MAIN] add-routine completed")
-        print(json.dumps(item, indent=2))
+        print(json.dumps(item, indent=2, ensure_ascii=False))
+
+    elif args.command == "add-task":
+        item = watchlist.add_task(
+            name=args.name,
+            description=args.description,
+            area=args.area,
+            state=args.state,
+            refs=args.refs,
+            blocked_on=args.blocked_on,
+            next_action=args.next_action,
+            keywords=args.keywords,
+            check_after=args.check_after,
+            monitor_until=args.monitor_until,
+        )
+        print(json.dumps(item, indent=2, ensure_ascii=False))
 
     elif args.command == "add-incident":
         item = watchlist.add_incident(
@@ -607,23 +863,64 @@ Examples:
             status=args.status,
             risk=args.risk,
             description=args.description,
-            next_action=args.next_action,
+            area=args.area,
+            state=args.state,
+            refs=args.refs,
+            blocked_on=args.blocked_on,
+            next_action=args.next_action or "Monitor",
+            keywords=args.keywords,
             check_after=args.check_after,
             monitor_until=args.monitor_until,
         )
-        print(json.dumps(item, indent=2))
+        print(json.dumps(item, indent=2, ensure_ascii=False))
+
+    elif args.command == "edit":
+        changes: dict[str, Any] = {}
+        for field in (
+            "name",
+            "description",
+            "area",
+            "guide_keywords",
+            "blocked_on",
+            "next_action",
+            "status",
+            "risk",
+            "file",
+            "state",
+        ):
+            value = getattr(args, field, None)
+            if value is not None:
+                changes[field] = value
+        if args.refs is not None:
+            changes["refs"] = args.refs
+        check_after_iso, monitor_until_iso = watchlist._parse_schedule(
+            args.check_after, args.monitor_until
+        )
+        if check_after_iso:
+            changes["check_after"] = check_after_iso
+        if monitor_until_iso:
+            changes["monitor_until"] = monitor_until_iso
+        item = watchlist.edit(args.id, changes, add_ref=args.add_ref, remove_ref=args.remove_ref)
+        print(json.dumps(item, indent=2, ensure_ascii=False))
+
+    elif args.command == "park":
+        item = watchlist.set_state(args.id, "idle", blocked_on=args.blocked_on)
+        print(json.dumps(item, indent=2, ensure_ascii=False))
+
+    elif args.command == "activate":
+        item = watchlist.set_state(args.id, "active", check_after=args.check_after)
+        print(json.dumps(item, indent=2, ensure_ascii=False))
+
+    elif args.command == "done":
+        item = watchlist.set_state(args.id, "done")
+        print(json.dumps(item, indent=2, ensure_ascii=False))
 
     elif args.command == "remove":
         item = watchlist.remove_item(args.id)
-        print(json.dumps({"removed": item}, indent=2))
+        print(json.dumps({"removed": item}, indent=2, ensure_ascii=False))
 
-    elif args.command == "disable":
-        item = watchlist.disable_item(args.id)
-        print(json.dumps({"disabled": item}, indent=2))
-
-    elif args.command == "enable":
-        item = watchlist.enable_item(args.id)
-        print(json.dumps({"enabled": item}, indent=2))
+    elif args.command == "migrate":
+        print(json.dumps(watchlist.migrate(), indent=2, ensure_ascii=False))
 
 
 if __name__ == "__main__":

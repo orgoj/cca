@@ -20,14 +20,28 @@ Query cca-watchlist script and return raw JSON output for main session to proces
 none. If that error appears, fix the working directory — never treat an empty list as "nothing to
 check today".
 
+**States (schema v2)** — every item is `active`, `idle` or `done`:
+- `active` — takes part in the daily check, i.e. `list-today`.
+- `idle` — backlog: **never** in `list-today`, but found by `search` and `list`. Requires at
+  least one `--refs` path, because the full context belongs in an incident or guide.
+- `done` — finished; hidden unless `--all`.
+
 **Operations:**
-- `cca-watchlist list-today` - All tasks needing check today.
-- `cca-watchlist search "query"` - Search specific items.
+- `cca-watchlist list-today` - All tasks needing check today (active only).
+- `cca-watchlist list [--area X] [--state X] [--type X] [--all] [--json]` - Full register,
+  grouped by area.
+- `cca-watchlist show <id> [--json]` - One item.
+- `cca-watchlist search "query" [--json]` - Substring match across every text field, idle included.
 - `cca-watchlist update <id>` - Update timestamp.
-- `cca-watchlist disable/enable/remove <id>` - Manage items.
+- `cca-watchlist add-routine|add-task|add-incident ...` - Create an item; `add-task` defaults to
+  `idle`, the other two to `active`.
+- `cca-watchlist edit <id> --<field> <value>` - Change fields; **never hand-edit the JSON.**
+- `cca-watchlist park|activate|done <id>` - Move between states.
+- `cca-watchlist remove <id>` - Delete permanently.
+- `cca-watchlist migrate` - One-off upgrade of a v1 file (no `state`, `enabled` flag) to v2.
 
 **Time-Based Filtering:**
-- Get all items (`cca-watchlist search ""`).
+- Get all items (`cca-watchlist list --all --json`).
 - Filter JSON by `last_check` field using calculated cutoff.
 
 ### 3. Output
