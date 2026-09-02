@@ -11,7 +11,8 @@ allowed-tools: Bash(*), Read(*), Glob(*)
 
 **CRITICAL:** Topic search in CCA documentation goes through `tantivy2agents` — never Glob or grep to
 find out which guide covers a subject. (Opening a file whose exact path you already know is not
-searching: `Read` it directly.)
+searching: `Read` it directly.) An incident whose **date** you know is found by listing the
+directory (`ls incidents/ | grep YYYY-MM-DD`) — `search` matches concepts, not dates.
 
 ## Steps
 
