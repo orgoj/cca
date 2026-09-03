@@ -33,6 +33,15 @@ SCHEMA_MAJOR = 2
 CREATING_COMMANDS = {"add-routine", "add-incident", "add-task"}
 STATES = ("active", "idle", "done")
 TYPES = ("routine", "incident", "task")
+EFFORTS = ("e15", "e1h", "e4h", "exl")
+CHANGE_RISKS = ("r0", "r1", "r2", "r3")
+WINDOWS = ("wany", "woff", "wnight", "wfreeze")
+PRIORITIES = ("p1", "p2", "p3")
+EFFORT_RANK = {value: rank for rank, value in enumerate(EFFORTS)}
+CHANGE_RISK_RANK = {value: rank for rank, value in enumerate(CHANGE_RISKS)}
+WINDOW_RANK = {value: rank for rank, value in enumerate(WINDOWS)}
+PRIORITY_RANK = {value: rank for rank, value in enumerate(PRIORITIES)}
+MINIMUM_WINDOW = {"r0": "wany", "r1": "wany", "r2": "woff", "r3": "wnight"}
 
 
 def resolve_watchlist_path(explicit: str | None = None) -> Path:
@@ -259,6 +268,36 @@ class Watchlist:
                 "(the full context belongs in an incident or guide, not in the register)"
             )
 
+    @staticmethod
+    def effective_window(item: dict[str, Any]) -> str | None:
+        """Return the stricter of the operational window and the risk minimum."""
+        window = item.get("window")
+        minimum = MINIMUM_WINDOW.get(item.get("change_risk"))
+        if window is None:
+            return minimum
+        if minimum is None:
+            return window
+        return max((window, minimum), key=WINDOW_RANK.__getitem__)
+
+    def _validate_tags(self, item: dict[str, Any]) -> None:
+        for field, allowed in (
+            ("effort", EFFORTS),
+            ("change_risk", CHANGE_RISKS),
+            ("window", WINDOWS),
+            ("prio", PRIORITIES),
+        ):
+            value = item.get(field)
+            if value is not None and value not in allowed:
+                die(f"{field} must be one of {', '.join(allowed)}")
+
+        window = item.get("window")
+        minimum = MINIMUM_WINDOW.get(item.get("change_risk"))
+        if window and minimum and WINDOW_RANK[window] < WINDOW_RANK[minimum]:
+            die(
+                f"window {window} is lower than the {minimum} minimum "
+                f"for change_risk {item['change_risk']}"
+            )
+
     # -------------------------------------------------------------- queries
 
     def list_today(self, item_type: str | None = None) -> list[dict[str, Any]]:
@@ -298,6 +337,11 @@ class Watchlist:
         state: str | None = None,
         item_type: str | None = None,
         include_done: bool = False,
+        effort: str | None = None,
+        change_risk: str | None = None,
+        window: str | None = None,
+        prio: str | None = None,
+        max_change_risk: str | None = None,
     ) -> list[dict[str, Any]]:
         results = []
         for item in self.data["items"]:
@@ -309,8 +353,68 @@ class Watchlist:
                 continue
             if item_type and item.get("type") != item_type:
                 continue
+            if effort and item.get("effort") != effort:
+                continue
+            if change_risk and item.get("change_risk") != change_risk:
+                continue
+            if window and item.get("window") != window:
+                continue
+            if prio and item.get("prio") != prio:
+                continue
+            if max_change_risk and (
+                item.get("change_risk") not in CHANGE_RISK_RANK
+                or CHANGE_RISK_RANK[item["change_risk"]] > CHANGE_RISK_RANK[max_change_risk]
+            ):
+                continue
             results.append(item)
         return sorted(results, key=lambda i: (i.get("area") or "~", i.get("id", "")))
+
+    def ready_items(
+        self,
+        time_box: str,
+        window: str,
+        max_change_risk: str | None,
+        area: str | None = None,
+        include_blocked: bool = False,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Select open items whose current next action can be performed now."""
+        ready = []
+        untagged = []
+        for item in self.data["items"]:
+            if item.get("state") == "done" or (area and item.get("area", "") != area):
+                continue
+            if not include_blocked and item.get("blocked_on", ""):
+                continue
+            effort = item.get("effort")
+            if effort is None:
+                untagged.append(item)
+                continue
+            effective_window = self.effective_window(item)
+            change_risk = item.get("change_risk")
+            if (
+                effort not in EFFORT_RANK
+                or effort == "exl"
+                or EFFORT_RANK[effort] > EFFORT_RANK[time_box]
+                or effective_window not in WINDOW_RANK
+                or WINDOW_RANK[effective_window] > WINDOW_RANK[window]
+                or (
+                    max_change_risk is not None
+                    and (
+                        change_risk not in CHANGE_RISK_RANK
+                        or CHANGE_RISK_RANK[change_risk] > CHANGE_RISK_RANK[max_change_risk]
+                    )
+                )
+            ):
+                continue
+            ready.append(item)
+        ready.sort(
+            key=lambda item: (
+                PRIORITY_RANK.get(item.get("prio"), len(PRIORITY_RANK)),
+                EFFORT_RANK[item["effort"]],
+                item.get("id", ""),
+            )
+        )
+        return ready, untagged
 
     def search(self, query: str, include_done: bool = False) -> list[dict[str, Any]]:
         """Case-insensitive substring match across every text field, idle included."""
@@ -344,6 +448,7 @@ class Watchlist:
             if any(existing.get("id") == item["id"] for existing in self.data["items"]):
                 die(f"item {item['id']!r} already exists (use `edit` or pick another name)")
             self._validate_state(item)
+            self._validate_tags(item)
             self._warn_missing_refs(item.get("refs", []))
             self.data["items"].append(item)
             self._save()
@@ -364,6 +469,10 @@ class Watchlist:
         check_after: str | None,
         monitor_until: str | None,
         once: bool,
+        effort: str | None,
+        change_risk: str | None,
+        window: str | None,
+        prio: str | None,
     ) -> dict[str, Any]:
         return {
             "id": item_id,
@@ -380,6 +489,10 @@ class Watchlist:
             "check_after": check_after,
             "monitor_until": monitor_until,
             "once": once,
+            "effort": effort,
+            "change_risk": change_risk,
+            "window": window,
+            "prio": prio,
         }
 
     def add_routine(
@@ -395,6 +508,10 @@ class Watchlist:
         check_after=None,
         monitor_until=None,
         once=False,
+        effort=None,
+        change_risk=None,
+        window=None,
+        prio=None,
     ) -> dict[str, Any]:
         check_after_iso, monitor_until_iso = self._parse_schedule(check_after, monitor_until)
         item = self._base_item(
@@ -411,6 +528,10 @@ class Watchlist:
             check_after_iso,
             monitor_until_iso,
             once,
+            effort,
+            change_risk,
+            window,
+            prio,
         )
         return self._add(item)
 
@@ -426,6 +547,10 @@ class Watchlist:
         keywords=None,
         check_after=None,
         monitor_until=None,
+        effort=None,
+        change_risk=None,
+        window=None,
+        prio=None,
     ) -> dict[str, Any]:
         check_after_iso, monitor_until_iso = self._parse_schedule(check_after, monitor_until)
         item = self._base_item(
@@ -442,6 +567,10 @@ class Watchlist:
             check_after_iso,
             monitor_until_iso,
             False,
+            effort,
+            change_risk,
+            window,
+            prio,
         )
         return self._add(item)
 
@@ -460,6 +589,10 @@ class Watchlist:
         keywords=None,
         check_after=None,
         monitor_until=None,
+        effort=None,
+        change_risk=None,
+        window=None,
+        prio=None,
     ) -> dict[str, Any]:
         check_after_iso, monitor_until_iso = self._parse_schedule(check_after, monitor_until)
         date_part = datetime.now(timezone.utc).strftime("%Y%m%d")
@@ -480,6 +613,10 @@ class Watchlist:
             check_after_iso,
             monitor_until_iso,
             False,
+            effort,
+            change_risk,
+            window,
+            prio,
         )
         item["file"] = file
         item["status"] = status
@@ -512,6 +649,7 @@ class Watchlist:
             if check_after_iso:
                 item["check_after"] = check_after_iso
             self._validate_state(item)
+            self._validate_tags(item)
             self._save()
         return item
 
@@ -535,6 +673,7 @@ class Watchlist:
                 if ref in item.get("refs", []):
                     item["refs"].remove(ref)
             self._validate_state(item)
+            self._validate_tags(item)
             self._warn_missing_refs(item.get("refs", []))
             self._save()
         return item
@@ -562,6 +701,10 @@ class Watchlist:
                 if item.get("file") and item["file"] not in refs:
                     refs.insert(0, item["file"])
                 item.setdefault("once", False)
+                item.setdefault("effort", None)
+                item.setdefault("change_risk", None)
+                item.setdefault("window", None)
+                item.setdefault("prio", None)
             self.data["version"] = SCHEMA_VERSION
             self._save()
         return {"migrated": migrated, "total": len(self.data["items"]), "version": SCHEMA_VERSION}
@@ -584,7 +727,15 @@ def format_items(items: list[dict[str, Any]]):
         if item.get("description"):
             print(f"  Description: {item.get('description')}")
         if item_type == "incident":
-            print(f"  Status: {item.get('status')}   Risk: {item.get('risk')}")
+            print(f"  Status: {item.get('status')}   Incident severity: {item.get('risk')}")
+        print(
+            "  Effort: {}   Change risk: {}   Window: {}   Priority: {}".format(
+                item.get("effort"),
+                item.get("change_risk"),
+                item.get("window"),
+                item.get("prio"),
+            )
+        )
         if item.get("blocked_on"):
             print(f"  Blocked on: {item.get('blocked_on')}")
         if item.get("next_action"):
@@ -625,6 +776,24 @@ def format_list(items: list[dict[str, Any]]):
     print()
 
 
+def format_ready(items: list[dict[str, Any]], untagged_count: int):
+    for item in items:
+        print(
+            " · ".join(
+                str(value)
+                for value in (
+                    item.get("id"),
+                    item.get("prio"),
+                    item.get("effort"),
+                    item.get("change_risk"),
+                    Watchlist.effective_window(item),
+                    item.get("next_action"),
+                )
+            )
+        )
+    print(f"Untagged (effort=null): {untagged_count}")
+
+
 # -------------------------------------------------------------------- CLI
 
 
@@ -636,6 +805,10 @@ def add_common_item_args(sub, default_state: str):
         default=default_state,
         help=f"Item state (default: {default_state})",
     )
+    sub.add_argument("--effort", choices=EFFORTS)
+    sub.add_argument("--change-risk", dest="change_risk", choices=CHANGE_RISKS)
+    sub.add_argument("--window", choices=WINDOWS)
+    sub.add_argument("--prio", choices=PRIORITIES)
     sub.add_argument(
         "--refs", nargs="*", default=[], help="Paths to incident/guide with the full context"
     )
@@ -704,7 +877,20 @@ Examples:
     p.add_argument("--area", help="Filter by area")
     p.add_argument("--state", choices=STATES, help="Filter by state")
     p.add_argument("--type", choices=TYPES, help="Filter by type")
+    p.add_argument("--effort", choices=EFFORTS, help="Filter by effort")
+    p.add_argument("--change-risk", dest="change_risk", choices=CHANGE_RISKS)
+    p.add_argument("--window", choices=WINDOWS, help="Filter by stored operational window")
+    p.add_argument("--prio", choices=PRIORITIES, help="Filter by priority")
+    p.add_argument("--max-change-risk", dest="max_change_risk", choices=CHANGE_RISKS)
     p.add_argument("--all", action="store_true", help="Include done items")
+    p.add_argument("--json", action="store_true", help="JSON output")
+
+    p = subparsers.add_parser("ready", help="Select work for the available time and window")
+    p.add_argument("--time", choices=("15m", "1h", "4h"), default="1h")
+    p.add_argument("--window", choices=WINDOWS, default="wany")
+    p.add_argument("--max-change-risk", dest="max_change_risk", choices=CHANGE_RISKS)
+    p.add_argument("--area", help="Filter by area")
+    p.add_argument("--include-blocked", action="store_true")
     p.add_argument("--json", action="store_true", help="JSON output")
 
     p = subparsers.add_parser("show", help="Show one item")
@@ -754,6 +940,10 @@ Examples:
     p.add_argument("--next-action", dest="next_action")
     p.add_argument("--status")
     p.add_argument("--risk")
+    p.add_argument("--effort", choices=EFFORTS)
+    p.add_argument("--change-risk", dest="change_risk", choices=CHANGE_RISKS)
+    p.add_argument("--window", choices=WINDOWS)
+    p.add_argument("--prio", choices=PRIORITIES)
     p.add_argument("--file")
     p.add_argument("--state", choices=STATES)
     p.add_argument("--refs", nargs="*", help="Replace the whole refs list")
@@ -800,12 +990,37 @@ Examples:
 
     elif args.command == "list":
         items = watchlist.list_items(
-            area=args.area, state=args.state, item_type=args.type, include_done=args.all
+            area=args.area,
+            state=args.state,
+            item_type=args.type,
+            include_done=args.all,
+            effort=args.effort,
+            change_risk=args.change_risk,
+            window=args.window,
+            prio=args.prio,
+            max_change_risk=args.max_change_risk,
         )
         if args.json:
             print(json.dumps(items, indent=2, ensure_ascii=False))
         else:
             format_list(items)
+
+    elif args.command == "ready":
+        time_box = {"15m": "e15", "1h": "e1h", "4h": "e4h"}[args.time]
+        items, untagged = watchlist.ready_items(
+            time_box=time_box,
+            window=args.window,
+            max_change_risk=args.max_change_risk,
+            area=args.area,
+            include_blocked=args.include_blocked,
+        )
+        if args.json:
+            ready = [
+                dict(item, effective_window=watchlist.effective_window(item)) for item in items
+            ]
+            print(json.dumps({"ready": ready, "untagged": untagged}, indent=2, ensure_ascii=False))
+        else:
+            format_ready(items, len(untagged))
 
     elif args.command == "show":
         item = watchlist._find(args.id)
@@ -838,6 +1053,10 @@ Examples:
             check_after=args.check_after,
             monitor_until=args.monitor_until,
             once=args.once,
+            effort=args.effort,
+            change_risk=args.change_risk,
+            window=args.window,
+            prio=args.prio,
         )
         print(json.dumps(item, indent=2, ensure_ascii=False))
 
@@ -853,6 +1072,10 @@ Examples:
             keywords=args.keywords,
             check_after=args.check_after,
             monitor_until=args.monitor_until,
+            effort=args.effort,
+            change_risk=args.change_risk,
+            window=args.window,
+            prio=args.prio,
         )
         print(json.dumps(item, indent=2, ensure_ascii=False))
 
@@ -871,6 +1094,10 @@ Examples:
             keywords=args.keywords,
             check_after=args.check_after,
             monitor_until=args.monitor_until,
+            effort=args.effort,
+            change_risk=args.change_risk,
+            window=args.window,
+            prio=args.prio,
         )
         print(json.dumps(item, indent=2, ensure_ascii=False))
 
@@ -885,6 +1112,10 @@ Examples:
             "next_action",
             "status",
             "risk",
+            "effort",
+            "change_risk",
+            "window",
+            "prio",
             "file",
             "state",
         ):

@@ -384,3 +384,199 @@ def test_show_returns_single_item(wl):
     result = run_cli(wl, "show", "nope", expect_ok=False)
     assert result.returncode == 1
     assert "not found" in result.stderr
+
+
+def test_tag_fields_default_to_null_and_can_be_edited(wl):
+    item = run_json(wl, "add-routine", "--name", "Thing", "--description", "d")
+    assert {field: item[field] for field in ("effort", "change_risk", "window", "prio")} == {
+        "effort": None,
+        "change_risk": None,
+        "window": None,
+        "prio": None,
+    }
+
+    item = run_json(
+        wl,
+        "edit",
+        "thing",
+        "--effort",
+        "e15",
+        "--change-risk",
+        "r2",
+        "--window",
+        "woff",
+        "--prio",
+        "p1",
+    )
+    assert (item["effort"], item["change_risk"], item["window"], item["prio"]) == (
+        "e15",
+        "r2",
+        "woff",
+        "p1",
+    )
+
+
+def test_change_risk_is_separate_from_incident_severity(wl, tmp_path):
+    (tmp_path / "inc.md").write_text("i", encoding="utf-8")
+    item = run_json(
+        wl,
+        "add-incident",
+        "--name",
+        "Boom",
+        "--file",
+        "inc.md",
+        "--status",
+        "monitoring",
+        "--risk",
+        "HIGH",
+        "--change-risk",
+        "r1",
+        "--window",
+        "wany",
+    )
+    assert item["risk"] == "HIGH"
+    assert item["change_risk"] == "r1"
+    shown = run_cli(wl, "show", item["id"]).stdout
+    assert "Incident severity: HIGH" in shown
+    assert "Change risk: r1" in shown
+
+
+def test_window_below_change_risk_minimum_is_refused_on_add_and_edit(wl):
+    rejected = run_cli(
+        wl,
+        "add-routine",
+        "--name",
+        "Unsafe",
+        "--description",
+        "d",
+        "--change-risk",
+        "r3",
+        "--window",
+        "woff",
+        expect_ok=False,
+    )
+    assert "wnight minimum" in rejected.stderr
+
+    run_cli(
+        wl,
+        "add-routine",
+        "--name",
+        "Safe",
+        "--description",
+        "d",
+        "--change-risk",
+        "r1",
+        "--window",
+        "wany",
+    )
+    before = wl.read_text(encoding="utf-8")
+    rejected = run_cli(wl, "edit", "safe", "--change-risk", "r2", expect_ok=False)
+    assert "woff minimum" in rejected.stderr
+    assert wl.read_text(encoding="utf-8") == before
+
+
+def test_list_filters_by_all_tags_and_max_change_risk(wl):
+    for name, risk, window in (("Low", "r0", "wany"), ("High", "r2", "woff")):
+        run_cli(
+            wl,
+            "add-routine",
+            "--name",
+            name,
+            "--description",
+            "d",
+            "--effort",
+            "e15",
+            "--change-risk",
+            risk,
+            "--window",
+            window,
+            "--prio",
+            "p2",
+        )
+    assert [item["id"] for item in run_json(wl, "list", "--change-risk", "r2", "--json")] == [
+        "high"
+    ]
+    assert [item["id"] for item in run_json(wl, "list", "--max-change-risk", "r1", "--json")] == [
+        "low"
+    ]
+    matching = run_json(wl, "list", "--effort", "e15", "--window", "wany", "--prio", "p2", "--json")
+    assert len(matching) == 1
+
+
+def test_ready_filters_sorts_and_reports_untagged(wl):
+    def add(name, effort=None, risk="r0", window="wany", prio="p3", blocked=False):
+        args = [
+            "add-routine",
+            "--name",
+            name,
+            "--description",
+            "d",
+            "--next-action",
+            f"Do {name}",
+            "--change-risk",
+            risk,
+            "--window",
+            window,
+            "--prio",
+            prio,
+        ]
+        if effort:
+            args.extend(("--effort", effort))
+        if blocked:
+            args.extend(("--blocked-on", "user approval"))
+        run_cli(wl, *args)
+
+    add("Second", "e15", prio="p2")
+    add("First", "e1h", prio="p1")
+    add("Too long", "e4h", prio="p1")
+    add("Night only", "e15", risk="r3", window="wnight", prio="p1")
+    add("Blocked", "e15", prio="p1", blocked=True)
+    add("Unknown")
+    run_cli(wl, "done", "second")
+    add("Second open", "e15", prio="p2")
+
+    result = run_json(wl, "ready", "--time", "1h", "--window", "woff", "--json")
+    assert [item["id"] for item in result["ready"]] == ["first", "second-open"]
+    assert result["ready"][0]["effective_window"] == "wany"
+    assert [item["id"] for item in result["untagged"]] == ["unknown"]
+
+    with_blocked = run_json(
+        wl,
+        "ready",
+        "--time",
+        "15m",
+        "--window",
+        "wany",
+        "--include-blocked",
+        "--max-change-risk",
+        "r0",
+        "--json",
+    )
+    assert [item["id"] for item in with_blocked["ready"]] == ["blocked", "second-open"]
+    plain = run_cli(wl, "ready", "--time", "15m", "--window", "wany").stdout
+    assert "second-open · p2 · e15 · r0 · wany · Do Second open" in plain
+    assert "Untagged (effort=null): 1" in plain
+
+
+def test_ready_uses_change_risk_minimum_when_window_is_unset(wl):
+    run_cli(
+        wl,
+        "add-routine",
+        "--name",
+        "Shared change",
+        "--description",
+        "d",
+        "--next-action",
+        "Apply shared config",
+        "--effort",
+        "e15",
+        "--change-risk",
+        "r2",
+        "--prio",
+        "p2",
+    )
+    assert run_json(wl, "ready", "--time", "15m", "--window", "wany", "--json")["ready"] == []
+    ready = run_json(wl, "ready", "--time", "15m", "--window", "woff", "--json")["ready"]
+    assert ready[0]["id"] == "shared-change"
+    assert ready[0]["window"] is None
+    assert ready[0]["effective_window"] == "woff"
