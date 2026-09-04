@@ -67,7 +67,7 @@ installation; a live check beats the doc.
 
 Every research output must include:
 1. **Clear Scope**
-2. **Source Attribution** - link + date accessed for every claim
+2. **Source Attribution & Baseline Date** - link + exact date accessed/reviewed. For evolving repos/standards include incremental query hint (e.g. GitHub commit diff since date).
 3. **Relevance Assessment** - does the source answer *this* question, or only the general case?
 4. **Evidence status** - `overeno` (source given) or `neovereno` (what is missing). Never a
    percentage or a confidence score: there is no mechanism computing one, so it would be invented.
