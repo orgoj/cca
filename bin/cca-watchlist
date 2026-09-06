@@ -324,14 +324,6 @@ class Watchlist:
             if value is not None and value not in allowed:
                 die(f"{field} must be one of {', '.join(allowed)}")
 
-        window = item.get("window")
-        minimum = MINIMUM_WINDOW.get(item.get("change_risk"))
-        if window and minimum and WINDOW_RANK[window] < WINDOW_RANK[minimum]:
-            die(
-                f"window {window} is lower than the {minimum} minimum "
-                f"for change_risk {item['change_risk']}"
-            )
-
     # -------------------------------------------------------------- queries
 
     def list_today(self, item_type: str | None = None) -> list[dict[str, Any]]:
@@ -482,8 +474,8 @@ class Watchlist:
             if any(existing.get("id") == item["id"] for existing in self.data["items"]):
                 die(f"item {item['id']!r} already exists (use `edit` or pick another name)")
             self._validate_state(item)
-            self._lift_window_to_minimum(item)
             self._validate_tags(item)
+            self._lift_window_to_minimum(item)
             self._warn_missing_refs(item.get("refs", []))
             self.data["items"].append(item)
             self._save()
@@ -685,6 +677,7 @@ class Watchlist:
                 item["check_after"] = check_after_iso
             self._validate_state(item)
             self._validate_tags(item)
+            self._lift_window_to_minimum(item)
             self._save()
         return item
 
@@ -709,6 +702,7 @@ class Watchlist:
                     item["refs"].remove(ref)
             self._validate_state(item)
             self._validate_tags(item)
+            self._lift_window_to_minimum(item)
             self._warn_missing_refs(item.get("refs", []))
             self._save()
         return item

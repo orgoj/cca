@@ -520,7 +520,7 @@ def test_window_below_change_risk_minimum_is_raised_on_add_task_and_incident(wl)
     assert json.loads(incident.stdout)["window"] == "wnight"
 
 
-def test_window_below_change_risk_minimum_is_refused_on_edit(wl):
+def test_window_below_change_risk_minimum_is_raised_on_edit_and_set_state(wl):
     run_cli(
         wl,
         "add-routine",
@@ -533,10 +533,23 @@ def test_window_below_change_risk_minimum_is_refused_on_edit(wl):
         "--window",
         "wany",
     )
-    before = wl.read_text(encoding="utf-8")
-    rejected = run_cli(wl, "edit", "safe", "--change-risk", "r2", expect_ok=False)
-    assert "woff minimum" in rejected.stderr
-    assert wl.read_text(encoding="utf-8") == before
+    edited = run_cli(wl, "edit", "safe", "--change-risk", "r2")
+    assert "wany raised to woff" in edited.stderr
+    assert json.loads(edited.stdout)["window"] == "woff"
+    assert run_json(wl, "show", "safe", "--json")["window"] == "woff"
+
+    # a window lowered below the stored risk is raised back on the next edit
+    edited = run_cli(wl, "edit", "safe", "--window", "wany")
+    assert "wany raised to woff" in edited.stderr
+    assert json.loads(edited.stdout)["window"] == "woff"
+
+    # a state change re-checks an item whose stored tags already violate the minimum
+    stored = json.loads(wl.read_text(encoding="utf-8"))
+    stored["items"][0]["window"] = "wany"
+    wl.write_text(json.dumps(stored), encoding="utf-8")
+    activated = run_cli(wl, "activate", "safe")
+    assert "wany raised to woff" in activated.stderr
+    assert json.loads(activated.stdout)["window"] == "woff"
 
 
 def test_list_filters_by_all_tags_and_max_change_risk(wl):
