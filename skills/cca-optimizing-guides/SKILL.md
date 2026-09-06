@@ -90,9 +90,15 @@ zůstávají jako immutable záznam — **archivuj, nikdy nemaž**.
 - Archivuj přes `git mv` do `<incidents>/archive/YYYY/` (rok dle data incidentu). NEpřesouvej ručně.
 - Archiv se **vyřadí z aktivního tantivy indexu** (viz Setup níže) — historie zůstává v gitu i na disku.
 - Než cokoli archivuješ, **pattern musí být v playbooku** — jinak by se znalost ztratila.
+- **Každý archivovaný incident musí mít alespoň jeden odkaz z aktivního souboru** (head incidentu
+  nebo tematického guide). Archiv není v aktivním indexu, takže incident bez odkazu je neviditelný.
+  Samostatný incident bez odkazu nearchivuj, nebo na něj nejdřív odkaž z tematického guide.
+- **Jeden cluster = právě jeden aktivní head.** Všichni ostatní členové clusteru musí být archivovaní;
+  konsolidace není dokončená, pokud v aktivním `<incidents>/` zůstanou dva členové stejného clusteru.
 - **Křížové odkazy NEŘEŠ — nejsou překážka.** Incident má jedinečné jméno s datem
   (`YYYY-MM-DD-...md`), které se archivací NEMĚNÍ — mění se jen složka. Odkaz na archivovaný incident
   zůstává platný: když ho nenajdeš v `incidents/`, je v `incidents/archive/YYYY/` pod stejným jménem.
+  Odkazy proto piš jen jako jméno souboru a při archivaci je v jiných souborech NEPŘEPISUJ.
   Proto **NEvyřazuj incidenty z archivace jen proto, že na ně něco odkazuje** (to bylo zbytečné omezení).
   Resolver konvenci popiš/over v `cca-searching` (viz tam).
 
@@ -101,16 +107,17 @@ zůstávají jako immutable záznam — **archivuj, nikdy nemaž**.
    search` na víc formulací, frontmatter `tags:`, klíčová slova v názvu. Sestav úplný seznam výskytů
    seřazený podle data (od nejstaršího). Cluster = ≥2 incidenty se stejnou root cause.
 2. **Vyber „head" = nejnovější incident clusteru** (zůstane aktivní, nearchivuje se). Ostatní (starší)
-   jsou kandidáti na archiv.
+   jsou určení k archivaci.
 3. **Do head incidentu přidej řetěz referencí** — sekce `## Předchozí výskyty` (nebo doplň existující
-   „Related incidents") se seznamem VŠECH starších výskytů, od nejnovějšího:
+   „Related incidents") se seznamem VŠECH starších výskytů, od nejnovějšího. Reference piš VŽDY jen
+   jako jméno souboru (`YYYY-MM-DD-nazev.md`), NIKDY s prefixem `archive/YYYY/` ani `cca/incidents/`:
    ```markdown
    ## Předchozí výskyty (stejný problém)
-   - 2026-04-17 — server1-outage-scraper-shop-a.md — botnet z ASN X, blok /22
-   - 2026-03-27 — server1-outages-scraper-shop-b.md — ASN Y, blok net_range
-   - 2025-10-03 — archive/2025/dc-scraper-attack-server1.md — první výskyt
+   - 2026-04-17 — 2026-04-17-server1-outage-scraper-shop-a.md — botnet z ASN X, blok /22
+   - 2026-03-27 — 2026-03-27-server1-outages-scraper-shop-b.md — ASN Y, blok net_range
+   - 2025-10-03 — 2025-10-03-dc-scraper-attack-server1.md — první výskyt
    ```
-   Uveď cestu vč. `archive/YYYY/` u už archivovaných. Tím je celá historie proklikatelná z jednoho místa.
+   Tím je celá historie proklikatelná z jednoho místa bez ohledu na to, zda krok archivace proběhne.
 4. **Slož znalost do guides — POVINNÝ výstup konsolidace, ne jen kontrola.** Konsolidace typicky
    guides MĚNÍ; archivace je bezpečná teprve, když je znalost zapsaná:
    - **Playbook** (`*-outage-patterns`, `*-troubleshooting`): symptom→příčina→řešení každého clusteru.
@@ -126,10 +133,13 @@ zůstávají jako immutable záznam — **archivuj, nikdy nemaž**.
    které guides se změnily a jak (playbook řádky + tematické doplňky). **Čekej na souhlas**
    (hromadná operace).
 6. **Archivuj starší členy** — `git mv <incident> <incidents>/archive/YYYY/`. Head zůstává aktivní a
-   odkazuje na ně. Velmi čerstvé výskyty (< ~3 měsíce) můžeš nechat aktivní i tak — neztratí se, head
-   na ně ukazuje. Křížové odkazy NEŘEŠ jako překážku (viz Pravidla).
+   odkazuje na ně. Křížové odkazy NEŘEŠ jako překážku (viz Pravidla).
 7. **Reindex** — `tantivy2agents index` po přesunech. (Výjimka z pravidla „index ručně nespouštět":
    `git mv` jde přes Bash, edit-hook `PostToolUse` na Edit|Write se nespustí, index by zůstal stale.)
+8. **Ověření** — porovnej seznam přesunutých souborů s odkazy ze všech aktivních head incidentů a
+   guides: každý archivovaný incident musí mít alespoň jeden aktivní odkaz. Ověř také, že v aktivním
+   `<incidents>/` zůstal pro každý konsolidovaný cluster právě jeden head a že žádný odkaz neobsahuje
+   `archive/YYYY/` ani `cca/incidents/`; odkazy musí používat jen jméno souboru.
 
 ### Setup: vyřadit archiv z indexu (jednorázově)
 V `.tantivy2agents.json` přidej do `index_dirs`:
