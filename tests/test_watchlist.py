@@ -466,8 +466,8 @@ def test_change_risk_is_separate_from_incident_severity(wl, tmp_path):
     assert "Change risk: r1" in shown
 
 
-def test_window_below_change_risk_minimum_is_refused_on_add_and_edit(wl):
-    rejected = run_cli(
+def test_window_below_change_risk_minimum_is_raised_on_add(wl):
+    added = run_cli(
         wl,
         "add-routine",
         "--name",
@@ -478,10 +478,49 @@ def test_window_below_change_risk_minimum_is_refused_on_add_and_edit(wl):
         "r3",
         "--window",
         "woff",
-        expect_ok=False,
     )
-    assert "wnight minimum" in rejected.stderr
+    assert "woff raised to wnight" in added.stderr
+    assert json.loads(added.stdout)["window"] == "wnight"
+    assert run_json(wl, "show", "unsafe", "--json")["window"] == "wnight"
 
+
+def test_window_below_change_risk_minimum_is_raised_on_add_task_and_incident(wl):
+    task = run_cli(
+        wl,
+        "add-task",
+        "--name",
+        "Risky task",
+        "--description",
+        "d",
+        "--state",
+        "active",
+        "--change-risk",
+        "r2",
+        "--window",
+        "wany",
+    )
+    assert "wany raised to woff" in task.stderr
+    assert json.loads(task.stdout)["window"] == "woff"
+
+    incident = run_cli(
+        wl,
+        "add-incident",
+        "--name",
+        "Risky incident",
+        "--file",
+        "incidents/2026-01-01-x.md",
+        "--status",
+        "monitoring",
+        "--change-risk",
+        "r3",
+        "--window",
+        "wany",
+    )
+    assert "wany raised to wnight" in incident.stderr
+    assert json.loads(incident.stdout)["window"] == "wnight"
+
+
+def test_window_below_change_risk_minimum_is_refused_on_edit(wl):
     run_cli(
         wl,
         "add-routine",

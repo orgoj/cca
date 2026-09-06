@@ -300,6 +300,19 @@ class Watchlist:
             return window
         return max((window, minimum), key=WINDOW_RANK.__getitem__)
 
+    @staticmethod
+    def _lift_window_to_minimum(item: dict[str, Any]) -> None:
+        """Raise an explicit window to the change_risk minimum instead of refusing it."""
+        window = item.get("window")
+        minimum = MINIMUM_WINDOW.get(item.get("change_risk"))
+        if window and minimum and WINDOW_RANK[window] < WINDOW_RANK[minimum]:
+            item["window"] = minimum
+            print(
+                f"NOTE: window {window} raised to {minimum}, the minimum "
+                f"for change_risk {item['change_risk']}",
+                file=sys.stderr,
+            )
+
     def _validate_tags(self, item: dict[str, Any]) -> None:
         for field, allowed in (
             ("effort", EFFORTS),
@@ -469,6 +482,7 @@ class Watchlist:
             if any(existing.get("id") == item["id"] for existing in self.data["items"]):
                 die(f"item {item['id']!r} already exists (use `edit` or pick another name)")
             self._validate_state(item)
+            self._lift_window_to_minimum(item)
             self._validate_tags(item)
             self._warn_missing_refs(item.get("refs", []))
             self.data["items"].append(item)
