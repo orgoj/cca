@@ -339,6 +339,31 @@ def test_missing_ref_warns_but_succeeds(wl):
     assert "WARNING: ref not found" in result.stderr
 
 
+@pytest.mark.parametrize(
+    "location",
+    ["incidents", "deniky", "incidents/archive/2026", "guides", "guides/servers"],
+)
+def test_bare_ref_found_in_standard_locations(wl, location):
+    """A ref given as a bare filename is resolved in incidents/, deniky/,
+    the incident archive and guides/ — not only repo-relative."""
+    target = wl.parent / location
+    target.mkdir(parents=True, exist_ok=True)
+    (target / "2026-09-06-thing.md").write_text("x", encoding="utf-8")
+    result = run_cli(
+        wl, "add-task", "--name", "Bare", "--description", "d",
+        "--refs", "2026-09-06-thing.md",
+    )
+    assert "WARNING: ref not found" not in result.stderr
+
+
+def test_bare_ref_missing_everywhere_still_warns(wl):
+    (wl.parent / "incidents").mkdir()
+    result = run_cli(
+        wl, "add-task", "--name", "Nowhere", "--description", "d", "--refs", "nothing.md"
+    )
+    assert "WARNING: ref not found" in result.stderr
+
+
 def test_failed_write_leaves_original_intact(wl, monkeypatch):
     """A crash mid-save must not truncate the register."""
     before = wl.read_text(encoding="utf-8")

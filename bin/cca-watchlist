@@ -252,10 +252,31 @@ class Watchlist:
         parent = self.filepath.parent
         return parent.parent if parent.name == "cca" else parent
 
+    def _ref_search_bases(self) -> list[Path]:
+        """Directories holding incidents/, guides/ and deniky/."""
+        parent = self.filepath.parent
+        bases = [parent]
+        if parent.name != "cca" and (parent / "cca").is_dir():
+            bases.append(parent / "cca")
+        return bases
+
+    def _ref_exists(self, ref: str) -> bool:
+        """A ref with a path is repo-relative; a bare filename is looked up
+        in the standard locations, so incidents can be referenced by name only."""
+        if "/" in ref:
+            return (self._project_root() / ref).exists()
+        for base in self._ref_search_bases():
+            if (base / "incidents" / ref).exists() or (base / "deniky" / ref).exists():
+                return True
+            if any(base.glob(f"incidents/archive/*/{ref}")):
+                return True
+            if any(base.glob(f"guides/**/{ref}")):
+                return True
+        return False
+
     def _warn_missing_refs(self, refs: list[str]) -> None:
-        root = self._project_root()
         for ref in refs:
-            if not (root / ref).exists():
+            if not self._ref_exists(ref):
                 print(f"WARNING: ref not found on disk: {ref}", file=sys.stderr)
 
     def _validate_state(self, item: dict[str, Any]) -> None:

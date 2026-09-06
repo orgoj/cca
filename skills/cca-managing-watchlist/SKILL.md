@@ -23,7 +23,9 @@ check today".
 **States (schema v2)** — every item is `active`, `idle` or `done`:
 - `active` — takes part in the daily check, i.e. `list-today`.
 - `idle` — backlog: **never** in `list-today`, but found by `search` and `list`. Requires at
-  least one `--refs` path, because the full context belongs in an incident or guide.
+  least one `--refs` entry, because the full context belongs in an incident or guide.
+  A bare filename (`2026-01-15-thing.md`) is looked up in `incidents/`, `incidents/archive/*/`,
+  `deniky/` and `guides/`; an entry containing `/` is resolved relative to the project root.
 - `done` — finished; hidden unless `--all`.
 
 **Operations:**
