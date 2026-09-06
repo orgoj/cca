@@ -92,6 +92,7 @@ zůstávají jako immutable záznam — **archivuj, nikdy nemaž**.
 - Než cokoli archivuješ, **pattern musí být v playbooku** — jinak by se znalost ztratila.
 - **Každý archivovaný incident musí mít alespoň jeden odkaz z aktivního souboru** (head incidentu
   nebo tematického guide). Archiv není v aktivním indexu, takže incident bez odkazu je neviditelný.
+  Odkaz z jiného archivovaného souboru tento invariant nesplňuje; počítá se jen aktivní head nebo guide.
   Samostatný incident bez odkazu nearchivuj, nebo na něj nejdřív odkaž z tematického guide.
 - **Jeden cluster = právě jeden aktivní head.** Všichni ostatní členové clusteru musí být archivovaní;
   konsolidace není dokončená, pokud v aktivním `<incidents>/` zůstanou dva členové stejného clusteru.
@@ -132,12 +133,15 @@ zůstávají jako immutable záznam — **archivuj, nikdy nemaž**.
 5. **Report + souhlas** — ukaž: head incident, řetěz referencí, které starší incidenty se archivují,
    které guides se změnily a jak (playbook řádky + tematické doplňky). **Čekej na souhlas**
    (hromadná operace).
-6. **Archivuj starší členy** — `git mv <incident> <incidents>/archive/YYYY/`. Head zůstává aktivní a
-   odkazuje na ně. Křížové odkazy NEŘEŠ jako překážku (viz Pravidla).
+6. **Archivuj starší členy** — před přesunem zkontroluj, zda některý archivovaný člen sám nese řetěz
+   odkazů na starší výskyty; všechny tyto položky nejdřív přenes do řetězu aktivního headu clusteru.
+   Teprve potom použij `git mv <incident> <incidents>/archive/YYYY/`. Head zůstává aktivní a odkazuje
+   na ně. Křížové odkazy NEŘEŠ jako překážku (viz Pravidla).
 7. **Reindex** — `tantivy2agents index` po přesunech. (Výjimka z pravidla „index ručně nespouštět":
    `git mv` jde přes Bash, edit-hook `PostToolUse` na Edit|Write se nespustí, index by zůstal stale.)
-8. **Ověření** — porovnej seznam přesunutých souborů s odkazy ze všech aktivních head incidentů a
-   guides: každý archivovaný incident musí mít alespoň jeden aktivní odkaz. Ověř také, že v aktivním
+8. **Ověření** — spusť až po všech přesunech celé schválené dávky, ne po jednotlivých přesunech.
+   Porovnej seznam přesunutých souborů s odkazy ze všech aktivních head incidentů a guides: každý
+   archivovaný incident musí mít alespoň jeden aktivní odkaz. Ověř také, že v aktivním
    `<incidents>/` zůstal pro každý konsolidovaný cluster právě jeden head a že žádný odkaz neobsahuje
    `archive/YYYY/` ani `cca/incidents/`; odkazy musí používat jen jméno souboru.
 
