@@ -75,7 +75,7 @@ Run: cca-tmux-cli --robot-init"
     fi
 
     cat <<EOF
-cca-tmux-cli v1.9.0 - Run commands in visible SSH sessions via tmux
+cca-tmux-cli v$VERSION - Run commands in visible SSH sessions via tmux
 
 WHAT THIS TOOL DOES:
   Executes commands on remote servers through tmux SSH windows.
@@ -657,6 +657,7 @@ run)
     # Wait for command to complete with polling for END marker
     elapsed=0
     timeout_reached=false
+    command_finished=false
     while [[ "$elapsed" -lt "$run_max_timeout" ]]; do
         sleep "$run_poll_interval"
         elapsed=$((elapsed + run_poll_interval))
@@ -664,12 +665,13 @@ run)
         # Check current screen for END marker at beginning of line
         current_screen=$(tmux capture-pane "${target_window_param[@]}" -p)
         if echo "$current_screen" | grep -qE "^=== END $marker (EXITCODE=|INTERRUPTED|TERMINATED|HANGUP|KILLED)" >/dev/null 2>&1; then
+            command_finished=true
             break
         fi
     done
 
     # Check if timeout was reached
-    if [[ "$elapsed" -ge "$run_max_timeout" ]]; then
+    if [[ "$command_finished" == "false" ]]; then
         timeout_reached=true
     fi
 

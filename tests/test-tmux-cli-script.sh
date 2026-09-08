@@ -166,6 +166,11 @@ exit 23
 REMOTE
 assert_status "ordinary nonzero status propagated" 23
 
+run_cli run --timeout 1 --script <<'REMOTE'
+exit 23
+REMOTE
+assert_status "completion at first poll beats timeout" 23
+
 run_cli run --script <<'REMOTE'
 command_that_does_not_exist_for_cca_test
 REMOTE
@@ -204,6 +209,13 @@ if [[ "$help_output" == *"run --script <<'REMOTE'"* ]] &&
     pass "help documents direct quoted heredoc"
 else
     fail "help documents direct quoted heredoc"
+fi
+
+version_output=$(cd "$TEST_TMP" && "$CLI" --version)
+if [[ "$help_output" == *"cca-tmux-cli v$version_output "* ]]; then
+    pass "help and version output stay synchronized"
+else
+    fail "help and version output stay synchronized"
 fi
 
 robot_help_output=$(cd "$TEST_TMP" && "$CLI" --robot-help)

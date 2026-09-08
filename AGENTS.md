@@ -17,6 +17,7 @@ tests/         # Test scripts (bash + python)
 | `./bin/cca-install bin ~/bin` | Symlink bin scripts to ~/bin |
 | `./bin/cca-install skills` | Symlink skills to .claude/skills |
 | `bash tests/test-command-safety.sh` | Test command safety validation |
+| `bash tests/test-tmux-cli-script.sh` | Test literal multiline script execution with fake tmux |
 | `bash tests/test-signal-handling.sh` | Test signal handling |
 | `python3 tests/test_watchlist.py` | Test watchlist functionality |
 | `bash tests/test-shared-clean.sh` | Check repo has no project-specific names (run from project dir) |
