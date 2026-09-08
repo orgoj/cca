@@ -25,8 +25,10 @@ nevymysli** — zeptej se usera.
 - **Lokalni kopie/DB pred zivym ctenim na serveru.** Ma-li projekt lokalni log pipeline
   (fetch/import), NEspoustej ji automaticky — data uz byvaji lokalne; obnovu jen kdyz user rekne,
   data chybi, nebo je cerstvy incident.
-- **Hotove analyza skripty projektu PRED rucnim SQL/grep** — a jejich vystup NIKDY nekratit
-  `head`/`tail` (okna a top-N jsou navrzena k celkovemu cteni).
+- **Hotove analyza skripty projektu PRED rucnim SQL/grep** — na agregaci (kolik, kde, kdo nejvic).
+  Jejich vystup NIKDY nekratit `head`/`tail`.
+- ⛔ **Trasovani JEDNE zname entity** (URL, request id, IP) ve znamem case agregacni skript neresi
+  — hledej ty konkretni radky primo v logu.
 - **Format a timezone logu NIKDY nepredpokladej** — over v guide; per-server rozdily
   (UTC vs lokalni cas, jina jmena sloupcu/poli) jsou bezne a spatny prepocet = spatny zaver.
 - **Zivy log na serveru cti cilene** (`grep -c`, `grep ... | tail -10`), zadny `tail -100`
