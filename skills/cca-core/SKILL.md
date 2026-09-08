@@ -16,6 +16,7 @@ CCA is a universal system for server management, incident resolution, and knowle
 Used for real-time diagnostics and troubleshooting via persistent tmux sessions.
 - `cca-tmux-cli list` - List available servers
 - `cca-tmux-cli -t <SERVER> run "<COMMAND>"` - Execute command, returns output directly
+- `cca-tmux-cli -t <SERVER> run --script <<'REMOTE'` - Execute a literal multiline Bash script from stdin
 - `cca-tmux-cli -t <SERVER> read` - Recover terminal state after an earlier ambiguous/unfinished `run`
 
 **⚠️ CRITICAL SYNTAX RULES:**
@@ -31,31 +32,32 @@ Used for real-time diagnostics and troubleshooting via persistent tmux sessions.
 - **One command per target at a time, and `read` only to recover an ambiguous earlier `run`** —
   full rule in the `cca-tmux-cli` skill (*When to use `read`*).
 
-#### Multi-line `run` with `cat <<'EOF'`
+#### Multiline `run --script`
+
+Use a directly attached heredoc with a quoted delimiter. This is the only supported multiline form;
+the quoted delimiter prevents local shell expansion of the script contents.
+
 ```bash
-cca-tmux-cli -t server1 run "$(cat <<'EOF'
+cca-tmux-cli -t server1 run --script <<'REMOTE'
 cd /opt/app/repo
 git pull --ff-only
-EOF
-)"
+REMOTE
 ```
 ```bash
-cca-tmux-cli -t server1 run "$(cat <<'EOF'
+cca-tmux-cli -t server1 run --script <<'REMOTE'
 if [ -d /opt/app/repo ]; then
   docker ps --format '{{.Names}} {{.Status}}' | grep myapp
 else
   echo "missing /opt/app/repo"
 fi
-EOF
-)"
+REMOTE
 ```
 ```bash
-cca-tmux-cli -t server1 run "$(cat <<'EOF'
+cca-tmux-cli -t server1 run --script <<'REMOTE'
 python3 - <<'PY'
 print("ok")
 PY
-EOF
-)"
+REMOTE
 ```
 
 ### Git Workflow for Server Files

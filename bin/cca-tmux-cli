@@ -3,7 +3,7 @@
 set -e
 
 # Version
-VERSION="1.8.0"
+VERSION="1.9.0"
 
 # Configuration
 LOG_DIR="logs"
@@ -75,7 +75,7 @@ Run: cca-tmux-cli --robot-init"
     fi
 
     cat <<EOF
-cca-tmux-cli v1.8.0 - Run commands in visible SSH sessions via tmux
+cca-tmux-cli v1.9.0 - Run commands in visible SSH sessions via tmux
 
 WHAT THIS TOOL DOES:
   Executes commands on remote servers through tmux SSH windows.
@@ -86,9 +86,18 @@ USAGE:
 
 SUBCOMMANDS:
   list              List active server windows
-  run "command"     Execute command (visible in tmux session)
+  run "command"     Execute a shell command (visible in tmux session)
+  run --script      Execute a literal multiline Bash script from stdin
   read              Read screen output from tmux
   session <srv>     Create SSH windows for servers
+
+RUN OPTIONS:
+  --timeout seconds   Maximum wait time (default: 300)
+  --interval seconds  Poll interval (default: 2)
+  --script             Read the remote Bash program literally from stdin
+
+  Options must appear before --script. Use a directly attached heredoc with a
+  quoted delimiter; this is the only supported multiline command form.
 
 GLOBAL OPTIONS:
   -t server         Target specific server
@@ -99,6 +108,10 @@ GLOBAL OPTIONS:
 EXAMPLES:
   cca-tmux-cli list                      Show active servers
   cca-tmux-cli -t server1 run "uptime"   Run command on server
+  cca-tmux-cli -t server1 run --script <<'REMOTE'
+printf 'two lines\n'
+printf 'from one script\n'
+REMOTE
   cca-tmux-cli -t server1 read           Read screen output
 
 ENVIRONMENT:
@@ -230,6 +243,16 @@ cca-tmux-cli list
 
 # Run command on server (visible to user)
 cca-tmux-cli -t server1 run "uptime"
+
+# Run a multiline Bash script literally (the heredoc delimiter must be quoted)
+# This directly attached quoted heredoc is the only supported multiline form.
+# Put --timeout or --interval before --script when needed.
+cca-tmux-cli -t server1 run --script <<'REMOTE'
+python3 - <<'PY'
+print("line 1")
+print("line 2")
+PY
+REMOTE
 
 # Read current screen output
 cca-tmux-cli -t server1 read
@@ -574,6 +597,8 @@ run)
     run_poll_interval=2 # Must be integer - bash arithmetic doesn't support decimals
     run_max_timeout=300
     run_command=""
+    run_command_seen=false
+    run_script=false
 
     # Parse run arguments
     while [ $# -gt 0 ]; do
@@ -586,12 +611,26 @@ run)
             run_max_timeout="$2"
             shift 2
             ;;
+        --script)
+            if [ "$run_script" = true ] || [ "$run_command_seen" = true ] || [ $# -ne 1 ]; then
+                echo "Error: --script cannot be combined with a command or arguments" >&2
+                usage >&2
+                exit 64
+            fi
+            run_script=true
+            shift
+            ;;
         *)
             run_command="$1"
+            run_command_seen=true
             shift
             ;;
         esac
     done
+
+    if [ "$run_script" = true ]; then
+        IFS= read -r -d '' run_command || true
+    fi
 
     # Check if command was provided
     if [ -z "$run_command" ]; then
