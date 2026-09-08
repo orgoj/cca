@@ -246,7 +246,6 @@ cca-tmux-cli -t server1 run "uptime"
 
 # Run a multiline Bash script literally (the heredoc delimiter must be quoted)
 # This directly attached quoted heredoc is the only supported multiline form.
-# Put --timeout or --interval before --script when needed.
 cca-tmux-cli -t server1 run --script <<'REMOTE'
 python3 - <<'PY'
 print("line 1")
