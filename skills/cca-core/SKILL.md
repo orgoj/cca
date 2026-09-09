@@ -1,6 +1,6 @@
 ---
 name: cca-core
-description: CCA (Cyber-CLI Admin) Core - MANDATORY entry point for ANY work on servers. Read this before running any command on any server. Covers cca-tmux-cli syntax, git workflow for server files, safety rules, and core workflows.
+description: CCA (Cyber-CLI Admin) Core - MANDATORY entry point for ANY work on servers. Read this before running any command on any server. Covers cca-tmux-cli syntax, command execution, safety rules, and core workflows.
 allowed-tools: Bash(*), Read(*), Glob(*), Grep(*)
 ---
 
@@ -39,50 +39,10 @@ the quoted delimiter prevents local shell expansion of the script contents.
 
 ```bash
 cca-tmux-cli -t server1 run --script <<'REMOTE'
-cd /opt/app/repo
-git merge --ff-only origin/master
+cd /opt/app
+ls -la
+docker ps --format '{{.Names}} {{.Status}}'
 REMOTE
-```
-```bash
-cca-tmux-cli -t server1 run --script <<'REMOTE'
-if [ -d /opt/app/repo ]; then
-  docker ps --format '{{.Names}} {{.Status}}' | grep myapp
-else
-  echo "missing /opt/app/repo"
-fi
-REMOTE
-```
-```bash
-cca-tmux-cli -t server1 run --script <<'REMOTE'
-python3 - <<'PY'
-print("ok")
-PY
-REMOTE
-```
-
-### Git Workflow for Server Files
-
-Some server files (e.g. a proxy config repo under `/opt/...`) are git-versioned **on the server itself**.
-Which paths, and how changes get applied (test/reload scripts), is defined in the PROJECT guides —
-always look it up there first. **MANDATORY** — edit + diff must happen in ONE command:
-
-Never run `git pull` on a server. The deploying person or agent handles fetch separately; the server
-only fast-forwards the already fetched state with `git merge --ff-only origin/master`.
-
-```bash
-# 1. Before edit: check state
-cca-tmux-cli -t server1 run "cd /opt/app/config-repo && git status && git diff --stat"
-# If dirty → stop, resolve first (foreign uncommitted change!)
-
-# 2. Edit + immediate diff in ONE command. Use a targeted, reviewable edit (a single `sed`
-#    substitution, or `git apply` of a patch) — never a script that rewrites the whole file,
-#    which hides what changed. If the same repo is also checked out locally, edit it there
-#    with the harness's file-editing tool and deploy per the project guide instead.
-cca-tmux-cli -t server1 run "cd /opt/app/config-repo && sed -i 's/^worker_processes 4;/worker_processes 8;/' conf/example.conf && git diff"
-
-# 3. After diff approved: apply per PROJECT guide (test/reload script = LIVE CHANGE,
-#    needs its own explicit user approval!), then commit
-cca-tmux-cli -t server1 run "cd /opt/app/config-repo && ./test-reload.sh && git add conf/example.conf && git commit -m 'description'"
 ```
 
 ### 2. Configuration: `ap` (Ansible Playbooks)
@@ -109,6 +69,8 @@ random tail just burns context on normal traffic. Procedure, per-project formats
 
 ## Config Files of a Running Service
 
+- Treat every modification to a running service's configuration files as potentially live;
+  automation may reload them at any time. Follow the project's guide before changing them.
 - A service usually parses **every** file in its config directory — never leave `.bak`/`.orig` there.
   Keep copies outside the directory the service reads.
 - **How a config is tested and applied is defined by the project guide for that tool**, not by
@@ -116,26 +78,6 @@ random tail just burns context on normal traffic. Procedure, per-project formats
   project's test/reload script.
 
 ## Safety Rules
-
-### ⛔ NIKDY git stash/reset/checkout na serverech s live configs!
-
-Git-verzovane konfigurace na serverech (typicky config repo proxy/webserveru v `/opt/...`) jsou zive soubory:
-reload muze probehnout kdykoliv (cron reload skripty, rucni zasah admina), takze zmena obsahu na disku
-= potencialni zmena zive konfigurace. `git stash` / `git reset --hard` / `git checkout <file>` meni
-obsah bez kontroly = **RIZIKO VYPADKU**.
-
-**POZOR: nepredpokladej NIC o tom, kdy se zmena aplikuje.** U nekterych nastroju spousti reload
-automatika (cron, ban/blacklist skripty) i bez tebe, v nahodny okamzik a casto **bez testu syntaxe**;
-u jinych se neaplikuje nic, dokud reload nespustis sam. Rozhoduje VYHRADNE projektovy guide
-daneho nastroje — over ho (viz Guide-First nize). Bez ohledu na nastroj plati:
-
-- **"Necommitnute" NEZNAMENA "neni zive".** Rozpracovana zmena lezici v config adresari muze byt
-  uz aktivni — cizi necommitnutou zmenu ber jako potencialne bezici produkcni konfiguraci.
-- **Vlastni zmenu aplikuj vedome** (test + reload skript dle guide) — nespolehej na to, ze ji za tebe
-  nasadi cizi automatika. Ta ji nasadi neotestovanou a v cas, ktery neurcujes.
-
-- ✅ Bezpecne: `git add`, `git commit`, `git diff`, `git log`, `git status`
-- ❌ ZAKAZANO: `git stash`, `git reset`, `git checkout <file>`, `git restore`
 
 ### NEVER run dangerous commands without explicit approval!
 - **Destructive**: `rm -rf`, `kill -9`, `DROP/DELETE` in DB
@@ -145,11 +87,7 @@ daneho nastroje — over ho (viz Guide-First nize). Bez ohledu na nastroj plati:
 ## Assistant Operational & Token-Saving Rules
 
 ### 1. Zero Redundancy & Token-Saving
-- **NEVER repeat listing or information commands** (like `ls`, `git status`, or duplicate searches) if the data is already present in your active conversation history.
-- **NEVER run Git status or Git diff** in general analytical or chat turns unless explicitly requested
-  by the user, when performing a final commit, or in the server-config workflow above (there the
-  before-edit `git status` and the after-edit `git diff` are mandatory — they catch a foreign
-  uncommitted change on a live config).
+- **NEVER repeat listing or information commands** (like `ls` or duplicate searches) if the data is already present in your active conversation history.
 - **Laser Focus on User Request**: If the user asks for a specific, narrow action (e.g. "write the change to the incident report"), do ONLY that. Do NOT run additional diagnostic queries, logs analysis, or background scans unless requested.
 
 ### 2. Guide-First & Tool Discipline
@@ -193,7 +131,7 @@ plausible-sounding sentence nobody checked is worse than a missing one.
 - Each command, path and rule appears **once**, in the place it belongs. Moving content elsewhere
   leaves a link (`→ path/to/guide.md`), never a shortened copy.
 - Prose that explains what the command already shows is noise. Show the command and its real output.
-- No dated changelog inside a guide — history is in git. The guide reads as current as a whole.
+- No dated changelog inside a guide — history belongs in version control. The guide reads as current as a whole.
 
 ### 4. Traffic Analysis & Rate-Limiting Accuracy
 - Bot/crawler handling rules (which bots to allow, what URLs may be blocked, rate-limit patterns)
