@@ -95,7 +95,7 @@ random tail just burns context on normal traffic. Procedure, per-project formats
 - **Use Custom Tools Directly**: Use the designated tools (`asn-wrap`, `tantivy2agents`, etc.) exactly as described. Do not try to bypass them or run alternative commands unless the wrapper is verified to fail.
 - **NEVER hand-parse tool output with ad-hoc `python3 -c` / `python3 - <<PY`.** Ad-hoc python is the LAST resort, only when no other path exists — never the first reach.
   - If a tool lacks the output format you need, **EXTEND THE TOOL** (add a `-s`/`--short` flag) instead of wrapping it in a throwaway script. The one-off dies with the session; the flag serves every future one.
-  - **JSON in bash = `jq`**, not python. Several items = ONE tool run with multiple arguments, not a `for` loop around the wrapper.
+  - **JSON in bash = `yq`**, not python and not `jq`. Several items = ONE tool run with multiple arguments, not a `for` loop around the wrapper.
   - Example: `asn-wrap -s IP [IP...]` prints one compact line per IP (org, ASN, CC, dc/proxy/mobile, reputation, reverse). Without `-s` it returns full JSON for fields the short form omits.
 
 ### 3. Written Knowledge: Evidence & Length (guides, incidents, reports)
