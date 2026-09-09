@@ -125,6 +125,9 @@ ENVIRONMENT:
     TMUX_SESSION_SERVERS    Space-separated server list
     CCA_LOGGING             Enable logging (default: false)
     ADMIN_NAME              Admin name (only if CCA_LOGGING=true)
+    CCA_TMUX_TOKF           Set exactly to 1 to process completed output with tokf.
+                            Raw fallback is the combined terminal body CCA normally renders,
+                            not the original separate stdout/stderr streams.
 
 AGENT COMMANDS (for AI agents):
   --robot-init    Check if project configured (WARNING if not)
@@ -450,6 +453,7 @@ fi
 
 # Parse global options
 target_server=""
+debug_enabled=false
 while [ $# -gt 0 ]; do
     case "$1" in
     -t)
@@ -461,6 +465,7 @@ while [ $# -gt 0 ]; do
         shift 2
         ;;
     -x)
+        debug_enabled=true
         set -x
         shift
         ;;
@@ -638,6 +643,31 @@ run)
         exit 64
     fi
 
+    # Resolve and probe tokf only for the exact explicit opt-in. Keep the stored
+    # path empty for every unsupported case so completion falls back silently.
+    tokf_path=""
+    if [ "${CCA_TMUX_TOKF:-}" = "1" ]; then
+        tokf_candidate=$(type -P tokf 2>/dev/null || true)
+        if [ -n "$tokf_candidate" ]; then
+            case "$tokf_candidate" in
+            /*) ;;
+            *)
+                tokf_candidate_dir=$(cd "$(dirname "$tokf_candidate")" 2>/dev/null && pwd -P) || tokf_candidate_dir=""
+                if [ -n "$tokf_candidate_dir" ]; then
+                    tokf_candidate="$tokf_candidate_dir/$(basename "$tokf_candidate")"
+                else
+                    tokf_candidate=""
+                fi
+                ;;
+            esac
+        fi
+        if [ -n "$tokf_candidate" ] && [ -f "$tokf_candidate" ] && [ -x "$tokf_candidate" ]; then
+            if "$tokf_candidate" process --supports-protocol cca-v1 </dev/null >/dev/null 2>&1; then
+                tokf_path="$tokf_candidate"
+            fi
+        fi
+    fi
+
     # Log the command
     log_run_command "$target_server" "$run_command"
 
@@ -700,8 +730,37 @@ run)
         *) command_exit_code=$(echo "$end_marker_line" | sed 's/.*EXITCODE=\([0-9][0-9]*\).*/\1/') ;;
         esac
 
-        # Display command output (remove START and END markers)
-        echo "$marker_content" | sed '1d;$d'
+        # Display command output (remove START and END markers). The disabled and
+        # unsupported paths deliberately retain the original rendering pipeline.
+        if [ -z "$tokf_path" ]; then
+            echo "$marker_content" | sed '1d;$d'
+        else
+            tokf_tmp_dir=$(mktemp -d "${TMPDIR:-/tmp}/cca-tmux-cli-tokf.XXXXXX" 2>/dev/null || true)
+            if [ -z "$tokf_tmp_dir" ] || [ ! -d "$tokf_tmp_dir" ]; then
+                echo "$marker_content" | sed '1d;$d'
+            else
+                tokf_raw="$tokf_tmp_dir/raw"
+                tokf_processed="$tokf_tmp_dir/processed"
+                tokf_diagnostics="$tokf_tmp_dir/diagnostics"
+                if (set -o pipefail; echo "$marker_content" | sed '1d;$d' >"$tokf_raw") 2>/dev/null &&
+                    : 2>/dev/null >"$tokf_processed" && : 2>/dev/null >"$tokf_diagnostics"; then
+                    if "$tokf_path" process --protocol cca-v1 --return-processor-status \
+                        --command "$run_command" --exit-code "$command_exit_code" \
+                        <"$tokf_raw" >"$tokf_processed" 2>"$tokf_diagnostics"; then
+                        cat "$tokf_processed" || true
+                    else
+                        cat "$tokf_raw" || true
+                    fi
+                    if [ "$debug_enabled" = true ] && [ -s "$tokf_diagnostics" ]; then
+                        cat "$tokf_diagnostics" >&2 || true
+                    fi
+                else
+                    echo "$marker_content" | sed '1d;$d'
+                fi
+                rm -f "$tokf_raw" "$tokf_processed" "$tokf_diagnostics" 2>/dev/null || true
+                rmdir "$tokf_tmp_dir" 2>/dev/null || true
+            fi
+        fi
 
         # Exit with the command's exit code (default to 0 if empty)
         exit "${command_exit_code:-0}"
