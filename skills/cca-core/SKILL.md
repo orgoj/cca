@@ -40,7 +40,7 @@ the quoted delimiter prevents local shell expansion of the script contents.
 ```bash
 cca-tmux-cli -t server1 run --script <<'REMOTE'
 cd /opt/app/repo
-git pull --ff-only
+git merge --ff-only origin/master
 REMOTE
 ```
 ```bash
@@ -65,6 +65,9 @@ REMOTE
 Some server files (e.g. a proxy config repo under `/opt/...`) are git-versioned **on the server itself**.
 Which paths, and how changes get applied (test/reload scripts), is defined in the PROJECT guides —
 always look it up there first. **MANDATORY** — edit + diff must happen in ONE command:
+
+Never run `git pull` on a server. The deploying person or agent handles fetch separately; the server
+only fast-forwards the already fetched state with `git merge --ff-only origin/master`.
 
 ```bash
 # 1. Before edit: check state
