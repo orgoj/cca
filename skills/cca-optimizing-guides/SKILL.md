@@ -1,7 +1,7 @@
 ---
 name: cca-optimizing-guides
-description: Optimize and evolve knowledge base - monthly maintenance
-argument-hint: "[optimize|analyze-gaps|suggest-improvements|find-duplicates|suggest-links|consolidate-incidents]"
+description: "Monthly knowledge-base maintenance: find gaps and duplicates, improve guides, consolidate incidents, and clean the operational watchlist"
+argument-hint: "[optimize|analyze-gaps|suggest-improvements|find-duplicates|suggest-links|consolidate-incidents|clean-watchlist]"
 allowed-tools: Bash(*), Read(*), Write(*), Edit(*), Glob(*), Grep(*)
 ---
 
@@ -14,7 +14,7 @@ Monthly maintenance tool to keep knowledge base clean, complete, and optimized.
 ## Steps
 
 ### 1. Analysis
-**Analyze repositories:** `incidents/` and `guides/`.
+**Analyze repositories:** `incidents/`, `guides/`, and the project watchlist.
 **Identify goals:**
 1. **Find gaps** - Repeated incidents without guides
 2. **Suggest improvements** - Missing info in existing guides
@@ -22,6 +22,8 @@ Monthly maintenance tool to keep knowledge base clean, complete, and optimized.
 4. **Suggest links** - Missing cross-references
 5. **Consolidate incidents** - Fold recurring incident patterns into a playbook guide, then archive the
    vytěžené (mined) incidents so the active set stays small and searchable
+6. **Clean watchlist** - Merge work that is completed by one intervention, close obsolete or already
+   completed items, and normalize duplicate `area` names
 
 ### 2. Execution
 **Run operations:**
@@ -41,6 +43,8 @@ Monthly maintenance tool to keep knowledge base clean, complete, and optimized.
 - `suggest-links`: Find related guides that should reference each other.
 - `consolidate-incidents`: Cluster recurring incidents, fold their pattern into the relevant project
   playbook guide, then archive the mined incident files. See dedicated section below.
+- `clean-watchlist`: Audit active and idle watchlist items, propose merges and closures, and normalize
+  duplicate `area` names. See dedicated section below.
 
 ### 3. Report
 - One line per finding: what, where, proposed action. Detail only where it is needed to decide.
@@ -73,7 +77,49 @@ cca-optimizing-guides consolidate-incidents
 → Do nejnovejsiho (head) incidentu prida retez referenci na predchozi vyskyty
 → Slozi pattern do playbook guide (prida radky pokud chybi)
 → Navrhne archivaci starsich do incidents/archive/YYYY/ (ceka na souhlas)
+
+cca-optimizing-guides clean-watchlist
+→ Najde položky, které patří do jednoho zásahu, jsou hotové/zbytečné nebo používají
+  duplicitní názvy area
+→ Navrhne konkrétní sloučení, uzavření a přejmenování (provedení čeká na souhlas)
 ```
+
+## Operation: clean-watchlist
+
+The watchlist is an operational register, not an archive of every idea. Keep its active and idle
+set small enough that related work is visible and can be scheduled as one intervention.
+
+### Analysis
+
+1. Run `date +%Y-%m-%d\ %H:%M`, then run `cca-watchlist list --all --json` from the project root.
+   Save the complete JSON output to a temporary file and inspect its structure with `yq` before
+   querying it. A missing-watchlist error means the working directory is wrong; it does not mean
+   there is nothing to clean.
+2. Review active and idle items against their `refs`, incident/guide state, and git history. Do not
+   infer completion from age alone.
+3. Propose a merge only when the items will genuinely be completed by one intervention: they refer
+   to the same incident or change, require the same operational `window`, and touch the same primary
+   file or tightly coupled files. Similar wording or a shared `area` alone is not enough.
+4. Propose `done` when referenced work is demonstrably complete, the underlying incident is
+   resolved with no remaining follow-up, or the task has lost its purpose. Record the evidence in
+   the report. Never use `remove`; `done` preserves history.
+5. Detect `area` variants that denote the same subsystem (case, punctuation, abbreviations, or old
+   names). Choose one existing, clear canonical value; do not merge genuinely distinct scopes.
+
+### Report and apply
+
+- Report each proposed change on one line: affected IDs, evidence, and exact action. For merges,
+  name the surviving item and list the fields/refs that will be preserved. For area normalization,
+  show `old → canonical` and every affected ID.
+- Ask for approval before changing the watchlist; cleanup can reschedule or hide operational work.
+- After approval, mutate only through `cca-watchlist`: update the surviving item with `edit`, preserve
+  all distinct refs and actionable context, mark absorbed or completed items with `done`, and rename
+  areas with `edit --area`. Never hand-edit `watchlist.json`.
+- Re-run `cca-watchlist list --all --json` and verify every approved ID: exactly one survivor per
+  merged group, no lost refs or next actions, intended items are `done`, and normalized areas no
+  longer have aliases. Report counts before and after plus any item left unchanged due to ambiguity.
+
+`optimize` includes this operation as part of the monthly run.
 
 ## Operation: consolidate-incidents
 
