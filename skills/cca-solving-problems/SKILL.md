@@ -1,6 +1,6 @@
 ---
 name: cca-solving-problems
-description: Solve any server problem - unified intelligent workflow
+description: Solve any server problem - unified intelligent workflow. Also for security incidents - hack, webshell, backdoor, malware, compromised server.
 argument-hint: "\"description of the problem\""
 allowed-tools: Bash(*), Read(*), Write(*), Edit(*), Glob(*), Grep(*), TaskCreate(*), TaskUpdate(*)
 ---

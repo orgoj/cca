@@ -32,10 +32,13 @@ Used for real-time diagnostics and troubleshooting via persistent tmux sessions.
 - **One command per target at a time, and `read` only to recover an ambiguous earlier `run`** —
   full rule in the `cca-tmux-cli` skill (*When to use `read`*).
 
-#### Multiline `run --script`
+#### `run --script` — whenever the command contains anything to escape
 
-Use a directly attached heredoc with a quoted delimiter. This is the only supported multiline form;
-the quoted delimiter prevents local shell expansion of the script contents.
+Use it for **every** command with quotes, `$`, backticks, parentheses or multiple lines — not only
+for multiline scripts. Incorrect escaping in a single-line `run "..."` can silently change the
+command (for example, expanding an `awk` field reference or `$(...)` locally). Use a directly
+attached heredoc with a quoted delimiter; this is the only supported multiline form and prevents
+local shell expansion of the script contents.
 
 ```bash
 cca-tmux-cli -t server1 run --script <<'REMOTE'
