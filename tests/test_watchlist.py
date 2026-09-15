@@ -268,6 +268,43 @@ def test_incident_file_lands_in_refs(wl, tmp_path):
     assert item["refs"] == ["inc.md"]
 
 
+def test_incident_file_under_cca_is_normalized(wl):
+    incident = wl.parent / "incidents" / "x.md"
+    incident.parent.mkdir()
+    incident.write_text("i", encoding="utf-8")
+    result = run_cli(
+        wl,
+        "add-incident",
+        "--name",
+        "Boom",
+        "--file",
+        "incidents/x.md",
+        "--status",
+        "monitoring",
+    )
+    item = json.loads(result.stdout)
+    assert result.stderr == ""
+    assert item["file"] == "cca/incidents/x.md"
+    assert item["refs"] == ["cca/incidents/x.md"]
+
+
+def test_incident_with_missing_file_is_refused_without_write(wl):
+    result = run_cli(
+        wl,
+        "add-incident",
+        "--name",
+        "Ghost",
+        "--file",
+        "incidents/missing.md",
+        "--status",
+        "monitoring",
+        expect_ok=False,
+    )
+    assert result.returncode == 1
+    assert "ref not found on disk" in result.stderr
+    assert json.loads(wl.read_text(encoding="utf-8"))["items"] == []
+
+
 def test_v1_file_is_refused_until_migrated(v1_file):
     result = run_cli(v1_file, "list-today", expect_ok=False)
     assert result.returncode == 1
@@ -502,6 +539,9 @@ def test_window_below_change_risk_minimum_is_raised_on_add_task_and_incident(wl)
     assert "wany raised to woff" in task.stderr
     assert json.loads(task.stdout)["window"] == "woff"
 
+    incident_file = wl.parent / "incidents" / "2026-01-01-x.md"
+    incident_file.parent.mkdir()
+    incident_file.write_text("i", encoding="utf-8")
     incident = run_cli(
         wl,
         "add-incident",

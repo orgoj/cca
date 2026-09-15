@@ -7,7 +7,7 @@
 #   asn-wrap -s|--short IP [IP...]  one compact line per IP
 #
 # Short output (so callers never need to parse JSON themselves):
-#   IP | ORG | ASxxxx | CC | dc/proxy/mobile | rep=... | reverse
+#   IP|ASxxxx|CC|d:true,p:false,m:false|r:reputation|ORG|reverse
 #
 # Multiple IPs are looked up in one call; use -s to compare them at a glance.
 # Missing fields render as "-", failed lookups as "LOOKUP <result> (<reason>)".
@@ -25,8 +25,8 @@ if ! command -v asn &> /dev/null; then
     exit 1
 fi
 
-if (( short )) && ! command -v jq &> /dev/null; then
-    echo "Error: 'jq' is required for -s/--short but is not installed or not in PATH." >&2
+if (( short )) && ! command -v yq &> /dev/null; then
+    echo "Error: 'yq' is required for -s/--short but is not installed or not in PATH." >&2
     exit 1
 fi
 
@@ -36,36 +36,43 @@ if [[ $# -eq 0 ]]; then
 fi
 
 rc=0
+err_file=$(mktemp "${TMPDIR:-/tmp}/asn-wrap.XXXXXX") || exit 1
+trap 'rm -f "$err_file"' EXIT
 
 for ip in "$@"; do
-    if ! out=$(echo "$ip" | asn -n -m -j); then
+    if ! out=$(printf '%s\n' "$ip" | asn -n -m -j 2>"$err_file"); then
+        cat "$err_file" >&2
         echo "$ip | LOOKUP FAILED (asn exit != 0)" >&2
         rc=1
         continue
     fi
+
+    while IFS= read -r line; do
+        case "$line" in
+            "jq: parse error:"*) ;;
+            *) printf '%s\n' "$line" >&2 ;;
+        esac
+    done <"$err_file"
 
     if (( ! short )); then
         printf '%s\n' "$out"
         continue
     fi
 
-    jq -r '
-        if (.result // "") != "ok" then
-            "\(.target // "?") | LOOKUP \(.result // "?") (\(.reason // "-"))"
-        else
-            .results[]? |
+    yq -r '
+        ((select((.result // "") != "ok") |
+            ((.target // "?") + "|LOOKUP:" + (.result // "?") + "|" + (.reason // "-"))),
+         (select((.result // "") == "ok") | .results[] |
             [ (.ip // "-"),
-              (.org_name // "-"),
-              ("AS" + ((.routing.as_number // "?") | tostring)),
+              ("AS" + ((.routing.as_number // "?") | to_string)),
               (.geolocation.cc // "-"),
-              # NOTE: "//" treats false as empty and would render is_dc=false as "?".
-              # tojson keeps true/false/null distinct - false ("not a datacenter") is
-              # a real answer, not a missing one, and drives ban decisions.
-              ("dc=\(.type.is_dc|tojson) proxy=\(.type.is_proxy|tojson) mobile=\(.type.is_mobile|tojson)"),
-              ("rep=" + (.reputation.status // "-")),
-              (.["reverse"] // "-")
-            ] | join(" | ")
-        end
+              ("d:" + (.type.is_dc | to_string) +
+               ",p:" + (.type.is_proxy | to_string) +
+               ",m:" + (.type.is_mobile | to_string)),
+              ("r:" + (.reputation.status // "-")),
+              (.org_name // "-"),
+              (.reverse // "-")
+            ] | join("|")))
     ' <<<"$out" || rc=1
 done
 

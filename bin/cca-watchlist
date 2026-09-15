@@ -274,6 +274,22 @@ class Watchlist:
                 return True
         return False
 
+    def _normalize_existing_ref(self, ref: str) -> str | None:
+        """Return an existing ref relative to the project root."""
+        root = self._project_root()
+        path = Path(ref).expanduser()
+        candidates = [path] if path.is_absolute() else [root / path]
+        if not path.is_absolute():
+            candidates.extend(base / path for base in self._ref_search_bases())
+        for candidate in candidates:
+            if not candidate.exists():
+                continue
+            try:
+                return candidate.relative_to(root).as_posix()
+            except ValueError:
+                continue
+        return None
+
     def _warn_missing_refs(self, refs: list[str]) -> None:
         for ref in refs:
             if not self._ref_exists(ref):
@@ -623,9 +639,12 @@ class Watchlist:
     ) -> dict[str, Any]:
         check_after_iso, monitor_until_iso = self._parse_schedule(check_after, monitor_until)
         date_part = datetime.now(timezone.utc).strftime("%Y%m%d")
-        refs = list(refs or [])
-        if file and file not in refs:
-            refs.insert(0, file)
+        normalized_file = self._normalize_existing_ref(file)
+        if normalized_file is None:
+            die(f"ref not found on disk: {file}")
+        refs = [normalized_file if ref == file else ref for ref in (refs or [])]
+        if normalized_file not in refs:
+            refs.insert(0, normalized_file)
         item = self._base_item(
             f"{self.slugify(name)}-{date_part}",
             "incident",
@@ -645,7 +664,7 @@ class Watchlist:
             window,
             prio,
         )
-        item["file"] = file
+        item["file"] = normalized_file
         item["status"] = status
         item["risk"] = risk
         return self._add(item)
