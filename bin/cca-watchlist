@@ -4,6 +4,7 @@
 Schema v2: every item carries a `state`:
   active - takes part in the daily check (`list-today`), subject to check_after/monitor_until
   idle   - backlog: never in `list-today`, but findable via `search` / `list`
+  standby - waiting for a described event; excluded from work selections
   done   - finished, kept only for history; hidden unless --all
 
 Notes are idle/done information, never work. Their optional validity boundaries
@@ -34,7 +35,7 @@ else:
 SCHEMA_VERSION = "2.0"
 SCHEMA_MAJOR = 2
 CREATING_COMMANDS = {"add-routine", "add-incident", "add-task", "add-note"}
-STATES = ("active", "idle", "done")
+STATES = ("active", "idle", "standby", "done")
 TYPES = ("routine", "incident", "task", "note")
 EFFORTS = ("e15", "e1h", "e4h", "exl")
 CHANGE_RISKS = ("r0", "r1", "r2", "r3")
@@ -303,7 +304,7 @@ class Watchlist:
         if state not in STATES:
             die(f"state must be one of {', '.join(STATES)}")
         if item.get("type") == "note":
-            if state == "active":
+            if state not in ("idle", "done"):
                 die("notes must be idle or done; they are information, not daily work")
             for field in (
                 "next_action",
@@ -474,7 +475,7 @@ class Watchlist:
         for item in self.data["items"]:
             if (
                 item.get("type") == "note"
-                or item.get("state") == "done"
+                or item.get("state") in ("standby", "done")
                 or (area and item.get("area", "") != area)
             ):
                 continue
@@ -939,6 +940,9 @@ def format_list(items: list[dict[str, Any]]):
             flags.append(f"blocked: {item['blocked_on']}")
         print(f"  - [{item.get('type')}] {item.get('name')}  ({', '.join(flags)})")
         print(f"      id: {item.get('id')}")
+        if item.get("state") == "standby":
+            print(f"      Trigger: {item.get('description') or '-'}")
+            print(f"      Capture: {item.get('next_action') or '-'}")
         for ref in item.get("refs", []):
             print(f"      ref: {ref}")
     print()
@@ -1008,7 +1012,14 @@ def main():
 States:
   active  - part of the daily check (list-today)
   idle    - backlog: never in list-today, still found by search/list (work needs --refs)
+  standby - wait for an event; excluded from list-today, ready and next
   done    - finished, hidden unless --all
+
+Standby:
+  standby ID waits for the event in description; next_action says what to capture.
+  list --standby shows both. activate ID resumes work, preserving blocked_on.
+  blocked_on is an independent obstacle, not the trigger being awaited.
+  list --all includes all states and types; explicit filters still apply.
 
 Notes:
   idle information with optional refs and priority (default p2); never daily work.
@@ -1062,14 +1073,22 @@ Examples:
 
     p = subparsers.add_parser("list", help="List items (grouped by area)")
     p.add_argument("--area", help="Filter by area")
-    p.add_argument("--state", choices=STATES, help="Filter by state")
+    state_filter = p.add_mutually_exclusive_group()
+    state_filter.add_argument("--state", choices=STATES, help="Filter by state")
+    state_filter.add_argument(
+        "--standby", dest="state", action="store_const", const="standby",
+        help="Select standby items, showing trigger and evidence to capture",
+    )
     p.add_argument("--type", choices=TYPES, help="Filter by type")
     p.add_argument("--effort", choices=EFFORTS, help="Filter by effort")
     p.add_argument("--change-risk", dest="change_risk", choices=CHANGE_RISKS)
     p.add_argument("--window", choices=WINDOWS, help="Filter by stored operational window")
     p.add_argument("--prio", choices=PRIORITIES, help="Filter by priority")
     p.add_argument("--max-change-risk", dest="max_change_risk", choices=CHANGE_RISKS)
-    p.add_argument("--all", action="store_true", help="Include done items")
+    p.add_argument(
+        "--all", action="store_true",
+        help="Include all states and types (including standby and done); explicit filters still apply",
+    )
     p.add_argument("--json", action="store_true", help="JSON output")
     validity = p.add_mutually_exclusive_group()
     validity.add_argument(
@@ -1170,6 +1189,9 @@ Examples:
     p = subparsers.add_parser("activate", help="Move item into the daily check (state=active)")
     p.add_argument("id", help="Item ID")
     p.add_argument("--check-after", dest="check_after", help='"YYYY-MM-DD [morning|afternoon]"')
+
+    p = subparsers.add_parser("standby", help="Wait for the event in description (state=standby)")
+    p.add_argument("id", help="Item ID; next_action describes what to capture")
 
     p = subparsers.add_parser("done", help="Mark item finished (state=done)")
     p.add_argument("id", help="Item ID")
@@ -1394,8 +1416,8 @@ Examples:
         item = watchlist.set_state(args.id, "active", check_after=args.check_after)
         print(json.dumps(item, indent=2, ensure_ascii=False))
 
-    elif args.command == "done":
-        item = watchlist.set_state(args.id, "done")
+    elif args.command in ("standby", "done"):
+        item = watchlist.set_state(args.id, args.command)
         print(json.dumps(item, indent=2, ensure_ascii=False))
 
     elif args.command == "remove":

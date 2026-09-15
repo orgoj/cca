@@ -897,3 +897,79 @@ def test_manually_tagged_note_never_becomes_work(wl):
     assert store.next_item() is None
     note.pop("effort")
     assert store.ready_items("e1h", "wany", None) == ([], [])
+
+
+@pytest.mark.parametrize("initial", ["idle", "active"])
+@pytest.mark.parametrize("blocker", ["", "approval"])
+def test_standby_transitions_preserve_blocker_and_capture(wl, initial, blocker):
+    run_cli(
+        wl, "add-task", "--name", "Capture outage", "--description", "When power fails",
+        "--next-action", "Capture voltage and logs", "--state", initial,
+        "--refs", "guides/power.md", "--blocked-on", blocker,
+    )
+    item = run_json(wl, "standby", "capture-outage")
+    assert item["state"] == "standby"
+    assert item["blocked_on"] == blocker
+    assert run_json(wl, "list", "--standby", "--json") == [item]
+    plain = run_cli(wl, "list", "--standby").stdout
+    assert "Trigger: When power fails" in plain
+    assert "Capture: Capture voltage and logs" in plain
+    active = run_json(wl, "activate", "capture-outage")
+    assert active["state"] == "active"
+    assert active["blocked_on"] == blocker
+    assert active["next_action"] == item["next_action"]
+
+
+@pytest.mark.parametrize("tagged", [True, False])
+def test_standby_excluded_from_all_work_selections(wl, tagged):
+    args = ["--effort", "e15"] if tagged else []
+    run_cli(
+        wl, "add-routine", "--name", "Capture", "--description", "When outage occurs",
+        "--next-action", "Collect logs", "--change-risk", "r0", *args,
+    )
+    run_cli(wl, "standby", "capture")
+    for blocker in ("", "approval"):
+        run_cli(wl, "edit", "capture", "--blocked-on", blocker)
+        assert run_json(wl, "list-today") == []
+        assert run_json(wl, "ready", "--json") == {"ready": [], "untagged": []}
+        assert run_json(wl, "ready", "--include-blocked", "--json") == {
+            "ready": [], "untagged": []
+        }
+        assert run_json(wl, "next", "--json") is None
+
+
+def test_list_all_includes_every_state_and_notes_and_honors_filters(wl):
+    for state in ("active", "idle", "standby", "done"):
+        run_cli(
+            wl, "add-task", "--name", state, "--description", "Trigger",
+            "--state", state, "--refs", "guides/context.md", "--area", "server1",
+        )
+    run_cli(wl, "add-note", "--name", "Context", "--description", "Information")
+    assert {i["id"] for i in run_json(wl, "list", "--all", "--json")} == {
+        "active", "idle", "standby", "done", "context"
+    }
+    assert {i["id"] for i in run_json(wl, "list", "--json")} == {
+        "active", "idle", "standby", "context"
+    }
+    assert [i["id"] for i in run_json(wl, "search", "Trigger", "--json")] == [
+        "active", "idle", "standby"
+    ]
+    assert [i["id"] for i in run_json(wl, "list", "--all", "--standby", "--json")] == [
+        "standby"
+    ]
+    assert run_json(wl, "list", "--standby", "--area", "server2", "--json") == []
+    assert run_json(wl, "list", "--standby", "--type", "note", "--json") == []
+    assert run_cli(wl, "list", "--standby", "--state", "active", expect_ok=False).returncode != 0
+    help_text = " ".join(run_cli(wl, "list", "--help").stdout.split())
+    assert "Include all states and types (including standby and done)" in help_text
+    assert "explicit filters still apply" in help_text
+
+
+def test_note_cannot_enter_standby(wl):
+    run_cli(wl, "add-note", "--name", "Context", "--description", "Information")
+    before = wl.read_bytes()
+    for args in (("standby", "context"), ("edit", "context", "--state", "standby")):
+        result = run_cli(wl, *args, expect_ok=False)
+        assert result.returncode != 0
+        assert "notes must be idle or done" in result.stderr
+        assert wl.read_bytes() == before
