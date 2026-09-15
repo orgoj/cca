@@ -26,6 +26,10 @@ Monthly maintenance tool to keep knowledge base clean, complete, and optimized.
    completed items, and normalize duplicate `area` names
 
 ### 2. Execution
+**Before editing any guide, load the `cca-saving-guides` skill** — its conventions (findability,
+frontmatter, no changelog inside a guide) apply to every operation here, not just to
+consolidate-incidents.
+
 **Run operations:**
 - `analyze-gaps`: Cluster incidents by frontmatter `tags:` (plus `servers:`/`services:`) and by
   `tantivy2agents search` on the recurring symptom; a cluster of ≥2 incidents with the same root
