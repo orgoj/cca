@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""Watchlist management - single register of open work (daily checks + backlog).
+"""Watchlist management - daily checks, backlog, and informational notes.
 
 Schema v2: every item carries a `state`:
   active - takes part in the daily check (`list-today`), subject to check_after/monitor_until
   idle   - backlog: never in `list-today`, but findable via `search` / `list`
   done   - finished, kept only for history; hidden unless --all
+
+Notes are idle/done information, never work. Their optional validity boundaries
+are inclusive local dates; work scheduling retains its existing UTC semantics.
 
 v1 files (no `state`, `enabled` flag) are NOT read - run `cca-watchlist migrate` once.
 """
@@ -30,9 +33,9 @@ else:
 
 SCHEMA_VERSION = "2.0"
 SCHEMA_MAJOR = 2
-CREATING_COMMANDS = {"add-routine", "add-incident", "add-task"}
+CREATING_COMMANDS = {"add-routine", "add-incident", "add-task", "add-note"}
 STATES = ("active", "idle", "done")
-TYPES = ("routine", "incident", "task")
+TYPES = ("routine", "incident", "task", "note")
 EFFORTS = ("e15", "e1h", "e4h", "exl")
 CHANGE_RISKS = ("r0", "r1", "r2", "r3")
 WINDOWS = ("wany", "woff", "wnight", "wfreeze")
@@ -299,7 +302,42 @@ class Watchlist:
         state = item.get("state")
         if state not in STATES:
             die(f"state must be one of {', '.join(STATES)}")
-        if state == "idle" and not item.get("refs"):
+        if item.get("type") == "note":
+            if state == "active":
+                die("notes must be idle or done; they are information, not daily work")
+            for field in (
+                "next_action",
+                "effort",
+                "change_risk",
+                "window",
+                "blocked_on",
+                "check_after",
+                "monitor_until",
+                "once",
+                "last_check",
+            ):
+                if field in item:
+                    die(f"notes cannot have {field}")
+            for field in ("valid_from", "valid_until"):
+                value = item.get(field)
+                if value is not None:
+                    try:
+                        if not isinstance(value, str) or not re.fullmatch(
+                            r"\d{4}-\d{2}-\d{2}", value
+                        ):
+                            raise ValueError
+                        datetime.strptime(value, "%Y-%m-%d")
+                    except ValueError:
+                        die(f"{field} must be YYYY-MM-DD")
+            if (
+                item.get("valid_from")
+                and item.get("valid_until")
+                and item["valid_from"] > item["valid_until"]
+            ):
+                die("valid_from must not be after valid_until")
+        elif item.get("valid_from") is not None or item.get("valid_until") is not None:
+            die("valid_from and valid_until are only supported for notes")
+        if state == "idle" and item.get("type") != "note" and not item.get("refs"):
             die(
                 "an idle item needs at least one --refs entry "
                 "(the full context belongs in an incident or guide, not in the register)"
@@ -349,7 +387,7 @@ class Watchlist:
 
         results = []
         for item in self.data["items"]:
-            if item.get("state") != "active":
+            if item.get("state") != "active" or item.get("type") == "note":
                 continue
 
             if item_type and item.get("type") != item_type:
@@ -384,9 +422,20 @@ class Watchlist:
         window: str | None = None,
         prio: str | None = None,
         max_change_risk: str | None = None,
+        expired: bool = False,
+        current: bool = False,
     ) -> list[dict[str, Any]]:
         results = []
+        today = datetime.now().date().isoformat()
         for item in self.data["items"]:
+            if expired or current:
+                if item.get("type") != "note":
+                    continue
+                start, end = item.get("valid_from"), item.get("valid_until")
+                if expired and (not end or end >= today):
+                    continue
+                if current and ((start and start > today) or (end and end < today)):
+                    continue
             if state and item.get("state") != state:
                 continue
             if not state and not include_done and item.get("state") == "done":
@@ -423,7 +472,11 @@ class Watchlist:
         ready = []
         untagged = []
         for item in self.data["items"]:
-            if item.get("state") == "done" or (area and item.get("area", "") != area):
+            if (
+                item.get("type") == "note"
+                or item.get("state") == "done"
+                or (area and item.get("area", "") != area)
+            ):
                 continue
             if not include_blocked and item.get("blocked_on", ""):
                 continue
@@ -458,6 +511,25 @@ class Watchlist:
         )
         return ready, untagged
 
+    def next_item(self, time_box="e1h", window="wany", max_change_risk=None, area=None):
+        """Pick one unblocked action by priority, effort, then ID (read-only)."""
+        items, _ = self.ready_items(time_box, window, max_change_risk, area)
+        now = datetime.now(timezone.utc)
+        for item in items:
+            if not (item.get("next_action") or "").strip():
+                continue
+            if item.get("check_after"):
+                try:
+                    after = datetime.fromisoformat(item["check_after"])
+                    if after.tzinfo is None:
+                        after = after.replace(tzinfo=timezone.utc)
+                except (ValueError, TypeError):
+                    continue
+                if after > now:
+                    continue
+            return item
+        return None
+
     def search(self, query: str, include_done: bool = False) -> list[dict[str, Any]]:
         """Case-insensitive substring match across every text field, idle included."""
         needle = query.lower()
@@ -484,6 +556,33 @@ class Watchlist:
         return results
 
     # ------------------------------------------------------------ mutations
+
+    def add_note(
+        self,
+        name,
+        description,
+        valid_from=None,
+        valid_until=None,
+        area="",
+        refs=None,
+        keywords=None,
+        prio="p2",
+    ):
+        return self._add(
+            {
+                "id": self.slugify(name),
+                "type": "note",
+                "state": "idle",
+                "name": name,
+                "description": description,
+                "area": area,
+                "refs": list(refs or []),
+                "guide_keywords": keywords or name.lower(),
+                "prio": prio,
+                "valid_from": valid_from,
+                "valid_until": valid_until,
+            }
+        )
 
     def _add(self, item: dict[str, Any]) -> dict[str, Any]:
         with self._locked():
@@ -673,6 +772,8 @@ class Watchlist:
         stamp = timestamp if timestamp else datetime.now(timezone.utc).isoformat()
         with self._locked():
             item = self._find(item_id)
+            if item.get("type") == "note":
+                die("notes have no last_check; use edit or done")
             item["last_check"] = stamp
             if item.get("once", False):
                 item["state"] = "done"
@@ -743,15 +844,17 @@ class Watchlist:
                     migrated += 1
                 item.pop("enabled", None)
                 item.setdefault("area", "")
-                item.setdefault("blocked_on", "")
-                item.setdefault("next_action", "")
+                if item.get("type") != "note":
+                    item.setdefault("blocked_on", "")
+                    item.setdefault("next_action", "")
                 refs = item.setdefault("refs", [])
                 if item.get("file") and item["file"] not in refs:
                     refs.insert(0, item["file"])
-                item.setdefault("once", False)
-                item.setdefault("effort", None)
-                item.setdefault("change_risk", None)
-                item.setdefault("window", None)
+                if item.get("type") != "note":
+                    item.setdefault("once", False)
+                    item.setdefault("effort", None)
+                    item.setdefault("change_risk", None)
+                    item.setdefault("window", None)
                 item.setdefault("prio", None)
             self.data["version"] = SCHEMA_VERSION
             self._save()
@@ -776,6 +879,18 @@ def format_items(items: list[dict[str, Any]]):
             print(f"  Description: {item.get('description')}")
         if item_type == "incident":
             print(f"  Status: {item.get('status')}   Incident severity: {item.get('risk')}")
+        if item_type == "note":
+            print(f"  Priority: {item.get('prio')}")
+            print(
+                f"  Valid: {item.get('valid_from') or '*'} through {item.get('valid_until') or '*'}"
+                " (local dates, inclusive)"
+            )
+            for ref in item.get("refs", []):
+                print(f"  Ref: {ref}")
+            if item.get("guide_keywords"):
+                print(f"  Keywords: {item['guide_keywords']}")
+            print()
+            continue
         print(
             "  Effort: {}   Change risk: {}   Window: {}   Priority: {}".format(
                 item.get("effort"),
@@ -813,6 +928,11 @@ def format_list(items: list[dict[str, Any]]):
             current_area = area
             print(f"\n## {area}")
         flags = [item.get("state", "?")]
+        if item.get("type") == "note":
+            flags.append(f"priority: {item.get('prio')}")
+            flags.append(
+                f"valid: {item.get('valid_from') or '*'} through {item.get('valid_until') or '*'}"
+            )
         if item.get("check_after"):
             flags.append(f"check after {item['check_after'].split('T')[0]}")
         if item.get("blocked_on"):
@@ -887,13 +1007,32 @@ def main():
     parser.epilog = """
 States:
   active  - part of the daily check (list-today)
-  idle    - backlog: never in list-today, still found by search/list (needs --refs)
+  idle    - backlog: never in list-today, still found by search/list (work needs --refs)
   done    - finished, hidden unless --all
+
+Notes:
+  idle information with optional refs and priority (default p2); never daily work.
+  --valid-from / --valid-until are optional inclusive YYYY-MM-DD local dates.
+  Missing boundaries are unlimited; no end means the note never expires.
+  list --current / --expired select notes; done closes them explicitly.
+  edit --valid-from '' / --valid-until '' removes the respective boundary.
+  Existing work schedules (check_after) continue to use UTC.
+
+Next:
+  next returns one unblocked action fitting --time/--window/--max-change-risk.
+  Order: p1, p2, p3, unset; then shorter effort; then ID. Defaults: 1h, wany.
+  Missing effort/effective window, empty next_action and future check_after are excluded.
+  JSON is one object or null. Selection does not change the register.
 
 Examples:
   cca-watchlist list-today
   cca-watchlist list --area server1
   cca-watchlist list --state idle
+  cca-watchlist add-note --name "Power maintenance" --description "Possible outage" \\
+    --valid-from 2026-09-16 --valid-until 2026-09-17 --prio p1
+  cca-watchlist list --current
+  cca-watchlist list --expired
+  cca-watchlist next --time 15m --json
   cca-watchlist show hetrix-status
   cca-watchlist search openresty
   cca-watchlist update hetrix-status
@@ -932,14 +1071,26 @@ Examples:
     p.add_argument("--max-change-risk", dest="max_change_risk", choices=CHANGE_RISKS)
     p.add_argument("--all", action="store_true", help="Include done items")
     p.add_argument("--json", action="store_true", help="JSON output")
+    validity = p.add_mutually_exclusive_group()
+    validity.add_argument(
+        "--expired", action="store_true", help="Notes ended before today (local date)"
+    )
+    validity.add_argument(
+        "--current", action="store_true", help="Notes valid today (local date, inclusive)"
+    )
 
-    p = subparsers.add_parser("ready", help="Select work for the available time and window")
-    p.add_argument("--time", choices=("15m", "1h", "4h"), default="1h")
-    p.add_argument("--window", choices=WINDOWS, default="wany")
-    p.add_argument("--max-change-risk", dest="max_change_risk", choices=CHANGE_RISKS)
-    p.add_argument("--area", help="Filter by area")
-    p.add_argument("--include-blocked", action="store_true")
-    p.add_argument("--json", action="store_true", help="JSON output")
+    for command, help_text in (
+        ("ready", "Select work for the available time and window"),
+        ("next", "Select one action by priority, effort, then ID"),
+    ):
+        p = subparsers.add_parser(command, help=help_text)
+        p.add_argument("--time", choices=("15m", "1h", "4h"), default="1h")
+        p.add_argument("--window", choices=WINDOWS, default="wany")
+        p.add_argument("--max-change-risk", dest="max_change_risk", choices=CHANGE_RISKS)
+        p.add_argument("--area", help="Filter by area")
+        if command == "ready":
+            p.add_argument("--include-blocked", action="store_true")
+        p.add_argument("--json", action="store_true", help="JSON output")
 
     p = subparsers.add_parser("show", help="Show one item")
     p.add_argument("id", help="Item ID")
@@ -963,6 +1114,16 @@ Examples:
     )
     add_common_item_args(p, default_state="active")
 
+    p = subparsers.add_parser("add-note", help="Add searchable information, never work")
+    p.add_argument("--name", required=True)
+    p.add_argument("--description", required=True)
+    p.add_argument("--valid-from", help="First valid local date, YYYY-MM-DD (inclusive)")
+    p.add_argument("--valid-until", help="Last valid local date, YYYY-MM-DD (inclusive)")
+    p.add_argument("--area", default="")
+    p.add_argument("--refs", nargs="*", default=[])
+    p.add_argument("--keywords")
+    p.add_argument("--prio", choices=PRIORITIES, default="p2")
+
     p = subparsers.add_parser("add-task", help="Add a task / backlog item")
     p.add_argument("--name", required=True, help="Task name")
     p.add_argument("--description", required=True, help="Job description")
@@ -980,6 +1141,8 @@ Examples:
 
     p = subparsers.add_parser("edit", help="Edit fields of an existing item")
     p.add_argument("id", help="Item ID")
+    p.add_argument("--valid-from", help="Note start date; empty string removes boundary")
+    p.add_argument("--valid-until", help="Note end date; empty string removes boundary")
     p.add_argument("--name")
     p.add_argument("--description")
     p.add_argument("--area")
@@ -1037,6 +1200,8 @@ Examples:
         print(json.dumps(watchlist.list_today(item_type=args.type), indent=2, ensure_ascii=False))
 
     elif args.command == "list":
+        if (args.expired or args.current) and args.type not in (None, "note"):
+            parser.error("--expired and --current only apply to --type note")
         items = watchlist.list_items(
             area=args.area,
             state=args.state,
@@ -1047,11 +1212,33 @@ Examples:
             window=args.window,
             prio=args.prio,
             max_change_risk=args.max_change_risk,
+            expired=args.expired,
+            current=args.current,
         )
         if args.json:
             print(json.dumps(items, indent=2, ensure_ascii=False))
         else:
             format_list(items)
+
+    elif args.command == "next":
+        item = watchlist.next_item(
+            time_box={"15m": "e15", "1h": "e1h", "4h": "e4h"}[args.time],
+            window=args.window,
+            max_change_risk=args.max_change_risk,
+            area=args.area,
+        )
+        if args.json:
+            print(
+                json.dumps(
+                    dict(item, effective_window=watchlist.effective_window(item)) if item else None,
+                    indent=2,
+                    ensure_ascii=False,
+                )
+            )
+        elif item:
+            format_items([item])
+        else:
+            print("No actionable items found")
 
     elif args.command == "ready":
         time_box = {"15m": "e15", "1h": "e1h", "4h": "e4h"}[args.time]
@@ -1104,6 +1291,19 @@ Examples:
             effort=args.effort,
             change_risk=args.change_risk,
             window=args.window,
+            prio=args.prio,
+        )
+        print(json.dumps(item, indent=2, ensure_ascii=False))
+
+    elif args.command == "add-note":
+        item = watchlist.add_note(
+            name=args.name,
+            description=args.description,
+            valid_from=args.valid_from,
+            valid_until=args.valid_until,
+            area=args.area,
+            refs=args.refs,
+            keywords=args.keywords,
             prio=args.prio,
         )
         print(json.dumps(item, indent=2, ensure_ascii=False))
@@ -1172,6 +1372,10 @@ Examples:
                 changes[field] = value
         if args.refs is not None:
             changes["refs"] = args.refs
+        for field in ("valid_from", "valid_until"):
+            value = getattr(args, field)
+            if value is not None:
+                changes[field] = value or None
         check_after_iso, monitor_until_iso = watchlist._parse_schedule(
             args.check_after, args.monitor_until
         )

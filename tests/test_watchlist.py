@@ -697,3 +697,203 @@ def test_ready_uses_change_risk_minimum_when_window_is_unset(wl):
     assert ready[0]["id"] == "shared-change"
     assert ready[0]["window"] is None
     assert ready[0]["effective_window"] == "woff"
+
+
+def test_note_lifecycle_and_queries(wl):
+    note = run_json(
+        wl,
+        "add-note",
+        "--name",
+        "Power maintenance",
+        "--description",
+        "Possible outage",
+        "--prio",
+        "p1",
+        "--valid-from",
+        "2026-09-16",
+        "--valid-until",
+        "2026-09-17",
+    )
+    assert note["state"] == "idle"
+    assert note["prio"] == "p1"
+    assert "next_action" not in note
+    assert run_json(wl, "search", "outage", "--json") == [note]
+    assert run_json(wl, "list", "--type", "note", "--prio", "p1", "--json") == [note]
+    assert "2026-09-16 through 2026-09-17" in run_cli(wl, "show", note["id"]).stdout
+    assert "2026-09-16 through 2026-09-17" in run_cli(wl, "list").stdout
+    assert run_json(wl, "list-today") == []
+    assert run_json(wl, "ready", "--json") == {"ready": [], "untagged": []}
+    run_cli(wl, "migrate")
+    run_cli(wl, "edit", note["id"], "--valid-from", "", "--valid-until", "")
+    edited = run_json(wl, "show", note["id"], "--json")
+    assert edited["valid_from"] is None and edited["valid_until"] is None
+    assert "next_action" not in edited
+    run_cli(wl, "park", note["id"])
+    run_cli(wl, "done", note["id"])
+    assert run_json(wl, "search", "outage", "--json") == []
+    assert len(run_json(wl, "search", "outage", "--all", "--json")) == 1
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ("--valid-from", "2026-02-30"),
+        ("--valid-until", "2026-9-16"),
+        ("--valid-until", ""),
+        ("--valid-from", "2026-09-17", "--valid-until", "2026-09-16"),
+        ("--next-action", "Do something"),
+        ("--prio", "p0"),
+    ],
+)
+def test_invalid_note_creation_does_not_write(wl, args):
+    before = wl.read_bytes()
+    result = run_cli(
+        wl, "add-note", "--name", "Note", "--description", "Context", *args, expect_ok=False
+    )
+    assert result.returncode != 0
+    assert wl.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ("activate", "note"),
+        ("update", "note"),
+        ("edit", "note", "--next-action", ""),
+        ("edit", "note", "--effort", "e15"),
+        ("edit", "note", "--change-risk", "r0"),
+        ("edit", "note", "--window", "wany"),
+        ("park", "note", "--blocked-on", "approval"),
+        ("edit", "note", "--check-after", "2026-09-16"),
+        ("edit", "note", "--monitor-until", "1 day"),
+        ("edit", "note", "--valid-from", "2026-09-18"),
+        ("edit", "note", "--valid-until", "invalid"),
+    ],
+)
+def test_invalid_note_mutation_does_not_write(wl, args):
+    run_cli(
+        wl, "add-note", "--name", "Note", "--description", "Context", "--valid-until", "2026-09-17"
+    )
+    before = wl.read_bytes()
+    assert run_cli(wl, *args, expect_ok=False).returncode != 0
+    assert wl.read_bytes() == before
+
+
+def test_note_expiry_uses_inclusive_local_dates(wl, monkeypatch):
+    class LocalDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            # The local date has crossed midnight while UTC is still yesterday.
+            if tz is None:
+                return cls(2026, 9, 17, 0, 30)
+            return cls(2026, 9, 16, 22, 30, tzinfo=timezone.utc).astimezone(tz)
+
+    monkeypatch.setattr(watchlist, "datetime", LocalDateTime)
+    store = watchlist.Watchlist(wl)
+    store.add_note("Expired", "d", valid_until="2026-09-16")
+    store.add_note("Today", "d", valid_from="2026-09-17", valid_until="2026-09-17")
+    store.add_note("Future", "d", valid_from="2026-09-18")
+    store.add_note("Unlimited", "d")
+    assert [i["id"] for i in store.list_items(expired=True)] == ["expired"]
+    assert [i["id"] for i in store.list_items(current=True)] == ["today", "unlimited"]
+    store.set_state("expired", "done")
+    assert store.list_items(expired=True) == []
+    assert len(store.list_items(expired=True, include_done=True)) == 1
+
+
+def test_note_cli_validity_filters_and_first_file(tmp_path):
+    path = tmp_path / "watchlist.json"
+    note = run_json(path, "add-note", "--name", "Permanent", "--description", "d")
+    assert note["prio"] == "p2"
+    run_cli(
+        path,
+        "add-note",
+        "--name",
+        "Expired",
+        "--description",
+        "d",
+        "--valid-until",
+        "2000-01-01",
+        "--area",
+        "server1",
+        "--prio",
+        "p1",
+    )
+    assert run_json(path, "list", "--current", "--json") == [note]
+    assert [
+        i["id"]
+        for i in run_json(path, "list", "--expired", "--area", "server1", "--prio", "p1", "--json")
+    ] == ["expired"]
+    assert run_cli(path, "list", "--expired", "--current", expect_ok=False).returncode != 0
+    assert run_cli(path, "list", "--expired", "--type", "task", expect_ok=False).returncode != 0
+
+
+def test_next_selection_and_constraints(wl):
+    store = watchlist.Watchlist(wl)
+
+    def add(name, **changes):
+        args = dict(
+            name=name,
+            description="d",
+            effort="e15",
+            change_risk="r0",
+            next_action="Apply config",
+            prio="p2",
+            area="server1",
+        )
+        args.update(changes)
+        return store.add_routine(**args)
+
+    add("Low", prio="p3")
+    add("Unset", prio=None)
+    add("Priority", prio="p1", effort="e1h")
+    add("B tie")
+    add("A tie")
+    add("Blocked", prio="p1", blocked_on="approval")
+    add("Done", prio="p1", state="done")
+    add("No action", prio="p1", next_action="  ")
+    add("Future", prio="p1", check_after="2099-01-01")
+    add("Untagged", prio="p1", effort=None)
+    add("Large", prio="p1", effort="exl")
+    add("Night", prio="p1", change_risk="r3")
+    add("Other", prio="p1", area="server2")
+    before = wl.read_bytes()
+    assert run_json(wl, "next", "--area", "server1", "--json")["id"] == "priority"
+    assert run_json(wl, "next", "--area", "server1", "--time", "15m", "--json")["id"] == "a-tie"
+    assert (
+        run_json(wl, "next", "--area", "server1", "--time", "15m", "--window", "wnight", "--json")[
+            "id"
+        ]
+        == "night"
+    )
+    assert (
+        run_json(
+            wl,
+            "next",
+            "--area",
+            "server1",
+            "--time",
+            "15m",
+            "--window",
+            "wnight",
+            "--max-change-risk",
+            "r0",
+            "--json",
+        )["id"]
+        == "a-tie"
+    )
+    assert "ID: priority" in run_cli(wl, "next", "--area", "server1").stdout
+    assert run_json(wl, "next", "--area", "missing", "--json") is None
+    assert run_cli(wl, "next", "--area", "missing").stdout.strip() == "No actionable items found"
+    assert wl.read_bytes() == before
+
+
+def test_manually_tagged_note_never_becomes_work(wl):
+    store = watchlist.Watchlist(wl)
+    note = store.add_note("Note", "d")
+    note.update(state="active", effort="e15", change_risk="r0", next_action="Do it")
+    assert store.list_today() == []
+    assert store.ready_items("e1h", "wany", None) == ([], [])
+    assert store.next_item() is None
+    note.pop("effort")
+    assert store.ready_items("e1h", "wany", None) == ([], [])
