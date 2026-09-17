@@ -1,6 +1,6 @@
 ---
 name: cca-creating-incidents
-description: Create incident documentation after manual problem resolution
+description: Create or update incident documentation for a specific problem event, including appending new evidence or a dated follow-up to an existing incident
 argument-hint: "[server] [service] [brief-description]"
 allowed-tools: Write(*), Bash(*), Read(*)
 ---
@@ -64,6 +64,8 @@ On top of `cca-core` → *Written Knowledge: Evidence & Length*:
   it. Later work building on an old incident verifies the current state and appends a dated note.
 - **Shape:** symptom → evidence → what was done → what remains open. No narration of the debugging
   journey.
+- **Keep only event-specific evidence in the incident; put reusable tool or product behavior in an
+  existing guide and link that guide from the incident.**
 
 ## Usage Examples
 
