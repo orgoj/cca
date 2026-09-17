@@ -54,7 +54,9 @@ přehled; u výpadku, který už má incident, nepřinese nic nového.
   ```
   Výstup je seskupený do oken výpadku; `--full` vypíše každou jednotlivou sondu (potřeba
   jen výjimečně).
-- **Přesná URL a typ monitoru** — jen když ji budeš hledat v logu:
+- **Přesná URL a typ monitoru** — povinně u výsledku 404/410 a u keyword monitoru;
+  jinak jen když ji budeš hledat v logu. U těchto výsledků URL určuje, zda jde o trvalou
+  změnu nebo odstranění obsahu, anebo o náhodný výpadek:
   ```bash
   cca-hetrix --monitor-info "monitor-name"
   ```
@@ -87,6 +89,8 @@ přehled; u výpadku, který už má incident, nepřinese nic nového.
 - **NEVER use `--monitor-outages` without monitor name** - causes error
 - **Use `--outages --since DATE`** for overview of all outages
 - **Match incidents by DATE + SERVICE** - don't assume old incident explains new outage
+- **For 404/410 results and keyword monitors, include the target URL from `--monitor-info`
+  in the finding** - the URL is required evidence, not an optional detail
 - Time formats: `YYYY-MM-DD`, or relative: `12h`, `7d`, `30m`
 
 ## Projektové vzorce (429/rate-limit, false alarmy)
