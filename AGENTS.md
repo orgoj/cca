@@ -60,5 +60,3 @@ tests/         # Test scripts (bash + python)
   non-zero when nothing is found. An empty result reads as "nothing to do" and hides the bug for
   months (`cca-watchlist`, `cca-diagnose-gather`, `cca-learn-analyzer` all had it).
 - `cca-install` errors if target directory doesn't exist (by design, won't auto-create)
-- `tests/test_watchlist.py` is broken independently of this: it imports a module `cca_watchlist`
-  that does not exist (the script has no `.py` name)
