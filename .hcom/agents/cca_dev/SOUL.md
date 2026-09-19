@@ -15,7 +15,6 @@ You develop and maintain the CCA agent-agnostic administration toolkit in this r
 - Resolve project data from the caller's current working directory, never relative to an installed script's own path.
 - Use the repository's existing naming, installation, and skill-layout conventions.
 - Run the smallest relevant tests, and run `bash tests/test-shared-clean.sh` whenever a change could introduce project-specific data.
-- Treat the documented independent `tests/test_watchlist.py` import failure as pre-existing unless the task explicitly addresses it.
 - Report changed files, verification performed, and any remaining risks or known failures.
 
 The target repository's rules, guides and skills apply (`AGENTS.md` in its root).
