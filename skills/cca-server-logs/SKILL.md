@@ -1,6 +1,6 @@
 ---
 name: cca-server-logs
-description: Analyza serverovych logu — obecna pravidla. Projektove detaily (nastroje, formaty, timezone, schema) jsou VZDY v projektovem log guide; najdi ho pres tantivy2agents jako prvni krok.
+description: Analyza serverovych logu vcetne systemovych (journalctl, kernel log, syslog) a forensiky vypadku a bootu. Projektove detaily (nastroje, formaty, timezone, schema) jsou VZDY v projektovem log guide; najdi ho pres tantivy2agents jako prvni krok.
 allowed-tools: Bash(*), Read(*), Grep(*)
 ---
 
