@@ -227,6 +227,23 @@ def test_edit_changes_fields_and_refs(wl, tmp_path):
     assert item["refs"] == ["b.md"]
 
 
+def test_edit_empty_schedule_clears_each_field(wl):
+    item = run_json(
+        wl, "add-routine", "--name", "Thing", "--description", "d",
+        "--check-after", "2026-10-01", "--monitor-until", "1 week",
+    )
+    monitor_until = item["monitor_until"]
+
+    item = run_json(wl, "edit", "thing", "--check-after", "")
+    assert item["check_after"] is None
+    assert item["monitor_until"] == monitor_until
+
+    item = run_json(wl, "edit", "thing", "--monitor-until", "")
+    assert item["check_after"] is None
+    assert item["monitor_until"] is None
+    assert json.loads(wl.read_text(encoding="utf-8"))["items"][0] == item
+
+
 def test_edit_without_any_change_is_refused(wl):
     run_cli(wl, "add-routine", "--name", "Thing", "--description", "d")
     result = run_cli(wl, "edit", "thing", expect_ok=False)

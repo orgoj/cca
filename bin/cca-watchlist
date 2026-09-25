@@ -1179,8 +1179,8 @@ Examples:
     p.add_argument("--refs", nargs="*", help="Replace the whole refs list")
     p.add_argument("--add-ref", dest="add_ref", nargs="*", default=[], help="Append refs")
     p.add_argument("--remove-ref", dest="remove_ref", nargs="*", default=[], help="Drop refs")
-    p.add_argument("--check-after", dest="check_after", help='"YYYY-MM-DD [morning|afternoon]"')
-    p.add_argument("--monitor-until", dest="monitor_until", help='"X [week|day](s)"')
+    p.add_argument("--check-after", dest="check_after", help='"YYYY-MM-DD [morning|afternoon]"; empty clears')
+    p.add_argument("--monitor-until", dest="monitor_until", help='"X [week|day](s)"; empty clears')
 
     p = subparsers.add_parser("park", help="Move item to backlog (state=idle)")
     p.add_argument("id", help="Item ID")
@@ -1401,9 +1401,9 @@ Examples:
         check_after_iso, monitor_until_iso = watchlist._parse_schedule(
             args.check_after, args.monitor_until
         )
-        if check_after_iso:
+        if args.check_after is not None:
             changes["check_after"] = check_after_iso
-        if monitor_until_iso:
+        if args.monitor_until is not None:
             changes["monitor_until"] = monitor_until_iso
         item = watchlist.edit(args.id, changes, add_ref=args.add_ref, remove_ref=args.remove_ref)
         print(json.dumps(item, indent=2, ensure_ascii=False))
