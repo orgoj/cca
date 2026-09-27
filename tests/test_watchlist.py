@@ -41,6 +41,8 @@ def run_cli(path: Path, *args, expect_ok: bool = True):
 
 
 def run_json(path: Path, *args):
+    if args and args[0] == "list-today" and "--json" not in args:
+        args = (*args, "--json")
     return json.loads(run_cli(path, *args).stdout)
 
 
@@ -737,7 +739,7 @@ def test_note_lifecycle_and_queries(wl):
     assert run_json(wl, "search", "outage", "--json") == [note]
     assert run_json(wl, "list", "--type", "note", "--prio", "p1", "--json") == [note]
     assert "2026-09-16 through 2026-09-17" in run_cli(wl, "show", note["id"]).stdout
-    assert "2026-09-16 through 2026-09-17" in run_cli(wl, "list").stdout
+    assert "2026-09-16 through 2026-09-17" not in run_cli(wl, "list").stdout
     assert run_json(wl, "list-today") == []
     assert run_json(wl, "ready", "--json") == {"ready": [], "untagged": []}
     run_cli(wl, "migrate")
@@ -769,6 +771,40 @@ def test_invalid_note_creation_does_not_write(wl, args):
     )
     assert result.returncode != 0
     assert wl.read_bytes() == before
+
+
+def test_discovery_outputs_one_line_per_item_and_show_keeps_detail(wl):
+    item = run_json(
+        wl, "add-routine", "--name", "Power\ncheck", "--description", "Long trigger details",
+        "--next-action", "Capture logs", "--refs", "guides/power.md",
+    )
+    for args in (("list",), ("search", "power"), ("list-today",)):
+        lines = run_cli(wl, *args).stdout.splitlines()
+        assert lines == [f"{item['id']} | routine | active | - | - | Power check"]
+        assert "guides/power.md" not in lines[0]
+        assert "Long trigger details" not in lines[0]
+    assert "Long trigger details" in run_cli(wl, "show", item["id"]).stdout
+    assert run_json(wl, "list-today")[0]["refs"] == ["guides/power.md"]
+
+
+@pytest.mark.parametrize("command", ["list", "search", "list-today"])
+def test_discovery_limits_large_result_sets(wl, command):
+    items = [
+        {
+            "id": f"power-{n:02d}", "name": f"Power {n:02d}", "type": "routine",
+            "state": "active", "description": "Long details", "last_check": "never",
+            "refs": ["guides/power.md"],
+        }
+        for n in range(25)
+    ]
+    wl.write_text(json.dumps({"version": "2.0", "items": items}), encoding="utf-8")
+    args = ("search", "power") if command == "search" else (command,)
+    lines = run_cli(wl, *args).stdout.splitlines()
+    assert len(lines) == 21
+    assert [line.split(" | ")[0] for line in lines[:20]] == [i["id"] for i in items[:20]]
+    assert "Showing 20 of 25 items" in lines[-1]
+    assert "show ID for details" in lines[-1]
+    assert len(run_json(wl, *args, "--json")) == 25
 
 
 @pytest.mark.parametrize(
@@ -929,8 +965,10 @@ def test_standby_transitions_preserve_blocker_and_capture(wl, initial, blocker):
     assert item["blocked_on"] == blocker
     assert run_json(wl, "list", "--standby", "--json") == [item]
     plain = run_cli(wl, "list", "--standby").stdout
-    assert "Trigger: When power fails" in plain
-    assert "Capture: Capture voltage and logs" in plain
+    assert plain.strip() == "capture-outage | task | standby | - | - | Capture outage"
+    shown = run_cli(wl, "show", "capture-outage").stdout
+    assert "When power fails" in shown
+    assert "Capture voltage and logs" in shown
     active = run_json(wl, "activate", "capture-outage")
     assert active["state"] == "active"
     assert active["blocked_on"] == blocker

@@ -916,36 +916,32 @@ def format_items(items: list[dict[str, Any]]):
         print()
 
 
-def format_list(items: list[dict[str, Any]]):
-    """Compact rendering grouped by area - the readable replacement for TODO.md."""
+LIST_DISPLAY_LIMIT = 20
+
+
+def format_list(items: list[dict[str, Any]], command: str):
+    """Render one short line per item; show provides the full detail."""
     if not items:
         print("No items found")
         return
 
-    current_area = object()
-    for item in items:
-        area = item.get("area") or "(no area)"
-        if area != current_area:
-            current_area = area
-            print(f"\n## {area}")
-        flags = [item.get("state", "?")]
-        if item.get("type") == "note":
-            flags.append(f"priority: {item.get('prio')}")
-            flags.append(
-                f"valid: {item.get('valid_from') or '*'} through {item.get('valid_until') or '*'}"
-            )
-        if item.get("check_after"):
-            flags.append(f"check after {item['check_after'].split('T')[0]}")
-        if item.get("blocked_on"):
-            flags.append(f"blocked: {item['blocked_on']}")
-        print(f"  - [{item.get('type')}] {item.get('name')}  ({', '.join(flags)})")
-        print(f"      id: {item.get('id')}")
-        if item.get("state") == "standby":
-            print(f"      Trigger: {item.get('description') or '-'}")
-            print(f"      Capture: {item.get('next_action') or '-'}")
-        for ref in item.get("refs", []):
-            print(f"      ref: {ref}")
-    print()
+    for item in items[:LIST_DISPLAY_LIMIT]:
+        fields = (
+            item.get("id") or "-",
+            item.get("type") or "-",
+            item.get("state") or "-",
+            item.get("area") or "-",
+            item.get("prio") or "-",
+            item.get("name") or "-",
+        )
+        print(" | ".join(" ".join(str(value).split()) for value in fields))
+    if len(items) > LIST_DISPLAY_LIMIT:
+        hint = {
+            "search": "Use a more specific search query",
+            "list": "Narrow with list filters",
+            "list-today": "Narrow with list-today --type",
+        }[command]
+        print(f"Showing {LIST_DISPLAY_LIMIT} of {len(items)} items. {hint}; use show ID for details.")
 
 
 def format_ready(items: list[dict[str, Any]], untagged_count: int):
@@ -1017,7 +1013,7 @@ States:
 
 Standby:
   standby ID waits for the event in description; next_action says what to capture.
-  list --standby shows both. activate ID resumes work, preserving blocked_on.
+  list --standby finds candidates; show ID displays trigger and capture details.
   blocked_on is an independent obstacle, not the trigger being awaited.
   list --all includes all states and types; explicit filters still apply.
 
@@ -1028,6 +1024,11 @@ Notes:
   list --current / --expired select notes; done closes them explicitly.
   edit --valid-from '' / --valid-until '' removes the respective boundary.
   Existing work schedules (check_after) continue to use UTC.
+
+Discovery:
+  list-today, list and search show one line per item, up to 20 items.
+  Narrow broad results with a type, list filter or more specific search query.
+  show ID displays full details; --json keeps the complete machine-readable result.
 
 Next:
   next returns one unblocked action fitting --time/--window/--max-change-risk.
@@ -1070,14 +1071,15 @@ Examples:
 
     p = subparsers.add_parser("list-today", help="List items to check today")
     p.add_argument("--type", choices=TYPES, help="Filter by type")
+    p.add_argument("--json", action="store_true", help="Full JSON output")
 
-    p = subparsers.add_parser("list", help="List items (grouped by area)")
+    p = subparsers.add_parser("list", help="List items (one line per item)")
     p.add_argument("--area", help="Filter by area")
     state_filter = p.add_mutually_exclusive_group()
     state_filter.add_argument("--state", choices=STATES, help="Filter by state")
     state_filter.add_argument(
         "--standby", dest="state", action="store_const", const="standby",
-        help="Select standby items, showing trigger and evidence to capture",
+        help="Select standby items (use show ID for trigger and evidence)",
     )
     p.add_argument("--type", choices=TYPES, help="Filter by type")
     p.add_argument("--effort", choices=EFFORTS, help="Filter by effort")
@@ -1219,7 +1221,11 @@ Examples:
     watchlist = Watchlist(filepath, debug=debug, allow_legacy=(args.command == "migrate"))
 
     if args.command == "list-today":
-        print(json.dumps(watchlist.list_today(item_type=args.type), indent=2, ensure_ascii=False))
+        items = watchlist.list_today(item_type=args.type)
+        if args.json:
+            print(json.dumps(items, indent=2, ensure_ascii=False))
+        else:
+            format_list(items, "list-today")
 
     elif args.command == "list":
         if (args.expired or args.current) and args.type not in (None, "note"):
@@ -1240,7 +1246,7 @@ Examples:
         if args.json:
             print(json.dumps(items, indent=2, ensure_ascii=False))
         else:
-            format_list(items)
+            format_list(items, "list")
 
     elif args.command == "next":
         item = watchlist.next_item(
@@ -1291,7 +1297,7 @@ Examples:
         if args.json:
             print(json.dumps(items, indent=2, ensure_ascii=False))
         else:
-            format_list(items)
+            format_list(items, "search")
 
     elif args.command == "update":
         item = watchlist.update_timestamp(args.id, timestamp=args.timestamp)
