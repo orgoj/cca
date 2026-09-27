@@ -11,8 +11,8 @@ Use `cca-watchlist` to find, inspect, and update watchlist items. Keep discovery
 ## Steps
 
 ### 1. Analysis
-**Mandatory First Step:** Run `date +%Y-%m-%d\ %H:%M`
-- Needed for time-based filtering and relative time calculations.
+Run `date +%Y-%m-%d\ %H:%M` only when the current date and time are not already in context.
+Use it for time-based filtering and relative time calculations.
 
 ### 2. Execution
 **Run it from the project root.** The script resolves `watchlist.json` from the current directory
@@ -86,6 +86,9 @@ Avoid `--json` on discovery commands unless the caller needs full machine-readab
 - `cca-watchlist add-routine|add-task|add-incident|add-note ...` - Create an item;
   tasks and notes default to `idle`, routines and incidents to `active`.
 - `cca-watchlist edit <id> --<field> <value>` - Change fields; **never hand-edit the JSON.**
+- Common `edit` and `add-*` flags: `--name`, `--description`, `--check-after`,
+  `--next-action`, `--status`, `--prio`, `--effort`, `--change-risk`, `--window`,
+  `--refs`, `--blocked-on`. `add-incident` also requires `--file` and `--status`.
 - `cca-watchlist rename <old-id> <new-id>` - Change only the canonical slug ID; preserve item fields and order.
 - `cca-watchlist park|standby|activate|done <id>` - Move between states.
 - `cca-watchlist remove <id>` - Delete permanently.
@@ -110,7 +113,7 @@ relative dates or time cutoffs.
 
 ## Critical Rules
 
-- **ALWAYS start with `date`** - needed for time calculations
+- Run `date` only when the current date and time are not already in context.
 - **Use the CLI's selectors** before inspecting an item; only custom time cutoffs need local filtering.
 - **Use `show` for details** instead of expanding a whole discovery result.
 
