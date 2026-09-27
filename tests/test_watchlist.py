@@ -43,7 +43,7 @@ def run_cli(path: Path, *args, expect_ok: bool = True):
 def run_json(path: Path, *args):
     item_mutations = {
         "update", "add-routine", "add-note", "add-task", "add-incident",
-        "edit", "park", "activate", "standby", "done",
+        "edit", "rename", "park", "activate", "standby", "done",
     }
     if args and args[0] in item_mutations | {"list-today"} and "--json" not in args:
         args = (*args, "--json")
@@ -698,7 +698,9 @@ def test_ready_filters_sorts_and_reports_untagged(wl):
     )
     assert [item["id"] for item in with_blocked["ready"]] == ["blocked", "second-open"]
     plain = run_cli(wl, "ready", "--time", "15m", "--window", "wany").stdout
-    assert "second-open · p2 · e15 · r0 · wany · Do Second open" in plain
+    assert "second-open | p2 | e15 | wany" in plain
+    assert "Do Second open" not in plain
+    assert "Hidden: 0" in plain
     assert "Untagged (effort=null): 1" in plain
 
 
@@ -724,6 +726,135 @@ def test_ready_uses_change_risk_minimum_when_window_is_unset(wl):
     assert ready[0]["id"] == "shared-change"
     assert ready[0]["window"] is None
     assert ready[0]["effective_window"] == "woff"
+    assert "shared-change | p2 | e15 | woff" in run_cli(
+        wl, "ready", "--time", "15m", "--window", "woff"
+    ).stdout
+
+
+def test_agenda_orders_due_items_and_deduplicates_priority(wl):
+    for name, prio, action in (
+        ("Today priority", "p1", "Do it"),
+        ("Old low", "p3", "Check"),
+        ("Same z", "p2", "Check"),
+        ("Same a", "p2", "Check"),
+        ("No deadline", "p1", "Check"),
+        ("Future priority", "p1", "Do later"),
+        ("No action", "p1", ""),
+    ):
+        run_cli(wl, "add-routine", "--name", name, "--description", "d",
+                "--prio", prio, "--effort", "e15", "--change-risk", "r0",
+                "--next-action", action)
+    data = json.loads(wl.read_text(encoding="utf-8"))
+    today = datetime.now(timezone.utc).date()
+    dates = {
+        "today-priority": f"{today}T00:00:00",
+        "old-low": f"{today - timedelta(days=8)}T06:00:00",
+        "same-z": f"{today - timedelta(days=1)}T06:00:00",
+        "same-a": f"{today - timedelta(days=1)}T06:00:00",
+        "future-priority": "2099-01-01T06:00:00",
+    }
+    for item in data["items"]:
+        item["check_after"] = dates.get(item["id"])
+        if item["id"] == "old-low":
+            item["blocked_on"] = "approval"
+        if item["id"] in ("no-action", "future-priority"):
+            item["state"] = "idle"
+            item["refs"] = ["guide.md"]
+    wl.write_text(json.dumps(data), encoding="utf-8")
+    agenda = run_cli(wl, "agenda").stdout
+    rows = [line for line in agenda.splitlines() if " | " in line]
+    assert [line.split(" | ")[0] for line in rows] == [
+        "old-low", "same-a", "same-z", "today-priority", "no-deadline"
+    ]
+    assert "old-low | p3 | e15 | +8d [blocked]" in agenda
+    assert "today-priority | p1 | e15 | dnes" in agenda
+    assert "no-deadline | p1 | e15 | -" in agenda
+    assert "Hidden: 0" in agenda
+    assert "future-priority" not in agenda
+    assert "no-action" not in agenda
+    assert run_cli(wl, "agenda", "--json", expect_ok=False).returncode != 0
+    today_rows = run_cli(wl, "list-today").stdout.splitlines()
+    assert today_rows[:3] == [
+        "old-low | p3 | e15 | +8d",
+        "same-a | p2 | e15 | +1d",
+        "same-z | p2 | e15 | +1d",
+    ]
+
+
+def test_agenda_priority_fills_remaining_rows_and_reports_hidden(wl):
+    for number in range(21):
+        run_cli(wl, "add-routine", "--name", f"Due {number:02d}", "--description", "d",
+                "--effort", "e15", "--change-risk", "r0", "--prio", "p2")
+    run_cli(wl, "add-task", "--name", "Priority backlog", "--description", "d",
+            "--state", "idle", "--refs", "guide.md", "--effort", "e15",
+            "--change-risk", "r0", "--prio", "p1", "--next-action", "Act")
+    output = run_cli(wl, "agenda").stdout
+    assert len([line for line in output.splitlines() if " | " in line]) == 20
+    assert "Hidden: 2" in output
+    assert "priority-backlog" not in output
+    run_cli(wl, "done", "due-20")
+    run_cli(wl, "done", "due-19")
+    output = run_cli(wl, "agenda").stdout
+    assert "Priority:\npriority-backlog | p1 | e15 | -" in output
+    assert "Hidden: 0" in output
+
+
+def test_ready_text_limit_verbose_and_complete_json(wl):
+    for number in range(22):
+        run_cli(wl, "add-routine", "--name", f"Work {number:02d}", "--description", "d",
+                "--effort", "e15", "--change-risk", "r0", "--next-action", "Long action")
+    plain = run_cli(wl, "ready").stdout
+    verbose = run_cli(wl, "ready", "--verbose").stdout
+    assert len([line for line in plain.splitlines() if " | " in line]) == 20
+    assert len([line for line in verbose.splitlines() if " | " in line]) == 20
+    assert "Long action" not in plain
+    assert "Long action" in verbose
+    assert "Hidden: 2" in plain and "Hidden: 2" in verbose
+    assert len(run_json(wl, "ready", "--json")["ready"]) == 22
+
+
+def test_work_edits_refresh_last_check_and_warn_only_for_stale_schedule(wl):
+    (wl.parent / "issue.md").write_text("context", encoding="utf-8")
+    run_cli(wl, "add-incident", "--name", "Issue", "--file", "issue.md",
+            "--status", "monitoring", "--check-after", "2000-01-01")
+    item_id = run_json(wl, "list", "--json")[0]["id"]
+    before = run_json(wl, "show", item_id, "--json")
+    result = run_cli(wl, "edit", item_id, "--next-action", "Inspect")
+    after = run_json(wl, "show", item_id, "--json")
+    assert after["last_check"] != before["last_check"]
+    assert "check_after 2000-01-01 je v minulosti" in result.stderr
+    invalid_before = wl.read_bytes()
+    invalid = run_cli(wl, "edit", item_id, "--next-action", "Bad", "--valid-from", "2000-01-01",
+                      expect_ok=False)
+    assert invalid.returncode != 0
+    assert wl.read_bytes() == invalid_before
+    future = (datetime.now(timezone.utc).date() + timedelta(days=5)).isoformat()
+    result = run_cli(wl, "edit", item_id, "--status", "resolved", "--check-after", future)
+    after_status = run_json(wl, "show", item_id, "--json")
+    assert after_status["last_check"] != after["last_check"]
+    assert "check_after" not in result.stderr
+
+
+def test_rename_preserves_other_fields_order_and_rejects_invalid_ids(wl):
+    first = run_json(wl, "add-routine", "--name", "First", "--description", "d")
+    second = run_json(wl, "add-routine", "--name", "Second", "--description", "d")
+    assert run_cli(wl, "rename", "first", "renamed").stdout == "rename: renamed\n"
+    renamed = run_json(wl, "show", "renamed", "--json")
+    assert renamed == dict(first, id="renamed")
+    assert [item["id"] for item in json.loads(wl.read_text(encoding="utf-8"))["items"]] == [
+        "renamed", "second"
+    ]
+    assert run_json(wl, "rename", "renamed", "first") == first
+    unchanged = wl.read_bytes()
+    for old, new in (("missing", "new"), ("first", "second"),
+                     ("first", ""), ("first", "Bad Name"), ("first", "bad--name")):
+        assert run_cli(wl, "rename", old, new, expect_ok=False).returncode != 0
+        assert wl.read_bytes() == unchanged
+    result = run_cli(wl, "edit", "first", "--name", "New name")
+    assert "cca-watchlist rename first NEW_ID" in result.stderr
+    item = run_json(wl, "show", "first", "--json")
+    assert item == dict(first, name="New name")
+    assert run_json(wl, "show", second["id"], "--json") == second
 
 
 def test_note_lifecycle_and_queries(wl):
@@ -786,9 +917,12 @@ def test_discovery_outputs_one_line_per_item_and_show_keeps_detail(wl):
         wl, "add-routine", "--name", "Power\ncheck", "--description", "Long trigger details",
         "--next-action", "Capture logs", "--refs", "guides/power.md",
     )
-    for args in (("list",), ("list-today",)):
+    for args, expected in (
+        (("list",), f"{item['id']} | routine | active | - | - | Power check"),
+        (("list-today",), f"{item['id']} | - | - | -"),
+    ):
         lines = run_cli(wl, *args).stdout.splitlines()
-        assert lines == [f"{item['id']} | routine | active | - | - | Power check"]
+        assert lines == [expected]
         assert "guides/power.md" not in lines[0]
         assert "Long trigger details" not in lines[0]
     assert run_cli(wl, "search", "power", "--brief").stdout.strip() == item["id"]

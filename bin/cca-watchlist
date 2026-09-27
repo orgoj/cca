@@ -37,7 +37,7 @@ SCHEMA_MAJOR = 2
 CREATING_COMMANDS = {"add-routine", "add-incident", "add-task", "add-note"}
 ITEM_MUTATION_COMMANDS = (
     "update", "add-routine", "add-note", "add-task", "add-incident",
-    "edit", "park", "activate", "standby", "done",
+    "edit", "rename", "park", "activate", "standby", "done",
 )
 STATES = ("active", "idle", "standby", "done")
 TYPES = ("routine", "incident", "task", "note")
@@ -414,7 +414,12 @@ class Watchlist:
 
             results.append(item)
 
-        return results
+        return sorted(results, key=lambda item: (
+            item.get("check_after") is None,
+            item.get("check_after") or "",
+            PRIORITY_RANK.get(item.get("prio"), len(PRIORITY_RANK)),
+            item.get("id", ""),
+        ))
 
     def list_items(
         self,
@@ -518,8 +523,13 @@ class Watchlist:
 
     def next_item(self, time_box="e1h", window="wany", max_change_risk=None, area=None):
         """Pick one unblocked action by priority, effort, then ID (read-only)."""
+        return next(iter(self.actionable_items(time_box, window, max_change_risk, area)), None)
+
+    def actionable_items(self, time_box="e1h", window="wany", max_change_risk=None, area=None):
+        """Return ready items with an action due now, in ready order."""
         items, _ = self.ready_items(time_box, window, max_change_risk, area)
         now = datetime.now(timezone.utc)
+        actionable = []
         for item in items:
             if not (item.get("next_action") or "").strip():
                 continue
@@ -532,8 +542,16 @@ class Watchlist:
                     continue
                 if after > now:
                     continue
-            return item
-        return None
+            actionable.append(item)
+        return actionable
+
+    def agenda(self) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Daily checks first, then other actionable p1 work."""
+        today = self.list_today()
+        today_ids = {item["id"] for item in today}
+        priority = [item for item in self.actionable_items()
+                    if item.get("prio") == "p1" and item["id"] not in today_ids]
+        return today, priority
 
     def search(
         self, query: str, include_done: bool = False, state: str | None = None,
@@ -835,10 +853,35 @@ class Watchlist:
             for ref in remove_ref or []:
                 if ref in item.get("refs", []):
                     item["refs"].remove(ref)
+            work_edit = "next_action" in changes or "status" in changes
+            if work_edit:
+                item["last_check"] = datetime.now(timezone.utc).isoformat()
             self._validate_state(item)
             self._validate_tags(item)
             self._lift_window_to_minimum(item)
             self._warn_missing_refs(item.get("refs", []))
+            self._save()
+            if work_edit and item.get("check_after"):
+                after = datetime.fromisoformat(item["check_after"])
+                if after.tzinfo is None:
+                    after = after.replace(tzinfo=timezone.utc)
+                if after < datetime.now(timezone.utc):
+                    print(
+                        f"WARNING: check_after {after.date().isoformat()} je v minulosti",
+                        file=sys.stderr,
+                    )
+            if "name" in changes and self.slugify(item["name"]) != item_id:
+                print(f"TIP: use `cca-watchlist rename {item_id} NEW_ID` to update the ID", file=sys.stderr)
+        return item
+
+    def rename(self, old_id: str, new_id: str) -> dict[str, Any]:
+        if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", new_id):
+            die("NEW ID must be a nonempty canonical slug (lowercase letters, digits, hyphens)")
+        with self._locked():
+            item = self._find(old_id)
+            if any(existing.get("id") == new_id for existing in self.data["items"]):
+                die(f"item {new_id!r} already exists")
+            item["id"] = new_id
             self._save()
         return item
 
@@ -940,14 +983,18 @@ def format_list(items: list[dict[str, Any]], command: str):
         return
 
     for item in items[:LIST_DISPLAY_LIMIT]:
-        fields = (
-            item.get("id") or "-",
-            item.get("type") or "-",
-            item.get("state") or "-",
-            item.get("area") or "-",
-            item.get("prio") or "-",
-            item.get("name") or "-",
-        )
+        if command == "list-today":
+            fields = (item.get("id") or "-", item.get("prio") or "-",
+                      item.get("effort") or "-", due_label(item))
+        else:
+            fields = (
+                item.get("id") or "-",
+                item.get("type") or "-",
+                item.get("state") or "-",
+                item.get("area") or "-",
+                item.get("prio") or "-",
+                item.get("name") or "-",
+            )
         print(" | ".join(" ".join(str(value).split()) for value in fields))
     if len(items) > LIST_DISPLAY_LIMIT:
         hint = {
@@ -989,21 +1036,39 @@ def print_item_mutation(command: str, item: dict[str, Any], as_json: bool):
         print(f"{command}: {item['id']}")
 
 
-def format_ready(items: list[dict[str, Any]], untagged_count: int):
-    for item in items:
-        print(
-            " · ".join(
-                str(value)
-                for value in (
-                    item.get("id"),
-                    item.get("prio"),
-                    item.get("effort"),
-                    item.get("change_risk"),
-                    Watchlist.effective_window(item),
-                    item.get("next_action"),
-                )
-            )
-        )
+def due_label(item: dict[str, Any]) -> str:
+    """Show overdue days from UTC dates, regardless of the scheduled hour."""
+    check_after = item.get("check_after")
+    if not check_after:
+        return "-"
+    days = (datetime.now(timezone.utc).date() - datetime.fromisoformat(check_after).date()).days
+    return "dnes" if days == 0 else f"+{days}d"
+
+
+def format_agenda(today: list[dict[str, Any]], priority: list[dict[str, Any]]) -> None:
+    shown_today = today[:LIST_DISPLAY_LIMIT]
+    shown_priority = priority[:LIST_DISPLAY_LIMIT - len(shown_today)]
+    for heading, items in (("Today", shown_today), ("Priority", shown_priority)):
+        if items:
+            print(f"{heading}:")
+            for item in items:
+                line = " | ".join((item.get("id") or "-", item.get("prio") or "-",
+                                   item.get("effort") or "-", due_label(item)))
+                if item.get("blocked_on"):
+                    line += " [blocked]"
+                print(line)
+    hidden = len(today) + len(priority) - len(shown_today) - len(shown_priority)
+    print(f"Hidden: {hidden}")
+
+
+def format_ready(items: list[dict[str, Any]], untagged_count: int, verbose: bool = False):
+    for item in items[:LIST_DISPLAY_LIMIT]:
+        fields = (item.get("id") or "-", item.get("prio") or "-",
+                  item.get("effort") or "-", Watchlist.effective_window(item) or "-")
+        if verbose:
+            fields += (item.get("next_action") or "-",)
+        print(" | ".join(fields))
+    print(f"Hidden: {max(0, len(items) - LIST_DISPLAY_LIMIT)}")
     print(f"Untagged (effort=null): {untagged_count}")
 
 
@@ -1071,7 +1136,11 @@ Notes:
   Existing work schedules (check_after) continue to use UTC.
 
 Discovery:
+  agenda shows due checks, then actionable p1 work, in at most 20 lines.
+  Due age uses UTC dates: +Nd overdue, dnes due today, - no deadline.
   list-today and list show one line per item, up to 20 items.
+  ready text shows ID, priority, effort and effective window (20 rows);
+  --verbose adds next_action. ready --json returns every candidate.
   search requires every word; ID/name/keywords rank above descriptions/actions.
   Use search --deep for refs, --brief for a single ID line, --all for done.
   One search match shows full details; larger sets show up to 20 IDs and names.
@@ -1085,6 +1154,7 @@ Next:
   JSON is one object or null. Selection does not change the register.
 
 Examples:
+  cca-watchlist agenda
   cca-watchlist list-today
   cca-watchlist list --area server1
   cca-watchlist list --state idle
@@ -1112,6 +1182,7 @@ Examples:
   cca-watchlist activate server2-delete-volume --check-after "2026-09-04 morning"
   cca-watchlist done old-task
   cca-watchlist edit server1-web-limits --area server1 --add-ref incidents/y.md
+  cca-watchlist rename old-id new-id
   cca-watchlist migrate
     """
 
@@ -1120,6 +1191,8 @@ Examples:
     p = subparsers.add_parser("list-today", help="List items to check today")
     p.add_argument("--type", choices=TYPES, help="Filter by type")
     p.add_argument("--json", action="store_true", help="Full JSON output")
+
+    subparsers.add_parser("agenda", help="Due checks, then actionable p1 work (20 rows)")
 
     p = subparsers.add_parser("list", help="List items (one line per item)")
     p.add_argument("--area", help="Filter by area")
@@ -1159,6 +1232,7 @@ Examples:
         p.add_argument("--area", help="Filter by area")
         if command == "ready":
             p.add_argument("--include-blocked", action="store_true")
+            p.add_argument("--verbose", action="store_true", help="Include full next_action in text")
         p.add_argument("--json", action="store_true", help="JSON output")
 
     p = subparsers.add_parser("show", help="Show one item")
@@ -1236,6 +1310,10 @@ Examples:
     p.add_argument("--check-after", dest="check_after", help='"YYYY-MM-DD [morning|afternoon]"; empty clears')
     p.add_argument("--monitor-until", dest="monitor_until", help='"X [week|day](s)"; empty clears')
 
+    p = subparsers.add_parser("rename", help="Change an item ID without changing other fields")
+    p.add_argument("old", help="Current ID")
+    p.add_argument("new", help="New canonical slug ID")
+
     p = subparsers.add_parser("park", help="Move item to backlog (state=idle)")
     p.add_argument("id", help="Item ID")
     p.add_argument("--blocked-on", dest="blocked_on", help="What this is waiting for")
@@ -1281,6 +1359,9 @@ Examples:
             print(json.dumps(items, indent=2, ensure_ascii=False))
         else:
             format_list(items, "list-today")
+
+    elif args.command == "agenda":
+        format_agenda(*watchlist.agenda())
 
     elif args.command == "list":
         if (args.expired or args.current) and args.type not in (None, "note"):
@@ -1338,7 +1419,7 @@ Examples:
             ]
             print(json.dumps({"ready": ready, "untagged": untagged}, indent=2, ensure_ascii=False))
         else:
-            format_ready(items, len(untagged))
+            format_ready(items, len(untagged), verbose=args.verbose)
 
     elif args.command == "show":
         item = watchlist._find(args.id)
@@ -1472,6 +1553,10 @@ Examples:
         if args.monitor_until is not None:
             changes["monitor_until"] = monitor_until_iso
         item = watchlist.edit(args.id, changes, add_ref=args.add_ref, remove_ref=args.remove_ref)
+        print_item_mutation(args.command, item, args.json)
+
+    elif args.command == "rename":
+        item = watchlist.rename(args.old, args.new)
         print_item_mutation(args.command, item, args.json)
 
     elif args.command == "park":

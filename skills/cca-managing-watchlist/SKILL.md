@@ -1,6 +1,6 @@
 ---
 name: cca-managing-watchlist
-description: Manage and query watchlist.json with cca-watchlist; find precise matches with ranked search and use brief confirmations for edits.
+description: Manage watchlist.json with cca-watchlist; use agenda for what to do, ready for a given time and window, ranked search for discovery, and brief edit confirmations.
 allowed-tools: Bash(*)
 ---
 
@@ -50,8 +50,9 @@ rules; the CLI does not rewrite or reject priorities based on state/blockers.
 
 | Command | States and selection |
 |---------|----------------------|
+| `agenda` | Start here for "what should we do?": due active checks ordered by UTC deadline, then actionable p1 work fitting default 1h/wany. One 20-row text summary; use `show ID` for details. |
 | `list-today` | Active work due for a check; excludes notes, idle, standby and done. |
-| `ready` | Active/idle work fitting time and effective window; excludes blockers unless `--include-blocked`. Missing effort goes in `untagged`. Standby/notes/done never enter either result. |
+| `ready` | Use when time or window is specified. Active/idle work fitting time and effective window; excludes blockers unless `--include-blocked`. Missing effort goes in `untagged`. Standby/notes/done never enter either result. Text is compact; `--verbose` adds actions, `--json` returns all items. |
 | `next` | One active/idle, unblocked, tagged action fitting constraints, with nonempty `next_action` and no future `check_after`; ordered by priority, effort, ID. Defaults: 1h and wany. Returns an object or null without writing. |
 | `list --standby` | Standby only, including blocked items; use `show ID` for trigger and capture details. Alias of `--state standby`. |
 | `list --current` | Notes valid today, idle by default; local inclusive validity bounds. |
@@ -71,10 +72,12 @@ By default, search checks active, idle and standby; `--all` adds done and `--sta
 selects one state. One match displays full detail. Use `search "term" --brief` to
 check for a duplicate before adding, and `show ID` for later detail. Multiple
 matches show short ID/name lines; if more than 20 match, refine the query.
-`list` and `list-today` keep state, type, area and priority on one line per item.
+`list` keeps state, type, area and priority on one line per item; `list-today` shows
+priority, effort and due age. Both cap text at 20 items.
 Avoid `--json` on discovery commands unless the caller needs full machine-readable data.
 
 **Operations:**
+- `cca-watchlist agenda` - Short default work agenda; use for "what should we do?".
 - `cca-watchlist list-today [--type X]` - Active items due today.
 - `cca-watchlist list [--area X] [--state X] [--type X] [--all]` - Compact register.
 - `cca-watchlist show <id> [--json]` - Complete details for one item.
@@ -83,11 +86,16 @@ Avoid `--json` on discovery commands unless the caller needs full machine-readab
 - `cca-watchlist add-routine|add-task|add-incident|add-note ...` - Create an item;
   tasks and notes default to `idle`, routines and incidents to `active`.
 - `cca-watchlist edit <id> --<field> <value>` - Change fields; **never hand-edit the JSON.**
+- `cca-watchlist rename <old-id> <new-id>` - Change only the canonical slug ID; preserve item fields and order.
 - `cca-watchlist park|standby|activate|done <id>` - Move between states.
 - `cca-watchlist remove <id>` - Delete permanently.
 - `cca-watchlist migrate` - One-off upgrade of a v1 file (no `state`, `enabled` flag) to v2.
 
-Item mutations (`add-*`, `edit`, `update`, `park`, `standby`, `activate`, `done`)
+`edit --next-action` and `edit --status` record `last_check` automatically. If the
+remaining `check_after` is past, read the warning and decide whether to reschedule it.
+Changing a name does not change its ID; use `rename` when the ID should change too.
+
+Item mutations (`add-*`, `edit`, `rename`, `update`, `park`, `standby`, `activate`, `done`)
 print a one-line `<command>: <ID>` confirmation. Add `--json` only when the
 full updated item is needed; `show ID --json` can retrieve it later.
 
