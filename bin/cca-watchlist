@@ -35,6 +35,10 @@ else:
 SCHEMA_VERSION = "2.0"
 SCHEMA_MAJOR = 2
 CREATING_COMMANDS = {"add-routine", "add-incident", "add-task", "add-note"}
+ITEM_MUTATION_COMMANDS = (
+    "update", "add-routine", "add-note", "add-task", "add-incident",
+    "edit", "park", "activate", "standby", "done",
+)
 STATES = ("active", "idle", "standby", "done")
 TYPES = ("routine", "incident", "task", "note")
 EFFORTS = ("e15", "e1h", "e4h", "exl")
@@ -531,30 +535,40 @@ class Watchlist:
             return item
         return None
 
-    def search(self, query: str, include_done: bool = False) -> list[dict[str, Any]]:
-        """Case-insensitive substring match across every text field, idle included."""
-        needle = query.lower()
-        results = []
+    def search(
+        self, query: str, include_done: bool = False, state: str | None = None,
+        deep: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Find items containing every query word, ordered by matching field."""
+        words = query.casefold().split()
+        if not words:
+            return []
+        field_groups = (
+            ("id", "name", "guide_keywords"),
+            ("description", "next_action"),
+            ("area", "blocked_on", "file"),
+        )
+        ranked = []
         for item in self.data["items"]:
-            if not include_done and item.get("state") == "done":
+            if state and item.get("state") != state:
                 continue
-            haystack = [
-                str(item.get(field, ""))
-                for field in (
-                    "id",
-                    "name",
-                    "description",
-                    "area",
-                    "blocked_on",
-                    "next_action",
-                    "guide_keywords",
-                    "file",
-                )
+            if not state and not include_done and item.get("state") == "done":
+                continue
+            values = [
+                [str(item.get(field) or "").casefold() for field in fields]
+                for fields in field_groups
             ]
-            haystack.extend(str(ref) for ref in item.get("refs", []))
-            if any(needle in value.lower() for value in haystack):
-                results.append(item)
-        return results
+            if deep:
+                values.append([str(ref).casefold() for ref in item.get("refs", [])])
+            ranks = [
+                next((rank for rank, group in enumerate(values)
+                      if any(word in value for value in group)), None)
+                for word in words
+            ]
+            if all(rank is not None for rank in ranks):
+                ranked.append(((max(ranks), sum(ranks)), item))
+        ranked.sort(key=lambda pair: pair[0])
+        return [item for _, item in ranked]
 
     # ------------------------------------------------------------ mutations
 
@@ -944,6 +958,37 @@ def format_list(items: list[dict[str, Any]], command: str):
         print(f"Showing {LIST_DISPLAY_LIMIT} of {len(items)} items. {hint}; use show ID for details.")
 
 
+def format_search(items: list[dict[str, Any]], brief: bool, closed_count: int | None = None):
+    """Show one match in full, or a short ranked candidate list."""
+    if not items:
+        if closed_count is None:
+            print("No items found")
+        else:
+            print(f"0 otevrenych; {closed_count} uzavrenych (--all)")
+        return
+    if len(items) == 1 and not brief:
+        format_items(items)
+        return
+    if len(items) > LIST_DISPLAY_LIMIT:
+        print(f"{len(items)} matches; first {LIST_DISPLAY_LIMIT}:")
+    for item in items[:LIST_DISPLAY_LIMIT]:
+        item_id = str(item.get("id") or "-")
+        name = " ".join(str(item.get("name") or "").split())
+        line = item_id if Watchlist.slugify(name) == item_id else f"{item_id} | {name}"
+        if item.get("state") == "done":
+            line += " [done]"
+        print(line)
+    if len(items) > LIST_DISPLAY_LIMIT:
+        print("Use a more specific search query.")
+
+
+def print_item_mutation(command: str, item: dict[str, Any], as_json: bool):
+    if as_json:
+        print(json.dumps(item, indent=2, ensure_ascii=False))
+    else:
+        print(f"{command}: {item['id']}")
+
+
 def format_ready(items: list[dict[str, Any]], untagged_count: int):
     for item in items:
         print(
@@ -1026,9 +1071,12 @@ Notes:
   Existing work schedules (check_after) continue to use UTC.
 
 Discovery:
-  list-today, list and search show one line per item, up to 20 items.
-  Narrow broad results with a type, list filter or more specific search query.
-  show ID displays full details; --json keeps the complete machine-readable result.
+  list-today and list show one line per item, up to 20 items.
+  search requires every word; ID/name/keywords rank above descriptions/actions.
+  Use search --deep for refs, --brief for a single ID line, --all for done.
+  One search match shows full details; larger sets show up to 20 IDs and names.
+  Narrow broad results; --json keeps the complete machine-readable result.
+  Item mutations confirm on one line; --json returns the full updated item.
 
 Next:
   next returns one unblocked action fitting --time/--window/--max-change-risk.
@@ -1117,10 +1165,14 @@ Examples:
     p.add_argument("id", help="Item ID")
     p.add_argument("--json", action="store_true", help="JSON output")
 
-    p = subparsers.add_parser("search", help="Search across all text fields")
+    p = subparsers.add_parser("search", help="Find items by words in IDs, names and text")
     p.add_argument("query", help="Search query")
     p.add_argument("--all", action="store_true", help="Include done items")
-    p.add_argument("--json", action="store_true", help="JSON output")
+    p.add_argument("--state", choices=STATES, help="Filter by state")
+    p.add_argument("--deep", action="store_true", help="Also search reference paths")
+    search_output = p.add_mutually_exclusive_group()
+    search_output.add_argument("--brief", action="store_true", help="Only show the ID/name line")
+    search_output.add_argument("--json", action="store_true", help="Full JSON matches")
 
     p = subparsers.add_parser("update", help="Update last_check timestamp")
     p.add_argument("id", help="Item ID")
@@ -1202,6 +1254,9 @@ Examples:
     p.add_argument("id", help="Item ID")
 
     subparsers.add_parser("migrate", help="Upgrade a v1 watchlist.json to v2 in place")
+
+    for command in ITEM_MUTATION_COMMANDS:
+        subparsers.choices[command].add_argument("--json", action="store_true", help="Full JSON item")
 
     args = parser.parse_args()
 
@@ -1293,15 +1348,20 @@ Examples:
             format_items([item])
 
     elif args.command == "search":
-        items = watchlist.search(args.query, include_done=args.all)
+        items = watchlist.search(
+            args.query, include_done=args.all, state=args.state, deep=args.deep
+        )
         if args.json:
             print(json.dumps(items, indent=2, ensure_ascii=False))
         else:
-            format_list(items, "search")
+            closed_count = None
+            if not args.all and not args.state and not items:
+                closed_count = len(watchlist.search(args.query, state="done", deep=args.deep))
+            format_search(items, args.brief, closed_count)
 
     elif args.command == "update":
         item = watchlist.update_timestamp(args.id, timestamp=args.timestamp)
-        print(json.dumps(item, indent=2, ensure_ascii=False))
+        print_item_mutation(args.command, item, args.json)
 
     elif args.command == "add-routine":
         item = watchlist.add_routine(
@@ -1321,7 +1381,7 @@ Examples:
             window=args.window,
             prio=args.prio,
         )
-        print(json.dumps(item, indent=2, ensure_ascii=False))
+        print_item_mutation(args.command, item, args.json)
 
     elif args.command == "add-note":
         item = watchlist.add_note(
@@ -1334,7 +1394,7 @@ Examples:
             keywords=args.keywords,
             prio=args.prio,
         )
-        print(json.dumps(item, indent=2, ensure_ascii=False))
+        print_item_mutation(args.command, item, args.json)
 
     elif args.command == "add-task":
         item = watchlist.add_task(
@@ -1353,7 +1413,7 @@ Examples:
             window=args.window,
             prio=args.prio,
         )
-        print(json.dumps(item, indent=2, ensure_ascii=False))
+        print_item_mutation(args.command, item, args.json)
 
     elif args.command == "add-incident":
         item = watchlist.add_incident(
@@ -1375,7 +1435,7 @@ Examples:
             window=args.window,
             prio=args.prio,
         )
-        print(json.dumps(item, indent=2, ensure_ascii=False))
+        print_item_mutation(args.command, item, args.json)
 
     elif args.command == "edit":
         changes: dict[str, Any] = {}
@@ -1412,19 +1472,19 @@ Examples:
         if args.monitor_until is not None:
             changes["monitor_until"] = monitor_until_iso
         item = watchlist.edit(args.id, changes, add_ref=args.add_ref, remove_ref=args.remove_ref)
-        print(json.dumps(item, indent=2, ensure_ascii=False))
+        print_item_mutation(args.command, item, args.json)
 
     elif args.command == "park":
         item = watchlist.set_state(args.id, "idle", blocked_on=args.blocked_on)
-        print(json.dumps(item, indent=2, ensure_ascii=False))
+        print_item_mutation(args.command, item, args.json)
 
     elif args.command == "activate":
         item = watchlist.set_state(args.id, "active", check_after=args.check_after)
-        print(json.dumps(item, indent=2, ensure_ascii=False))
+        print_item_mutation(args.command, item, args.json)
 
     elif args.command in ("standby", "done"):
         item = watchlist.set_state(args.id, args.command)
-        print(json.dumps(item, indent=2, ensure_ascii=False))
+        print_item_mutation(args.command, item, args.json)
 
     elif args.command == "remove":
         item = watchlist.remove_item(args.id)

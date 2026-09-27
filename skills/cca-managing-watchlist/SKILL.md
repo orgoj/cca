@@ -1,6 +1,6 @@
 ---
 name: cca-managing-watchlist
-description: Manage and query watchlist.json with cca-watchlist; find precise matches with compact search and inspect one item with show.
+description: Manage and query watchlist.json with cca-watchlist; find precise matches with ranked search and use brief confirmations for edits.
 allowed-tools: Bash(*)
 ---
 
@@ -64,18 +64,21 @@ machine's local date; work scheduling retains UTC. Show current information with
 `list --type note --current`, separately from daily tasks. `--all` or an explicit
 `--state done` can include closed notes in validity queries.
 
-**Discovery:** Start with the most specific known ID, name, area term, or reference fragment.
-`search` matches every text field, so broad project or host terms can match most items.
-Use the compact text output of `search`, `list`, or `list-today` to identify IDs, then
-`show ID` for the needed detail. These listings show at most 20 items; if truncated,
-refine the search term or list filters. Avoid `--json` on discovery commands unless
-the caller needs the full machine-readable register.
+**Discovery:** Start with the most specific known ID, name or keywords. `search`
+requires every query word to match somewhere in the item; ID/name/keywords matches
+rank above description/next-action matches. Reference-only matches require `--deep`.
+By default, search checks active, idle and standby; `--all` adds done and `--state X`
+selects one state. One match displays full detail. Use `search "term" --brief` to
+check for a duplicate before adding, and `show ID` for later detail. Multiple
+matches show short ID/name lines; if more than 20 match, refine the query.
+`list` and `list-today` keep state, type, area and priority on one line per item.
+Avoid `--json` on discovery commands unless the caller needs full machine-readable data.
 
 **Operations:**
 - `cca-watchlist list-today [--type X]` - Active items due today.
 - `cca-watchlist list [--area X] [--state X] [--type X] [--all]` - Compact register.
 - `cca-watchlist show <id> [--json]` - Complete details for one item.
-- `cca-watchlist search "specific query"` - Substring match across text fields, idle included.
+- `cca-watchlist search "specific words" [--deep] [--all] [--state X] [--brief]` - Ranked word search.
 - `cca-watchlist update <id>` - Update timestamp.
 - `cca-watchlist add-routine|add-task|add-incident|add-note ...` - Create an item;
   tasks and notes default to `idle`, routines and incidents to `active`.
@@ -83,6 +86,10 @@ the caller needs the full machine-readable register.
 - `cca-watchlist park|standby|activate|done <id>` - Move between states.
 - `cca-watchlist remove <id>` - Delete permanently.
 - `cca-watchlist migrate` - One-off upgrade of a v1 file (no `state`, `enabled` flag) to v2.
+
+Item mutations (`add-*`, `edit`, `update`, `park`, `standby`, `activate`, `done`)
+print a one-line `<command>: <ID>` confirmation. Add `--json` only when the
+full updated item is needed; `show ID --json` can retrieve it later.
 
 **Time-Based Filtering:** If a query needs a custom `last_check` cutoff that the CLI
 cannot select, get all items with `cca-watchlist list --all --json` and filter by timestamp.

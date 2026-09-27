@@ -41,7 +41,11 @@ def run_cli(path: Path, *args, expect_ok: bool = True):
 
 
 def run_json(path: Path, *args):
-    if args and args[0] == "list-today" and "--json" not in args:
+    item_mutations = {
+        "update", "add-routine", "add-note", "add-task", "add-incident",
+        "edit", "park", "activate", "standby", "done",
+    }
+    if args and args[0] in item_mutations | {"list-today"} and "--json" not in args:
         args = (*args, "--json")
     return json.loads(run_cli(path, *args).stdout)
 
@@ -160,10 +164,10 @@ def test_idle_item_never_in_list_today_but_is_searchable(wl, tmp_path):
     assert run_json(wl, "list-today") == []
     found = run_json(wl, "search", "web limits", "--json")
     assert [i["id"] for i in found] == ["server1-web-limits"]
-    # searchable by every text field, not just name
+    # searchable by other text fields; reference paths require --deep
     assert run_json(wl, "search", "user approval", "--json")[0]["blocked_on"] == "user approval"
     assert run_json(wl, "search", "server1", "--json")[0]["area"] == "server1"
-    assert run_json(wl, "search", "incidents/x.md", "--json")
+    assert run_json(wl, "search", "incidents/x.md", "--deep", "--json")
 
 
 def test_idle_requires_at_least_one_ref(wl):
@@ -300,6 +304,7 @@ def test_incident_file_under_cca_is_normalized(wl):
         "incidents/x.md",
         "--status",
         "monitoring",
+        "--json",
     )
     item = json.loads(result.stdout)
     assert result.stderr == ""
@@ -534,6 +539,7 @@ def test_window_below_change_risk_minimum_is_raised_on_add(wl):
         "r3",
         "--window",
         "woff",
+        "--json",
     )
     assert "woff raised to wnight" in added.stderr
     assert json.loads(added.stdout)["window"] == "wnight"
@@ -554,6 +560,7 @@ def test_window_below_change_risk_minimum_is_raised_on_add_task_and_incident(wl)
         "r2",
         "--window",
         "wany",
+        "--json",
     )
     assert "wany raised to woff" in task.stderr
     assert json.loads(task.stdout)["window"] == "woff"
@@ -574,6 +581,7 @@ def test_window_below_change_risk_minimum_is_raised_on_add_task_and_incident(wl)
         "r3",
         "--window",
         "wany",
+        "--json",
     )
     assert "wany raised to wnight" in incident.stderr
     assert json.loads(incident.stdout)["window"] == "wnight"
@@ -592,13 +600,13 @@ def test_window_below_change_risk_minimum_is_raised_on_edit_and_set_state(wl):
         "--window",
         "wany",
     )
-    edited = run_cli(wl, "edit", "safe", "--change-risk", "r2")
+    edited = run_cli(wl, "edit", "safe", "--change-risk", "r2", "--json")
     assert "wany raised to woff" in edited.stderr
     assert json.loads(edited.stdout)["window"] == "woff"
     assert run_json(wl, "show", "safe", "--json")["window"] == "woff"
 
     # a window lowered below the stored risk is raised back on the next edit
-    edited = run_cli(wl, "edit", "safe", "--window", "wany")
+    edited = run_cli(wl, "edit", "safe", "--window", "wany", "--json")
     assert "wany raised to woff" in edited.stderr
     assert json.loads(edited.stdout)["window"] == "woff"
 
@@ -606,7 +614,7 @@ def test_window_below_change_risk_minimum_is_raised_on_edit_and_set_state(wl):
     stored = json.loads(wl.read_text(encoding="utf-8"))
     stored["items"][0]["window"] = "wany"
     wl.write_text(json.dumps(stored), encoding="utf-8")
-    activated = run_cli(wl, "activate", "safe")
+    activated = run_cli(wl, "activate", "safe", "--json")
     assert "wany raised to woff" in activated.stderr
     assert json.loads(activated.stdout)["window"] == "woff"
 
@@ -778,11 +786,12 @@ def test_discovery_outputs_one_line_per_item_and_show_keeps_detail(wl):
         wl, "add-routine", "--name", "Power\ncheck", "--description", "Long trigger details",
         "--next-action", "Capture logs", "--refs", "guides/power.md",
     )
-    for args in (("list",), ("search", "power"), ("list-today",)):
+    for args in (("list",), ("list-today",)):
         lines = run_cli(wl, *args).stdout.splitlines()
         assert lines == [f"{item['id']} | routine | active | - | - | Power check"]
         assert "guides/power.md" not in lines[0]
         assert "Long trigger details" not in lines[0]
+    assert run_cli(wl, "search", "power", "--brief").stdout.strip() == item["id"]
     assert "Long trigger details" in run_cli(wl, "show", item["id"]).stdout
     assert run_json(wl, "list-today")[0]["refs"] == ["guides/power.md"]
 
@@ -800,11 +809,103 @@ def test_discovery_limits_large_result_sets(wl, command):
     wl.write_text(json.dumps({"version": "2.0", "items": items}), encoding="utf-8")
     args = ("search", "power") if command == "search" else (command,)
     lines = run_cli(wl, *args).stdout.splitlines()
-    assert len(lines) == 21
-    assert [line.split(" | ")[0] for line in lines[:20]] == [i["id"] for i in items[:20]]
-    assert "Showing 20 of 25 items" in lines[-1]
-    assert "show ID for details" in lines[-1]
+    if command == "search":
+        assert len(lines) == 22
+        assert lines[0] == "25 matches; first 20:"
+        assert lines[1:21] == [i["id"] for i in items[:20]]
+        assert "more specific search query" in lines[-1]
+    else:
+        assert len(lines) == 21
+        assert [line.split(" | ")[0] for line in lines[:20]] == [i["id"] for i in items[:20]]
+        assert "Showing 20 of 25 items" in lines[-1]
+        assert "show ID for details" in lines[-1]
     assert len(run_json(wl, *args, "--json")) == 25
+
+
+def test_search_words_ranking_deep_and_states(wl):
+    items = [
+        {"id": "deep", "name": "Unrelated", "state": "active", "refs": ["guides/power-check.md"]},
+        {"id": "description", "name": "Unrelated", "state": "idle", "description": "Power check"},
+        {"id": "mixed", "name": "Power", "state": "standby", "next_action": "Check logs"},
+        {"id": "power-check", "name": "Power check", "state": "active"},
+        {"id": "keywords", "name": "Unrelated", "state": "active", "guide_keywords": "Power check"},
+        {"id": "closed", "name": "Power check", "state": "done"},
+    ]
+    wl.write_text(json.dumps({"version": "2.0", "items": items}), encoding="utf-8")
+    assert [i["id"] for i in run_json(wl, "search", "POWER CHECK", "--json")] == [
+        "power-check", "keywords", "mixed", "description"
+    ]
+    assert [i["id"] for i in run_json(wl, "search", "power check", "--deep", "--json")] == [
+        "power-check", "keywords", "mixed", "description", "deep"
+    ]
+    assert [i["id"] for i in run_json(wl, "search", "power check", "--all", "--json")] == [
+        "power-check", "keywords", "closed", "mixed", "description"
+    ]
+    assert [i["id"] for i in run_json(wl, "search", "power check", "--state", "idle", "--json")] == [
+        "description"
+    ]
+    assert [i["id"] for i in run_json(wl, "search", "power check", "--state", "done", "--json")] == [
+        "closed"
+    ]
+    assert run_cli(wl, "search", "power check", "--brief", "--json", expect_ok=False).returncode != 0
+
+
+def test_search_single_brief_done_marker_and_no_open_match(wl):
+    items = [
+        {"id": "power-check", "name": "Power check", "state": "active", "description": "Read logs"},
+        {"id": "archived", "name": "Archived power", "state": "done", "description": "Historic"},
+    ]
+    wl.write_text(json.dumps({"version": "2.0", "items": items}), encoding="utf-8")
+    assert run_cli(wl, "search", "power-check", "--brief").stdout.strip() == "power-check"
+    assert "Description: Read logs" in run_cli(wl, "search", "power-check").stdout
+    assert run_cli(wl, "search", "archived").stdout.strip() == "0 otevrenych; 1 uzavrenych (--all)"
+    assert run_cli(wl, "search", "missing").stdout.strip() == "0 otevrenych; 0 uzavrenych (--all)"
+    assert run_cli(wl, "search", "power", "--all", "--brief").stdout.splitlines() == [
+        "power-check", "archived | Archived power [done]"
+    ]
+    assert "State: done" in run_cli(wl, "search", "archived", "--state", "done").stdout
+    assert run_json(wl, "search", "archived", "--json") == []
+
+
+@pytest.mark.parametrize(
+    "command,args,expected_id",
+    [
+        ("add-routine", ("--name", "Routine", "--description", "Check"), "routine"),
+        ("add-task", ("--name", "Task", "--description", "Do", "--state", "active"), "task"),
+        ("add-note", ("--name", "Note", "--description", "Info"), "note"),
+        ("add-incident", ("--name", "Incident", "--file", "incident.md", "--status", "monitoring"), None),
+    ],
+)
+def test_add_commands_confirm_briefly_and_offer_json(wl, command, args, expected_id):
+    if command == "add-incident":
+        (wl.parent / "incident.md").write_text("context", encoding="utf-8")
+    result = run_cli(wl, command, *args)
+    item = run_json(wl, "list", "--json")[0]
+    if expected_id:
+        assert item["id"] == expected_id
+    else:
+        assert item["id"].startswith("incident-")
+    assert result.stdout == f"{command}: {item['id']}\n"
+    assert len(result.stdout.splitlines()) == 1
+
+
+def test_item_mutations_confirm_briefly_and_json_retains_item(wl):
+    item = run_json(
+        wl, "add-routine", "--name", "Routine", "--description", "Check",
+        "--refs", "guides/context.md",
+    )
+    for command, extra in (
+        ("edit", ("--description", "Changed")),
+        ("update", ("--timestamp", "2026-09-27T12:00:00")),
+        ("park", ()),
+        ("standby", ()),
+        ("activate", ()),
+        ("done", ()),
+    ):
+        result = run_cli(wl, command, item["id"], *extra)
+        assert result.stdout == f"{command}: {item['id']}\n"
+    assert run_json(wl, "show", item["id"], "--json")["state"] == "done"
+    assert run_json(wl, "edit", item["id"], "--description", "Again")["description"] == "Again"
 
 
 @pytest.mark.parametrize(
