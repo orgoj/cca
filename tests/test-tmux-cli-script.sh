@@ -34,6 +34,24 @@ send-keys)
     fi
     ;;
 capture-pane)
+    if [[ " $* " == *" -S -5000 "* ]]; then
+        case "${FAKE_TMUX_CAPTURE_MODE:-}" in
+        missing-start)
+            tail -n 1 "$FAKE_TMUX_STATE/pane"
+            exit 0
+            ;;
+        missing-end)
+            sed '$d' "$FAKE_TMUX_STATE/pane"
+            exit 0
+            ;;
+        empty-history)
+            exit 0
+            ;;
+        capture-fail)
+            exit 75
+            ;;
+        esac
+    fi
     cat "$FAKE_TMUX_STATE/pane"
     ;;
 *)
@@ -259,6 +277,55 @@ EXPECTED
 assert_status "literal multiline script succeeds" 0
 assert_output "literal multiline script output" "$expected"
 
+run_cli run --script <<'REMOTE'
+:
+REMOTE
+assert_status "valid markers with empty body succeed" 0
+assert_output "valid markers with empty body produce empty output" ""
+
+FAKE_TMUX_CAPTURE_MODE=missing-start run_cli run --script <<'REMOTE'
+printf 'uncaptured output\n'
+REMOTE
+assert_status "missing START marker fails locally" 70
+if [[ "$RUN_OUTPUT" == *"Incomplete tmux command output (missing START or END marker:"* ]] &&
+    [[ "$RUN_OUTPUT" == *"cca-tmux-cli read --all"* ]] &&
+    [[ "$RUN_OUTPUT" != *"uncaptured output"* ]]; then
+    pass "missing START marker reports recovery command without partial output"
+else
+    fail "missing START marker reports recovery command without partial output"
+fi
+
+FAKE_TMUX_CAPTURE_MODE=empty-history run_cli run --script <<'REMOTE'
+printf 'uncaptured output\n'
+REMOTE
+assert_status "empty final capture fails locally" 70
+if [[ "$RUN_OUTPUT" == *"Incomplete tmux command output (missing START or END marker:"* ]]; then
+    pass "empty final capture reports missing markers"
+else
+    fail "empty final capture reports missing markers"
+fi
+
+FAKE_TMUX_CAPTURE_MODE=missing-end run_cli run --script <<'REMOTE'
+printf 'uncaptured output\n'
+REMOTE
+assert_status "missing END marker fails locally" 70
+if [[ "$RUN_OUTPUT" == *"Incomplete tmux command output (missing START or END marker:"* ]] &&
+    [[ "$RUN_OUTPUT" != *"uncaptured output"* ]]; then
+    pass "missing END marker rejects partial output"
+else
+    fail "missing END marker rejects partial output"
+fi
+
+FAKE_TMUX_CAPTURE_MODE=capture-fail run_cli run --script <<'REMOTE'
+printf 'uncaptured output\n'
+REMOTE
+assert_status "failed final capture fails locally" 70
+if [[ "$RUN_OUTPUT" == *"Failed to capture command output from tmux"* ]]; then
+    pass "failed final capture reports capture error"
+else
+    fail "failed final capture reports capture error"
+fi
+
 RUN_OUTPUT=$(cd "$TEST_TMP" && "$CLI" -t server1 run --script 2>&1 <<'REMOTE'
 python3 - <<'PY'
 print("line 1")
@@ -369,6 +436,15 @@ else
     fail "old tokf is probed once and never processes"
 fi
 assert_tokf_temp_clean "old tokf creates no processing tempfiles"
+
+reset_tokf_state
+FAKE_TMUX_CAPTURE_MODE=missing-start run_tokf_cli success run "printf 'uncaptured output'"
+assert_status "tokf skips incomplete capture" 70
+if [ "$(tokf_process_count)" -eq 0 ]; then
+    pass "tokf does not process incomplete output"
+else
+    fail "tokf does not process incomplete output"
+fi
 
 reset_tokf_state
 simple_source="printf 'raw combined\\n'; exit 23"

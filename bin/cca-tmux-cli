@@ -717,11 +717,21 @@ run)
         exit 124
     else
         # Normal completion - extract output between markers
-        full_output=$(tmux capture-pane "${target_window_param[@]}" -p -S -5000)
+        if ! full_output=$(tmux capture-pane "${target_window_param[@]}" -p -S -5000); then
+            echo "Error: Failed to capture command output from tmux (marker: $marker). Inspect the tmux pane with 'cca-tmux-cli read --all'." >&2
+            exit 70
+        fi
         marker_content=$(echo "$full_output" | sed -En "/^=== START $marker ===/,/^=== END $marker (EXITCODE=|INTERRUPTED|TERMINATED|HANGUP|KILLED)/p")
 
-        # Extract exit code from END marker (handles EXITCODE=N and signal markers)
+        start_marker_line=$(echo "$marker_content" | head -1)
         end_marker_line=$(echo "$marker_content" | tail -1)
+        if [ "$start_marker_line" != "=== START $marker ===" ] ||
+            ! [[ "$end_marker_line" =~ ^===\ END\ $marker\ (EXITCODE=[0-9]+|INTERRUPTED|TERMINATED|HANGUP|KILLED)\ ===$ ]]; then
+            echo "Error: Incomplete tmux command output (missing START or END marker: $marker). Inspect the tmux pane with 'cca-tmux-cli read --all'." >&2
+            exit 70
+        fi
+
+        # Extract exit code from END marker (handles EXITCODE=N and signal markers)
         case "$end_marker_line" in
         *INTERRUPTED*) command_exit_code=130 ;;
         *TERMINATED*) command_exit_code=143 ;;
