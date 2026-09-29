@@ -110,8 +110,17 @@ def test_parse_check_after():
     assert watchlist.Watchlist.parse_check_after("2025-10-16 morning") == "2025-10-16T06:00:00"
     assert watchlist.Watchlist.parse_check_after("2025-10-16 afternoon") == "2025-10-16T12:00:00"
     assert watchlist.Watchlist.parse_check_after("2025-10-16") == "2025-10-16T06:00:00"
+    assert watchlist.Watchlist.parse_check_after("2025-10-16T09:30") == "2025-10-16T09:30:00"
+    assert watchlist.Watchlist.parse_check_after("2025-10-16T09:30:45") == "2025-10-16T09:30:45"
+    assert watchlist.Watchlist.parse_check_after("2025-10-16T09:30Z") == "2025-10-16T09:30:00"
+    assert watchlist.Watchlist.parse_check_after("2025-10-16T09:30:45+02:00") == "2025-10-16T07:30:45"
+    assert watchlist.Watchlist.parse_check_after("2025-10-16T00:30-02:00") == "2025-10-16T02:30:00"
+    assert watchlist.Watchlist.parse_check_after("2025-10-16T00:30+02:00") == "2025-10-15T22:30:00"
     assert watchlist.Watchlist.parse_check_after("invalid date") is None
     assert watchlist.Watchlist.parse_check_after("2025-13-45") is None
+    assert watchlist.Watchlist.parse_check_after("2025-10-16T25:00") is None
+    assert watchlist.Watchlist.parse_check_after("2025-10-16T09:30+24:00") is None
+    assert watchlist.Watchlist.parse_check_after("2025-10-16T09:30garbage") is None
     assert watchlist.Watchlist.parse_check_after(None) is None
     assert watchlist.Watchlist.parse_check_after("") is None
 
@@ -199,6 +208,28 @@ def test_invalid_date_is_refused_not_silently_dropped(wl):
     )
     assert result.returncode == 1
     assert "unparseable --check-after" in result.stderr
+
+
+def test_add_and_edit_accept_iso_check_after(wl, tmp_path):
+    item = run_json(
+        wl, "add-routine", "--name", "Thing", "--description", "d",
+        "--check-after", "2026-09-30T06:00:00",
+    )
+    assert item["check_after"] == "2026-09-30T06:00:00"
+    task = run_json(
+        wl, "add-task", "--name", "Task", "--description", "d", "--state", "active",
+        "--check-after", "2026-09-30T08:00+02:00",
+    )
+    assert task["check_after"] == "2026-09-30T06:00:00"
+    (tmp_path / "incident.md").write_text("context", encoding="utf-8")
+    incident = run_json(
+        wl, "add-incident", "--name", "Incident", "--file", "incident.md",
+        "--status", "monitoring", "--check-after", "2026-09-30T06:00Z",
+    )
+    assert incident["check_after"] == "2026-09-30T06:00:00"
+    item = run_json(wl, "edit", "thing", "--check-after", "2026-09-30T08:30:45+02:00")
+    assert item["check_after"] == "2026-09-30T06:30:45"
+    assert run_json(wl, "show", "thing", "--json")["check_after"] == "2026-09-30T06:30:45"
 
 
 def test_park_activate_done_roundtrip(wl, tmp_path):

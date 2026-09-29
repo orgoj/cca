@@ -205,19 +205,28 @@ class Watchlist:
 
     @staticmethod
     def parse_check_after(input_str: str) -> str | None:
-        """Parse 'YYYY-MM-DD [morning|afternoon]' -> ISO timestamp."""
+        """Parse an ISO date/time or legacy daypart into a UTC ISO timestamp."""
         if not input_str:
             return None
-        match = re.match(r"^(\d{4}-\d{2}-\d{2})\s*(morning|afternoon)?$", input_str)
+        match = re.fullmatch(
+            r"(\d{4}-\d{2}-\d{2})(?:\s*(morning|afternoon)|T(\d{2}:\d{2}(?::\d{2})?)(Z|[+-]\d{2}:\d{2})?)?",
+            input_str,
+        )
         if not match:
             return None
-        date_str = match.group(1)
         try:
-            datetime.strptime(date_str, "%Y-%m-%d")
+            if match.group(3):
+                parsed = datetime.fromisoformat(
+                    f"{match.group(1)}T{match.group(3)}{match.group(4) or ''}"
+                )
+                if parsed.tzinfo is not None:
+                    parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+            else:
+                hour = 12 if match.group(2) == "afternoon" else 6
+                parsed = datetime.fromisoformat(f"{match.group(1)}T{hour:02d}:00:00")
         except ValueError:
             return None
-        time_str = "12:00:00" if match.group(2) == "afternoon" else "06:00:00"
-        return f"{date_str}T{time_str}"
+        return parsed.isoformat(timespec="seconds")
 
     @staticmethod
     def parse_monitor_until(input_str: str) -> str | None:
@@ -241,7 +250,8 @@ class Watchlist:
             if not check_after_iso:
                 die(
                     f"unparseable --check-after {check_after!r} "
-                    "(expected 'YYYY-MM-DD [morning|afternoon]')"
+                    "(expected YYYY-MM-DD or YYYY-MM-DDTHH:MM[:SS][Z|±HH:MM]; "
+                    "morning/afternoon also accepted)"
                 )
         if monitor_until:
             monitor_until_iso = self.parse_monitor_until(monitor_until)
@@ -1093,7 +1103,7 @@ def add_common_item_args(sub, default_state: str):
     sub.add_argument("--blocked-on", dest="blocked_on", default="", help="What this is waiting for")
     sub.add_argument("--next-action", dest="next_action", default="", help="The remaining step")
     sub.add_argument(
-        "--check-after", dest="check_after", help='Check after: "YYYY-MM-DD [morning|afternoon]"'
+        "--check-after", dest="check_after", help="UTC date/time: YYYY-MM-DD[THH:MM[:SS][Z|±HH:MM]]; morning/afternoon also accepted"
     )
     sub.add_argument(
         "--monitor-until", dest="monitor_until", help='Monitor until: "X [week|day](s)"'
@@ -1133,7 +1143,7 @@ Notes:
   Missing boundaries are unlimited; no end means the note never expires.
   list --current / --expired select notes; done closes them explicitly.
   edit --valid-from '' / --valid-until '' removes the respective boundary.
-  Existing work schedules (check_after) continue to use UTC.
+  Work schedules (check_after) use UTC; offset inputs are converted to UTC.
 
 Discovery:
   agenda shows due checks, then actionable p1 work, in at most 20 lines.
@@ -1179,7 +1189,7 @@ Examples:
   cca-watchlist add-incident --name "server1 OOM" --file "incidents/x.md" --status monitoring
 
   cca-watchlist park server1-web-limits --blocked-on "user approval"
-  cca-watchlist activate server2-delete-volume --check-after "2026-09-04 morning"
+  cca-watchlist activate server2-delete-volume --check-after 2026-09-04T06:00:00Z
   cca-watchlist done old-task
   cca-watchlist edit server1-web-limits --area server1 --add-ref incidents/y.md
   cca-watchlist rename old-id new-id
@@ -1307,7 +1317,7 @@ Examples:
     p.add_argument("--refs", nargs="*", help="Replace the whole refs list")
     p.add_argument("--add-ref", dest="add_ref", nargs="*", default=[], help="Append refs")
     p.add_argument("--remove-ref", dest="remove_ref", nargs="*", default=[], help="Drop refs")
-    p.add_argument("--check-after", dest="check_after", help='"YYYY-MM-DD [morning|afternoon]"; empty clears')
+    p.add_argument("--check-after", dest="check_after", help="UTC: YYYY-MM-DD[THH:MM[:SS][Z|±HH:MM]]; empty clears")
     p.add_argument("--monitor-until", dest="monitor_until", help='"X [week|day](s)"; empty clears')
 
     p = subparsers.add_parser("rename", help="Change an item ID without changing other fields")
@@ -1320,7 +1330,7 @@ Examples:
 
     p = subparsers.add_parser("activate", help="Move item into the daily check (state=active)")
     p.add_argument("id", help="Item ID")
-    p.add_argument("--check-after", dest="check_after", help='"YYYY-MM-DD [morning|afternoon]"')
+    p.add_argument("--check-after", dest="check_after", help="UTC: YYYY-MM-DD[THH:MM[:SS][Z|±HH:MM]]")
 
     p = subparsers.add_parser("standby", help="Wait for the event in description (state=standby)")
     p.add_argument("id", help="Item ID; next_action describes what to capture")

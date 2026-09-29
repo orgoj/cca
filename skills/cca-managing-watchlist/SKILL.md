@@ -86,9 +86,13 @@ Avoid `--json` on discovery commands unless the caller needs full machine-readab
 - `cca-watchlist add-routine|add-task|add-incident|add-note ...` - Create an item;
   tasks and notes default to `idle`, routines and incidents to `active`.
 - `cca-watchlist edit <id> --<field> <value>` - Change fields; **never hand-edit the JSON.**
-- Common `edit` and `add-*` flags: `--name`, `--description`, `--check-after`,
+- Common `edit` and work-item `add-*` flags: `--name`, `--description`, `--check-after`,
   `--next-action`, `--status`, `--prio`, `--effort`, `--change-risk`, `--window`,
   `--refs`, `--blocked-on`. `add-incident` also requires `--file` and `--status`.
+- `--check-after` accepts `YYYY-MM-DD`, `YYYY-MM-DDTHH:MM[:SS]`, and timestamps
+  with `Z` or a `+HH:MM`/`-HH:MM` offset. Times without an offset mean UTC;
+  offset times are stored in UTC. Date-only means 06:00 UTC. The older
+  `YYYY-MM-DD morning|afternoon` form remains supported (06:00/12:00 UTC).
 - `cca-watchlist rename <old-id> <new-id>` - Change only the canonical slug ID; preserve item fields and order.
 - `cca-watchlist park|standby|activate|done <id>` - Move between states.
 - `cca-watchlist remove <id>` - Delete permanently.
