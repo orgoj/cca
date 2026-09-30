@@ -86,6 +86,8 @@ Avoid `--json` on discovery commands unless the caller needs full machine-readab
 - `cca-watchlist add-routine|add-task|add-incident|add-note ...` - Create an item;
   tasks and notes default to `idle`, routines and incidents to `active`.
 - `cca-watchlist edit <id> --<field> <value>` - Change fields; **never hand-edit the JSON.**
+- `edit --refs` replaces the entire list. Before editing refs, read `cca-watchlist show <id>`
+  and include the existing refs in the replacement list to preserve them.
 - Common `edit` and work-item `add-*` flags: `--name`, `--description`, `--check-after`,
   `--next-action`, `--status`, `--prio`, `--effort`, `--change-risk`, `--window`,
   `--refs`, `--blocked-on`. `add-incident` also requires `--file` and `--status`.
