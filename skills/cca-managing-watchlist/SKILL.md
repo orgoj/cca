@@ -23,6 +23,11 @@ check today".
 **Types:** `routine` (recurring check), `incident` (incident follow-up), `task`
 (work item), `note` (information with optional validity dates, never work).
 
+**Authoring:** Write for a future agent without the conversation: explain the item's
+meaning and purpose, record known facts in `description`/`status`, and give a concrete
+`next_action` for work items. Distinguish confirmed facts from uncertainty; summarize
+the meaning of the discussion instead of transcribing it literally.
+
 **States (schema v2)** — every item is `active`, `idle`, `standby` or `done`:
 - `active` — takes part in the daily check, i.e. `list-today`.
 - `idle` — backlog: **never** in `list-today`, but found by `search` and `list`. Requires at
@@ -75,6 +80,11 @@ matches show short ID/name lines; if more than 20 match, refine the query.
 `list` keeps state, type, area and priority on one line per item; `list-today` shows
 priority, effort and due age. Both cap text at 20 items.
 Avoid `--json` on discovery commands unless the caller needs full machine-readable data.
+
+Before reporting an item as work to do, run `cca-watchlist show ID` and read its
+current state, `status`, `next_action`, and any blockers or standby trigger. Base the
+report on those fields; an agenda title or older diary entry alone does not establish
+current work. If they leave the action unclear, report that uncertainty.
 
 **Operations:**
 - `cca-watchlist agenda` - Short default work agenda; use for "what should we do?".
