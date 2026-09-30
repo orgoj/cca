@@ -87,6 +87,16 @@ report on those fields; an agenda title or older diary entry alone does not esta
 current work. If they leave the action unclear, report that uncertainty.
 
 **Operations:**
+Before the first use of **each mutating subcommand in a session**, run and read
+`cca-watchlist <command> -h` for that exact subcommand (`add-*`, `edit`, `rename`,
+`update`, `park`, `standby`, `activate`, `done`, `remove`, `migrate`). Use its required
+arguments and allowed tag values; do not guess syntax from another command or memory.
+For example, `--effort e1h` is a tag; `--effort 1h` is invalid, even though selection
+commands accept `--time 1h`. Take the allowed `--effort`, `--change-risk`, `--window`
+and `--prio` values from the current subcommand's help when those flags are supported.
+For every `add-*`, pass `--name "Item name"`: the ID is generated from the name,
+never supplied as a positional argument. Use the returned ID for later operations.
+
 - `cca-watchlist agenda` - Short default work agenda; use for "what should we do?".
 - `cca-watchlist list-today [--type X]` - Active items due today.
 - `cca-watchlist list [--area X] [--state X] [--type X] [--all]` - Compact register.
