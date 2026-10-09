@@ -70,8 +70,9 @@ machine's local date; work scheduling retains UTC. Show current information with
 `list --type note --current`, separately from daily tasks. `--all` or an explicit
 `--state done` can include closed notes in validity queries.
 
-**Discovery:** Start with the most specific known ID, name or keywords. `search`
-requires every query word to match somewhere in the item; ID/name/keywords matches
+**Discovery:** Start with the most specific known ID or name. Query `search` with one
+distinctive subject word (domain, server, customer); every word must match, so never
+add the tool or symptom name. ID/name/keywords matches
 rank above description/next-action matches. Reference-only matches require `--deep`.
 By default, search checks active, idle and standby; `--all` adds done and `--state X`
 selects one state. One match displays full detail. Use `search "term" --brief` to
