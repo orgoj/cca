@@ -43,7 +43,7 @@ Run test scripts directly (they are executable), never as `bash tests/...`; new 
   Guard: `bash tests/test-shared-clean.sh` (wraps `cca-check-shared-clean`) scans this repo against a
   denylist the PROJECT supplies via `$CCA_DENYLIST` or its cwd. **The denylist never lives here** —
   storing it would leak the very names it guards.
-- naming: all bin scripts and skills use `cca-` prefix for namespace safety
+- naming: new bin scripts and skills use `cca-` prefix; never rename a shipped script or skill without explicit approval (project docs and reports reference them, e.g. `asn-wrap` stays unprefixed)
 - naming: user's explicit choice overrides conventions (e.g., `commit` not `committing`)
 - project tracking: dependent projects are documented only in each project's own
   `.claude/CLAUDE.md`; never list project names or paths in this shared repo
@@ -65,3 +65,7 @@ Run test scripts directly (they are executable), never as `bash tests/...`; new 
   non-zero when nothing is found. An empty result reads as "nothing to do" and hides the bug for
   months (`cca-watchlist`, `cca-diagnose-gather`, `cca-learn-analyzer` all had it).
 - `cca-install` errors if target directory doesn't exist (by design, won't auto-create)
+- ⛔ **Config loading (`lib/cca-env.sh`, loader in `cca-tmux-cli`) is load-bearing**: projects contain nested
+  git repos that inherit the parent project's `.cca-env`, and config files use CWD-relative paths. Never
+  change the search walk, priority or stop condition; before any loader change compare HEAD vs new output
+  in real consumer project dirs, including nested repos.
