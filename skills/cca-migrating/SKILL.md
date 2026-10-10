@@ -66,10 +66,10 @@ grep -E '^\[|^[a-zA-Z]' TARGET/production/hosts | grep -v '^\[' | grep -v '^#'
 Always replace these patterns in migrated content:
 ```bash
 # Server names in text
-sed -i 's/server1/proweb1/g' FILE
+sed -i 's/server1/server2/g' FILE
 
 # Server names in paths
-sed -i 's|server-server1|server-proweb1|g' FILE
+sed -i 's|server-server1|server-server2|g' FILE
 ```
 
 ## Files to Never Copy
