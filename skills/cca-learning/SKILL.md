@@ -34,7 +34,8 @@ just to have an ID.
 `what failed → why it failed → what actually fixed it`. If the "why" is missing, it is not a lesson
 yet: either verify the cause or drop it. This template is analysis only; convert it to the output
 format below instead of copying its narrative into a guide or rules file.
-**Search related guides** - Use tantivy2agents search to find guides to update.
+**Search related guides** - Use tantivy2agents search to find guides to update (read candidates
+with `tantivy2agents read REF`; native read only for the file you edit).
 
 ### 2. Execution
 **Determine update strategy** - Update existing guide, create new, or add to the project rules file (AGENTS.md/CLAUDE.md).

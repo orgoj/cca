@@ -55,14 +55,26 @@ fi
 # 3. Tantivy2agents checks
 echo -n "Search (tantivy2agents): "
 if command -v tantivy2agents >/dev/null 2>&1; then
+    # Skills read guides via 'tantivy2agents read/outline' (added in 0.9.0)
+    T2A_VERSION=$(tantivy2agents --version 2>/dev/null | awk '{print $2}')
+    IFS=. read -r T2A_MAJOR T2A_MINOR _ <<<"$T2A_VERSION"
+    T2A_OK=false
+    if [[ "$T2A_MAJOR" =~ ^[0-9]+$ && "$T2A_MINOR" =~ ^[0-9]+$ ]] \
+        && { [ "$T2A_MAJOR" -gt 0 ] || [ "$T2A_MINOR" -ge 9 ]; }; then
+        T2A_OK=true
+    fi
+    if [ "$T2A_OK" = false ]; then
+        echo -e "${YELLOW}OLD VERSION${NC} (${T2A_VERSION:-unknown}; need >= 0.9.0 for read/outline/usage)"
+        echo -n "Search (tantivy2agents): "
+    fi
     if [ -f ".tantivy2agents.json" ]; then
-        # Try search for "server" to verify CCA indexing
-        SEARCH_RESULT=$(tantivy2agents search "server" 2>/dev/null | grep "### FILE: cca/" | head -n 1)
+        # Try search for "server" to verify CCA indexing; doctor searches stay out of usage stats
+        SEARCH_RESULT=$(TANTIVY2AGENTS_USAGE=0 tantivy2agents search "server" 2>/dev/null | grep "### FILE: cca/" | head -n 1)
         if [ -n "$SEARCH_RESULT" ]; then
             echo -e "${GREEN}OK${NC} (found indexed files in cca/)"
         else
             # Try a generic search if "server" returned nothing
-            if tantivy2agents search "test" >/dev/null 2>&1; then
+            if TANTIVY2AGENTS_USAGE=0 tantivy2agents search "test" >/dev/null 2>&1; then
                  echo -e "${YELLOW}PARTIAL${NC} (search works, but no CCA files found in index. Run 'tantivy2agents install'?)"
             else
                  echo -e "${RED}FAILED${NC} (search command failed, check index)"
@@ -122,6 +134,6 @@ if [ ${#MISSING_DIRS[@]} -eq 0 ] && [ -n "$CONFIG_FILE" ] && [ ${#MISSING_VARS[@
     echo -e "\n${GREEN}CCA looks ready!${NC}"
     echo "Next steps:"
     echo "1. Load the cca-core skill (mandatory before any server work)"
-    echo "2. Test search: tantivy2agents search \"test\""
+    echo "2. Test search: tantivy2agents search \"test\" (read results: tantivy2agents read REF)"
     echo "3. Run on server: cca-tmux-cli -t <SERVER> run \"uptime\""
 fi

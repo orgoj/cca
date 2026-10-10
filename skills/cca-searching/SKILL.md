@@ -10,9 +10,13 @@ allowed-tools: Bash(*), Read(*), Glob(*)
 **Purpose:** Search through CCA knowledge base (guides, incidents, documentation) using full-text search.
 
 **CRITICAL:** Topic search in CCA documentation goes through `tantivy2agents` — never Glob or grep to
-find out which guide covers a subject. (Opening a file whose exact path you already know is not
-searching: `Read` it directly.) An incident whose **date** you know is found by listing the
+find out which guide covers a subject. An incident whose **date** you know is found by listing the
 directory (`ls incidents/ | grep YYYY-MM-DD`) — `search` matches concepts, not dates.
+
+**Read indexed documents through `tantivy2agents outline/read`**, not with native file tools or
+`cat` — those reads are logged and feed the guide usage stats (see *Usage stats*). This holds for a
+path you already know, too (`tantivy2agents read cca/guides/x.md`). Exception: a file you are about
+to edit is read with the native tool your edit tool requires.
 
 ## Steps
 
@@ -30,10 +34,14 @@ Run the first search sequentially when index readiness is unknown; if a search e
 - **Specific Server:** `tantivy2agents search "server_name keywords"`
 
 ### 3. Using the results
-- Review ranked results (BM25).
+- Review ranked results (BM25). Each result has a `REF:` (e.g. `a3f2c1:2`); pass it instead of the
+  path so the read is tied to this search.
 - If no results, broaden keywords. If too many, refine them or use `--limit`.
-- Read the selected guide in full, then follow only the cross-references that matter for the task —
-  no recursive sweep, no separate behavior map.
+- Long guide: `tantivy2agents outline REF` (headings with slugs and line ranges), then
+  `tantivy2agents read REF --section SLUG`. Short guide or the whole thing needed:
+  `tantivy2agents read REF`. `read --lines A-B` for a range, `--numbers` for line numbers.
+- Follow only the cross-references that matter for the task (`tantivy2agents read <path>`) — no
+  recursive sweep, no separate behavior map.
 - **A guide describes intent, not necessarily today's state.** For files you are about to change or
   claims you are about to repeat as fact, open the actual file. Anything the guide labels
   `neovereno`/`assumed` is an open question, not a fact to build on.
@@ -68,6 +76,14 @@ tantivy2agents search "docker"
 ```bash
 tantivy2agents search "docker" --format json
 ```
+
+## Usage stats
+
+Every `search` and `read`/`outline` is appended to `.tantivy-data/usage.jsonl` (local, gitignored,
+rotated). `tantivy2agents usage --since 30d [--format json]` reports read-through per rank,
+zero-result queries, returned-but-not-read docs, never-returned docs and most-read sections.
+Native file reads are invisible to it, so "not read via t2a" is not "never read". Turn logging off
+for scripted searches with `TANTIVY2AGENTS_USAGE=0`. Full contract: `tantivy2agents skill-usage`.
 
 ## Index Management
 

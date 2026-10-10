@@ -17,7 +17,8 @@ Analyze conversation and create structured guide for solving similar issues in t
 
 ### 1. Analysis
 **Analyze conversation** - Extract problem, diagnostics, solution, mistakes
-**Search existing guides** - Use tantivy2agents search to check for similar guides
+**Search existing guides** - Use tantivy2agents search to check for similar guides; inspect
+candidates with `tantivy2agents outline/read REF`. Read natively only the guide you will edit.
 
 ### 2. Execution
 **Determine action** - Create new guide or update existing one
@@ -49,6 +50,8 @@ Goal: `tantivy2agents search "toolname"` → guide is the FIRST result.
 - Frontmatter `tags:` MUST contain the keyword (`tags: [duckdb, ...]`).
 - Frontmatter `name:` MUST start with the keyword (`name: duckdb-log-analysis`).
 - After writing, TEST: `tantivy2agents search "toolname"` → guide is first result.
+- Headings are the guide's table of contents in `tantivy2agents outline`: one topic per section,
+  heading names the topic (agents pick a section from the outline and read only that).
 
 **Freshness:** the guide must be current AS A WHOLE — on every edit update or remove
 anything the change makes stale; no dated changelog section is kept (history lives in git).

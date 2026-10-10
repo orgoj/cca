@@ -55,11 +55,13 @@ Used for permanent changes and infrastructure configuration.
 ### 3. Knowledge: `tantivy2agents`
 Full-text search across guides, incidents, and documentation.
 - `tantivy2agents search "<KEYWORDS>"` - Search knowledge base
+- `tantivy2agents outline REF` / `tantivy2agents read REF [--section SLUG]` - Read a result
+  (logged for guide usage stats; details in `cca-searching`)
 
 ## Core Workflow
 
 1.  **Analyze**: Understand the problem.
-2.  **Search**: `tantivy2agents search` for guides in `cca/guides/`.
+2.  **Search**: `tantivy2agents search` for guides in `cca/guides/`, read them with `tantivy2agents read`.
 3.  **Investigate**: Use `cca-tmux-cli` to check server state.
 4.  **Fix**: Use `ap` for permanent fixes or `cca-tmux-cli` for troubleshooting.
 5.  **Document**: Save findings as guides in `cca/guides/`.

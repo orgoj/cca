@@ -15,6 +15,14 @@ Monthly maintenance tool to keep knowledge base clean, complete, and optimized.
 
 ### 1. Analysis
 **Analyze repositories:** `incidents/`, `guides/`, and the project watchlist.
+**Usage evidence:** save `tantivy2agents usage --since 30d --format json` to a temp file and inspect
+it with `yq`. It counts only reads via `tantivy2agents read/outline` (see its `note`), so treat it as
+a signal to check, not proof:
+- `zero_result_queries`, `searches_without_t2a_read` → candidate gaps (`analyze-gaps`)
+- `returned_not_read_via_t2a`, `outline_without_t2a_read`, low `rank_ctr` at rank 1 → title,
+  frontmatter or headings do not match the content (`suggest-improvements`)
+- `never_returned` → archive, merge or findability candidates (`find-duplicates`)
+- `sections` → which parts carry the guide; keep them, trim what nobody reads
 **Identify goals:**
 1. **Find gaps** - Repeated incidents without guides
 2. **Suggest improvements** - Missing info in existing guides

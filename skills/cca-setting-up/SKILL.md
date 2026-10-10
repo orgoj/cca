@@ -23,7 +23,7 @@ Complete infrastructure administration system setup - server management, inciden
 **Note:** Project root `logs/`, NOT `cca/logs/` - cca-tmux-cli uses `LOG_DIR="logs"`
 
 ### 3. Setup Full-Text Search
-**Configure tantivy2agents:**
+**Configure tantivy2agents** (>= 0.9.0; skills read guides via `tantivy2agents read/outline`):
 - Create `.tantivy2agents.json` if missing
 - Configure to index: `cca/`, playbooks, documentation
 - Run `tantivy2agents install` to build index
@@ -53,7 +53,7 @@ cca/
 ├── guides/              # Knowledge base guides
 └── incidents/           # Incident documentation
 logs/                    # Session logs (cca-tmux-cli LOG_DIR="logs")
-.tantivy-data/           # Search index (created by tantivy2agents)
+.tantivy-data/           # Search index + usage.jsonl log (created by tantivy2agents)
 ```
 
 ### Configuration Files
@@ -81,7 +81,7 @@ CCA Setup Complete!
 Next steps:
 1. Load the cca-core skill (mandatory before ANY server work)
 2. Run diagnostic: cca-doctor
-3. Search guides: tantivy2agents search "keywords" (see cca-searching skill)
+3. Search guides: tantivy2agents search "keywords", read: tantivy2agents read REF (see cca-searching skill)
 4. Problem workflow: cca-solving-problems "description"
 
 Documentation:
