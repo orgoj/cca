@@ -11,19 +11,29 @@ LOG_DIR="logs"
 # Load environment files recursively from current dir up to root
 # Priority: .cca-tmux-cli (tool-specific) > .cca-env (CCA project config) > .env (general)
 # .cca-env avoids collisions with other tools that own .env in the same project.
+# Each file is sourced from its own directory, so relative paths inside it
+# (.cca-env.local, ./.venv, $PWD/bin) work when called from a subdirectory.
+source_config() {
+    local start_dir="$PWD"
+    cd "$1" || return
+    source "./$2"
+    local rc=$?
+    cd "$start_dir" || exit 1
+    return $rc
+}
 current_dir="$(pwd)"
 env_loaded=false
 while [ "$current_dir" != "/" ]; do
     if [ -f "$current_dir/.cca-tmux-cli" ]; then
-        source "$current_dir/.cca-tmux-cli"
+        source_config "$current_dir" .cca-tmux-cli
         break
     fi
     if [ -f "$current_dir/.cca-env" ]; then
-        source "$current_dir/.cca-env"
+        source_config "$current_dir" .cca-env
         env_loaded=true
         # Don't break - continue looking for .cca-tmux-cli (higher priority)
     elif [ -f "$current_dir/.env" ] && [ "$env_loaded" = false ]; then
-        source "$current_dir/.env"
+        source_config "$current_dir" .env
         env_loaded=true
         # Don't break - continue looking for .cca-tmux-cli (higher priority)
     fi

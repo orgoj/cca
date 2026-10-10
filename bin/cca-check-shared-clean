@@ -30,7 +30,7 @@ from pathlib import Path
 DENYLIST_CANDIDATES = ["cca-shared-denylist.txt", ".cca-shared-denylist.txt"]
 
 # What to scan in the shared repo. tmp/ and logs/ are gitignored scratch.
-SCAN_DIRS = ["bin", "skills", "tests", "tmux_cli_python"]
+SCAN_DIRS = ["bin", "lib", "skills", "tests", "tmux_cli_python"]
 SCAN_FILES = ["README.md", "AGENTS.md", "CLAUDE.md", "GEMINI.md", "TODO.md"]
 
 

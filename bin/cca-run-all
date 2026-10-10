@@ -19,11 +19,11 @@ fi
 
 SCRIPT="$1"
 shift
-SCRIPT_ARGS="$@"
+SCRIPT_ARGS=("$@")
 
 # Check if script exists in bin/ directory
 if [ ! -f "$PROJECT_ROOT/bin/$SCRIPT" ]; then
-    echo "Error: Script '$PROJECT_ROOT/bin/$SCRIPT' not found"
+    echo "Error: Script '$PROJECT_ROOT/bin/$SCRIPT' not found" >&2
     exit 1
 fi
 
@@ -31,21 +31,21 @@ fi
 SERVERS=$("$PROJECT_ROOT/bin/cca-run-on-server" --list)
 
 if [ -z "$SERVERS" ]; then
-    echo "Error: No servers available in tmux session"
+    echo "Error: No servers available in tmux session" >&2
     exit 1
 fi
 
 echo "<run-all-execution>"
 echo "<script>$SCRIPT</script>"
-echo "<args>$SCRIPT_ARGS</args>"
-echo "<servers>$(echo $SERVERS | tr '\n' ' ')</servers>"
+echo "<args>${SCRIPT_ARGS[*]}</args>"
+echo "<servers>$(echo "$SERVERS" | tr '\n' ' ')</servers>"
 echo "<start-time>$(date)</start-time>"
 echo ""
 
 # Run script on each server
 for server in $SERVERS; do
     echo "<server-result name=\"$server\">"
-    "$PROJECT_ROOT/bin/$SCRIPT" $server $SCRIPT_ARGS
+    "$PROJECT_ROOT/bin/$SCRIPT" "$server" "${SCRIPT_ARGS[@]}"
     echo "</server-result>"
     echo ""
 done

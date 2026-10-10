@@ -54,7 +54,7 @@ Commands:
     skills                Link all skills to ./.claude/skills
 
     skill <skill_name>    Link a specific skill to ./.claude/skills
-                          Example: cca-install skill cca-tmux
+                          Example: cca-install skill cca-tmux-cli
 
     help                  Show this help message
 
@@ -62,7 +62,7 @@ Examples:
     cca-install bin ~/bin              # Install binaries to ~/bin
     cca-install -f bin ~/bin           # Install binaries, overwriting existing
     cca-install skills                 # Install all skills locally
-    cca-install skill cca-tmux         # Install specific skill locally
+    cca-install skill cca-tmux-cli     # Install specific skill locally
 EOF
 }
 
@@ -98,7 +98,8 @@ install_bin() {
 
     for script in "$bin_dir"/cca-*; do
         if [ -f "$script" ]; then
-            local script_name="$(basename "$script")"
+            local script_name
+            script_name="$(basename "$script")"
             local target="$target_dir/$script_name"
 
             # Check existing link/file
@@ -142,7 +143,8 @@ install_bin() {
 link_skill() {
     local skill_dir="$1"
     local target_dir="$2"
-    local skill_name="$(basename "$skill_dir")"
+    local skill_name
+    skill_name="$(basename "$skill_dir")"
     local target="$target_dir/$skill_name"
 
     # Check existing link/file

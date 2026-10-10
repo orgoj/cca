@@ -11,7 +11,7 @@ LOG_DIR="logs"
 # Debug mode flag (set via --debug)
 DEBUG_MODE=false
 
-# Check for --debug flag early (before loading .env files)
+# Check for --debug flag early (before loading project config)
 for arg in "$@"; do
     if [ "$arg" = "--debug" ]; then
         DEBUG_MODE=true
@@ -26,40 +26,24 @@ DEBUG() {
     fi
 }
 
-# Load .env file recursively from current dir up to root (only if RUN_ON_CMD not already set)
-if [ -z "$RUN_ON_CMD" ]; then
-    current_dir="$(pwd)"
-    env_found=false
-
-    while [ "$current_dir" != "/" ]; do
-        if [ -f "$current_dir/.env" ]; then
-            DEBUG "Loading .env from: $current_dir/.env"
-            source "$current_dir/.env"
-            env_found=true
-            break
-        fi
-        DEBUG "No .env found in: $current_dir"
-        current_dir="$(dirname "$current_dir")"
-    done
-
-    if [ "$env_found" = false ]; then
-        DEBUG "No .env file found in any parent directory"
-    fi
-    DEBUG "ADMIN_NAME='$ADMIN_NAME', RUN_ON_CMD='$RUN_ON_CMD'"
-
-    # Default to cca-tmux-cli if not found in .env
-    RUN_ON_CMD="${RUN_ON_CMD:-cca-tmux-cli}"
-fi
-
 # Get script directory for finding cca-tmux-cli (handle symlinks correctly)
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 
+# Load project config (see lib/cca-env.sh); skipped when RUN_ON_CMD is already set
+if [ -z "$RUN_ON_CMD" ]; then
+    # shellcheck source=../lib/cca-env.sh
+    source "$SCRIPT_DIR/../lib/cca-env.sh"
+    cca_load_env
+    DEBUG "Loaded config files: ${CCA_ENV_FILES:-none}"
+    DEBUG "ADMIN_NAME='$ADMIN_NAME', RUN_ON_CMD='$RUN_ON_CMD'"
+
+    # Default to cca-tmux-cli if not set in project config
+    RUN_ON_CMD="${RUN_ON_CMD:-cca-tmux-cli}"
+fi
+
 # Display unified help information
 usage() {
-    # Display generic server names (never show real server names)
-    local servers_display="server1 server2 server3 ..."
-
-    cat <<EOF
+    cat <<USAGE
 cca-run-on-server - Configurable remote command execution
 
 Usage: cca-run-on-server [OPTIONS] <SERVER> "<COMMAND>"
@@ -79,7 +63,9 @@ Arguments:
 
 File Creation:
   --create-file REMOTE_PATH [LOCAL_FILE]
-    Create a file on the remote server with atomic write (temp file + mv).
+    Create a file on the remote server with atomic write (temp file in the
+    target directory + mv). Content is transferred byte-for-byte; an existing
+    file keeps its mode, a new one gets the remote umask default.
     If LOCAL_FILE is provided, its content is used.
     If LOCAL_FILE is omitted, reads content from stdin (heredoc).
 
@@ -90,7 +76,8 @@ Backend Configuration:
   - cca-tmux-cli    Use cca-tmux-cli for remote execution (default)
   - ssh         Use direct SSH connections
 
-  Configure in .env file:
+  Configure in project .cca-env (legacy .env), searched from the current
+  directory up to the git root:
   RUN_ON_CMD=cca-tmux-cli   # or ssh
 
 Examples:
@@ -121,7 +108,7 @@ Exit codes:
   - 64: Usage error (wrong parameters, unknown options)
   - 78: Configuration error (missing configuration)
   - Other codes depend on backend implementation
-EOF
+USAGE
 }
 
 # Sanitize command for logging (remove sensitive data)
@@ -153,7 +140,8 @@ sanitize_command() {
     cmd=$(echo "$cmd" | sed -E 's/Bearer[[:space:]]+[A-Za-z0-9_\/\-\.]+/Bearer [REDACTED]/gi')
 
     # 8. Connection strings: mongodb://, postgres://, mysql://
-    cmd=$(echo "$cmd" | sed -E 's|(mongodb|postgres|mysql|mariadb)://[^[:space:]]+|\1://[REDACTED]|gi')
+    # (# delimiter: | would collide with the alternation)
+    cmd=$(echo "$cmd" | sed -E 's#(mongodb|postgres|mysql|mariadb)://[^[:space:]]+#\1://[REDACTED]#gi')
 
     # 9. Base64 encoded secrets (likely secrets, 40+ chars)
     cmd=$(echo "$cmd" | sed -E 's/[A-Za-z0-9+/]{40,}={0,2}/[BASE64_REDACTED]/g')
@@ -163,9 +151,10 @@ sanitize_command() {
 
     # If detect-secrets available, do additional check on remaining command
     if command -v detect-secrets >/dev/null 2>&1; then
-        local secrets_output=$(echo "$cmd" | detect-secrets scan --string 2>/dev/null)
+        local secrets_output first_word
+        secrets_output=$(echo "$cmd" | detect-secrets scan --string 2>/dev/null)
         if echo "$secrets_output" | grep -q ": True"; then
-            local first_word=$(echo "$cmd" | awk '{print $1}')
+            first_word=$(echo "$cmd" | awk '{print $1}')
             cmd="$first_word [ADDITIONAL SECRETS DETECTED BY detect-secrets]"
         fi
     fi
@@ -192,17 +181,18 @@ log_command_execution() {
     # Error if ADMIN_NAME not set when logging is required
     if [ -z "$ADMIN_NAME" ]; then
         DEBUG "ADMIN_NAME is empty, will exit with error"
-        echo "Error: ADMIN_NAME not set in .env file" >&2
-        echo "Create .env file with: echo 'ADMIN_NAME=your_name' >> .env" >&2
+        echo "Error: ADMIN_NAME not set in project .cca-env" >&2
+        echo "Add it with: echo 'ADMIN_NAME=your_name' >> .cca-env" >&2
         exit 78
     fi
 
     DEBUG "ADMIN_NAME='$ADMIN_NAME'"
 
-    local timestamp=$(date -Iseconds)
-    local log_date=$(date +%Y-%m-%d)
-    local log_file="$LOG_DIR/${log_date}-${ADMIN_NAME}.log"
-    local safe_command=$(sanitize_command "$command")
+    local timestamp log_date log_file safe_command
+    timestamp=$(date -Iseconds)
+    log_date=$(date +%Y-%m-%d)
+    log_file="$LOG_DIR/${log_date}-${ADMIN_NAME}.log"
+    safe_command=$(sanitize_command "$command")
 
     DEBUG "Writing to log file: $log_file"
     DEBUG "Log entry: $timestamp $ADMIN_NAME ${target_server:-DEFAULT} $safe_command [exit: $exit_code]"
@@ -228,7 +218,7 @@ validate_server() {
         echo "Available servers: $TMUX_SESSION_SERVERS" >&2
         exit 2
     else
-        echo "Error: TMUX_SESSION_SERVERS not defined in .env file" >&2
+        echo "Error: TMUX_SESSION_SERVERS not defined in project .cca-env" >&2
         exit 78
     fi
 }
@@ -244,7 +234,7 @@ check_backend() {
         ;;
     "ssh")
         if [ -z "$TMUX_SESSION_SERVERS" ]; then
-            echo "Error: TMUX_SESSION_SERVERS not defined in .env for ssh backend" >&2
+            echo "Error: TMUX_SESSION_SERVERS not defined in project .cca-env for ssh backend" >&2
             exit 78
         fi
         ;;
@@ -290,8 +280,9 @@ execute_command() {
         encoded_cmd=$(printf '%s' "$command" | base64 | tr -d '\n')
 
         # Execute SSH command - decode and pipe to bash
-        ssh "$server" "echo '$encoded_cmd' | base64 -d | bash"
-        local ssh_exit_code=$?
+        # (|| keeps set -e from exiting before a failed command is logged)
+        local ssh_exit_code=0
+        ssh "$server" "echo '$encoded_cmd' | base64 -d | bash" || ssh_exit_code=$?
 
         # Log the command execution after execution
         log_command_execution "$server" "$command" "$ssh_exit_code"
@@ -310,20 +301,34 @@ create_remote_file() {
     local remote_path="$2"
     local local_file="$3" # empty = stdin
 
-    local content
+    # Content is streamed (never through $(...), which strips trailing newlines)
+    local source_file="/dev/stdin"
     if [ -n "$local_file" ]; then
         if [ ! -f "$local_file" ]; then
             echo "Error: Local file '$local_file' not found" >&2
             exit 1
         fi
-        content=$(cat "$local_file") || exit 1
-    else
-        content=$(cat) # stdin
+        source_file="$local_file"
     fi
 
-    # Escape remote_path for shell (handles quotes in path)
-    local escaped_remote_path
-    escaped_remote_path=$(printf %q "$remote_path")
+    # Remote script reads the content on stdin. The temp file lives in the
+    # target directory so mv is an atomic rename on the same filesystem.
+    local remote_script
+    remote_script="target=$(printf %q "$remote_path")
+temp_path=\$(mktemp \"\$(dirname -- \"\$target\")/.cca-create.XXXXXX\") || exit 1
+if cat >\"\$temp_path\" &&
+    if [ -e \"\$target\" ]; then
+        chmod --reference=\"\$target\" \"\$temp_path\"
+    else
+        chmod \"\$(printf '%o' \$((0666 & ~0\$(umask))))\" \"\$temp_path\"
+    fi &&
+    mv -f \"\$temp_path\" \"\$target\"; then
+    ls -ld \"\$target\"
+else
+    rc=\$?
+    rm -f \"\$temp_path\"
+    exit \$rc
+fi"
 
     check_backend
     case "$RUN_ON_CMD" in
@@ -331,14 +336,8 @@ create_remote_file() {
         # Validate server name against allowed servers
         validate_server "$server"
 
-        # SSH: pipe content via stdin, mktemp on remote side for atomic write
-        printf '%s' "$content" | ssh "$server" "
-            temp_path=\$(mktemp) &&
-            cat > \"\$temp_path\" &&
-            mv \"\$temp_path\" $escaped_remote_path &&
-            ls -ld $escaped_remote_path
-        "
-        local ssh_exit_code=$?
+        local ssh_exit_code=0
+        ssh "$server" "$remote_script" <"$source_file" || ssh_exit_code=$?
 
         # Log the operation
         log_command_execution "$server" "create-file $remote_path" "$ssh_exit_code"
@@ -348,16 +347,13 @@ create_remote_file() {
     "cca-tmux-cli")
         # cca-tmux-cli: base64 encode CONTENT (not command!) - this is safe
         local encoded
-        encoded=$(printf '%s' "$content" | base64 | tr -d '\n')
+        encoded=$(base64 <"$source_file" | tr -d '\n') || exit 1
 
-        # Execute via cca-tmux-cli (which now uses base64 internally)
-        # Note: $encoded is expanded HERE, not on remote - so double quotes are correct
-        exec "$SCRIPT_DIR/cca-tmux-cli" -t "$server" run "
-            temp_path=\$(mktemp) &&
-            echo '$encoded' | base64 -d > \"\$temp_path\" &&
-            mv \"\$temp_path\" $escaped_remote_path &&
-            ls -ld $escaped_remote_path
-        "
+        # Note: $encoded is expanded HERE, not on remote; the braces keep the
+        # script's exit inside the pipeline subshell, not the pane shell.
+        exec "$SCRIPT_DIR/cca-tmux-cli" -t "$server" run "echo '$encoded' | base64 -d | {
+$remote_script
+}"
         ;;
     esac
 }

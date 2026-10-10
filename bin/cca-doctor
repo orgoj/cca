@@ -1,6 +1,15 @@
 #!/bin/bash
 
 # cca-doctor: Check CCA environment and configuration
+# Usage: cca-doctor [--fix]   (--fix removes broken cca-* skill symlinks)
+
+FIX=false
+case "${1:-}" in
+    --fix) FIX=true ;;
+    -h|--help) sed -n '3,4p' "$0"; exit 0 ;;
+    "") ;;
+    *) echo "Unknown option: $1" >&2; exit 64 ;;
+esac
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -22,20 +31,15 @@ else
     echo -e "${RED}MISSING${NC}: ${MISSING_DIRS[*]}"
 fi
 
-# 2. Configuration checks
-# Priority: .cca-env (avoids collisions with other tools owning .env) > .env
-CONFIG_FILE=""
-for candidate in .cca-env .env; do
-    if [ -f "$candidate" ]; then
-        CONFIG_FILE="$candidate"
-        break
-    fi
-done
+# 2. Configuration checks (same search as the other tools, see lib/cca-env.sh)
+# shellcheck source=../lib/cca-env.sh
+source "$(dirname "$(readlink -f "$0")")/../lib/cca-env.sh"
+cca_load_env
+CONFIG_FILE="$CCA_ENV_FILES"
 
 echo -n "Configuration (${CONFIG_FILE:-.cca-env/.env}): "
+MISSING_VARS=()
 if [ -n "$CONFIG_FILE" ]; then
-    source "$CONFIG_FILE"
-    MISSING_VARS=()
     [ -n "$ADMIN_NAME" ] || MISSING_VARS+=("ADMIN_NAME")
     [ -n "$TMUX_SESSION_SERVERS" ] || MISSING_VARS+=("TMUX_SESSION_SERVERS")
     
@@ -82,15 +86,23 @@ fi
 # 5. Skills check
 echo -n "Skills linked (./.claude/skills): "
 if [ -d ".claude/skills" ]; then
-    # Find and remove broken cca-* symlinks
+    # Report broken cca-* symlinks; remove them only with --fix
     BROKEN_LINKS=$(find .claude/skills -maxdepth 1 -type l -name "cca-*" ! -exec test -e {} \; -print)
     if [ -n "$BROKEN_LINKS" ]; then
-        echo -e "${YELLOW}CLEANING BROKEN LINKS${NC}"
-        for link in $BROKEN_LINKS; do
-            echo "  Removing broken link: $(basename "$link")"
-            rm "$link"
-        done
-        echo -n "Updated status: "
+        if [ "$FIX" = true ]; then
+            echo -e "${YELLOW}CLEANING BROKEN LINKS${NC}"
+        else
+            echo -e "${YELLOW}BROKEN LINKS${NC} (run 'cca-doctor --fix' to remove)"
+        fi
+        while IFS= read -r link; do
+            if [ "$FIX" = true ]; then
+                echo "  Removing broken link: $(basename "$link")"
+                rm "$link"
+            else
+                echo "  Broken link: $(basename "$link")"
+            fi
+        done <<<"$BROKEN_LINKS"
+        echo -n "Valid links: "
     fi
 
     # Count valid linked skills

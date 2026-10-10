@@ -6,21 +6,26 @@ Agent-agnostic toolkit: bin scripts for PATH, skills in SKILL.md format.
 
 ```
 bin/           # cca-* prefixed scripts, add to PATH via cca-install
+lib/           # sourced shell helpers (cca-env.sh: shared project config loader)
 skills/        # skills in skill-name/SKILL.md format (agentskills.io spec)
 tests/         # Test scripts (bash + python)
 ```
 
 ## Commands
 
+Run test scripts directly (they are executable), never as `bash tests/...`; new test scripts get `chmod +x`.
+
 | Command | Description |
 |---------|-------------|
 | `./bin/cca-install bin ~/bin` | Symlink bin scripts to ~/bin |
 | `./bin/cca-install skills` | Symlink skills to .claude/skills |
-| `bash tests/test-command-safety.sh` | Test command safety validation |
-| `bash tests/test-tmux-cli-script.sh` | Test literal multiline script execution with fake tmux |
-| `bash tests/test-signal-handling.sh` | Test signal handling |
-| `python3 tests/test_watchlist.py` | Test watchlist functionality |
-| `bash tests/test-shared-clean.sh` | Check repo has no project-specific names (run from project dir) |
+| `tests/run-all.sh` | Run everything: shellcheck, bash tests, pytest |
+| `tests/test-run-on-server.sh` | cca-run-on-server config loading, logging, --create-file (fake ssh/tmux) |
+| `tests/test-curl-secret.sh` | cca-curl-secret with fake sops/curl |
+| `tests/test-command-safety.sh` | Test command safety validation |
+| `tests/test-tmux-cli-script.sh` | Test literal multiline script execution with fake tmux |
+| `tests/test-signal-handling.sh` | Test signal handling |
+| `tests/test-shared-clean.sh` | Check repo has no project-specific names (run from project dir) |
 
 ## Key Files
 

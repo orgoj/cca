@@ -141,7 +141,8 @@ show_all_monitors() {
 
 parse_since_time() {
     local input="$1"
-    local now=$(date +%s)
+    local now
+    now=$(date +%s)
 
     # Check if it's a relative time format (e.g., 12h, 7d, 30m)
     if [[ "$input" =~ ^[0-9]+[hmd]$ ]]; then
@@ -270,9 +271,10 @@ show_response_times() {
     echo ""
 
     get_monitors up | jq -r '.monitors | sort_by(.name) | .[] | select(.locations != null) | @json' | while IFS= read -r monitor_json; do
-        local name=$(echo "$monitor_json" | jq -r '.name')
-        local type=$(echo "$monitor_json" | jq -r '.type')
-        local uptime=$(echo "$monitor_json" | jq -r '.uptime')
+        local name type uptime
+        name=$(echo "$monitor_json" | jq -r '.name')
+        type=$(echo "$monitor_json" | jq -r '.type')
+        uptime=$(echo "$monitor_json" | jq -r '.uptime')
 
         echo "  ✅ $name [$type] (${uptime}% uptime):"
 
@@ -391,7 +393,7 @@ find_monitor_by_name() {
         echo "$matches" | cut -d'|' -f1
     else
         echo "Error: Multiple monitors found matching '$search_term':" >&2
-        echo "$matches" | while IFS='|' read -r id name; do
+        echo "$matches" | while IFS='|' read -r _ name; do
             echo "  - $name" >&2
         done
         echo "Use more specific search term." >&2
@@ -408,7 +410,6 @@ get_location_fail_log() {
     local monitor_id="$1"
     local since_timestamp="$2"
     local until_timestamp="$3"
-    local base_url="https://api.hetrixtools.com/v3/uptime-monitors/$monitor_id/location-fail-log"
     local all_entries="[]"
     local page_end_timestamp=""
     local page=1
