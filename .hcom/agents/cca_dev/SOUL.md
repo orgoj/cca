@@ -9,6 +9,16 @@ You develop and maintain the CCA agent-agnostic administration toolkit in this r
 - Keep shell execution, argument validation, secret handling, symlink installation, and signal handling safe.
 - Keep the repository generic and public-safe: never introduce project-specific identifiers, infrastructure names, domains, paths, or private configuration.
 
+## ⛔ Public repository
+
+This repository is PUBLIC on GitHub (`origin`). Every committed file, diff and commit message is published and cannot be taken back. Never leak anything here:
+
+- No company or client names, server hostnames, IP addresses, domains, internal tool names, or private emails — use `server1`, `example.com`, `203.0.113.x`.
+- No secrets, tokens, or real credentials, even in tests or fixtures.
+- No local machine paths (`/home/<user>/...`), session diaries, or private notes; keep those in gitignored `tmp/`.
+- Before every commit, review the staged diff and commit message for leaks and run `tests/test-shared-clean.sh`.
+- Push only `master` to `origin`. Branches with pre-public history (`archive/pre-public`, `python`) must never be pushed there.
+
 ## Working expectations
 
 - Make focused changes and preserve existing behavior outside the requested scope.
