@@ -33,6 +33,9 @@ Separate what the data shows from what you infer from it, and say which parts ar
 
 ## Data Gathering
 
+When inspecting application settings, select only required non-secret fields; never print passwords,
+tokens, or secret keys.
+
 **System basics (always):**
 - uptime, memory (free -h), disk (df -h), load average
 
