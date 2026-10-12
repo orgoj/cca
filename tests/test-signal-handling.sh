@@ -1,92 +1,118 @@
 #!/bin/bash
-# Test script for signal handling in cca-tmux
-# Usage: ./test-signal-handling.sh SERVER_NAME
+# Signal handling of cca-tmux-cli run against a real, private tmux server.
+# Never touches the user's tmux: the server socket lives in its own TMUX_TMPDIR.
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SERVER="${1:-localhost}"
+set -u
 
-# Ignore signals in test script so they don't interrupt us
-trap '' INT TERM
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+CLI="$SCRIPT_DIR/../bin/cca-tmux-cli"
 
-echo "=== Testing cca-tmux signal handling ==="
-echo "Server: $SERVER"
-echo ""
-
-# Test 1: Normal exit (EXITCODE=0)
-echo "Test 1: Normal exit (EXITCODE=0)"
-output=$("$SCRIPT_DIR/../bin/cca-tmux" -t "$SERVER" run "echo hello" 2>&1) || true
-if echo "$output" | grep -q "hello"; then
-    echo "  PASS: Command executed, output: $output"
-else
-    echo "  FAIL: Expected 'hello' in output"
-    echo "  Got: $output"
+if ! command -v tmux >/dev/null 2>&1; then
+    echo "SKIP: tmux not installed"
+    exit 0
 fi
-echo ""
 
-# Test 2: Non-zero exit (EXITCODE=42)
-echo "Test 2: Non-zero exit (EXITCODE=42)"
-exitcode=0
-"$SCRIPT_DIR/../bin/cca-tmux" -t "$SERVER" run "exit 42" 2>&1 || exitcode=$?
-if [[ "$exitcode" -eq 42 ]]; then
-    echo "  PASS: Exit code is 42"
+TEST_TMP=$(mktemp -d)
+export TMUX_TMPDIR="$TEST_TMP"
+unset TMUX
+SESSION="cca-signal-test"
+WINDOW="$SESSION:localhost"
+trap 'tmux kill-server 2>/dev/null; rm -rf "$TEST_TMP"' EXIT
+
+tmux new-session -d -s "$SESSION" -n localhost -x 200 -y 50 "bash --norc --noprofile"
+
+PASSED=0
+FAILED=0
+RUN_OUTPUT=""
+RUN_STATUS=0
+
+pass() {
+    echo "PASS: $1"
+    PASSED=$((PASSED + 1))
+}
+
+fail() {
+    echo "FAIL: $1"
+    FAILED=$((FAILED + 1))
+}
+
+run_cli() {
+    RUN_OUTPUT=$(cd "$TEST_TMP" && "$CLI" -s "$SESSION" -t localhost run --interval 1 --timeout 20 "$@" 2>&1)
+    RUN_STATUS=$?
+}
+
+# Start run in the background and wait until the command is running
+start_bg() {
+    (cd "$TEST_TMP" && "$CLI" -s "$SESSION" -t localhost run --interval 1 --timeout 20 "$1" \
+        >"$TEST_TMP/bg-output" 2>&1)
+}
+
+wait_for_pane() {
+    local pattern=$1 _
+    for _ in $(seq 1 50); do
+        if tmux capture-pane -t "$WINDOW" -p | grep -q "$pattern"; then
+            return 0
+        fi
+        sleep 0.2
+    done
+    return 1
+}
+
+assert_last_end_marker() {
+    local name=$1 expected=$2 last
+    last=$(tmux capture-pane -t "$WINDOW" -p -S -5000 | grep -E '^=== END TMUX_MARKER_[0-9_]+ .* ===$' | tail -n 1)
+    if [[ "$last" == *" $expected ==="* ]]; then
+        pass "$name"
+    else
+        fail "$name (last END marker: $last)"
+    fi
+}
+
+assert_status() {
+    local name=$1 expected=$2
+    if [ "$RUN_STATUS" -eq "$expected" ]; then
+        pass "$name"
+    else
+        fail "$name (expected status $expected, got $RUN_STATUS: $RUN_OUTPUT)"
+    fi
+}
+
+run_cli "echo hello"
+assert_status "normal exit status" 0
+if [ "$RUN_OUTPUT" = "hello" ]; then
+    pass "normal exit output"
 else
-    echo "  FAIL: Expected exit code 42, got: $exitcode"
+    fail "normal exit output (got: $RUN_OUTPUT)"
 fi
-echo ""
 
-# Test 3: SIGINT (Ctrl-C)
-echo "Test 3: SIGINT (Ctrl-C)"
-echo "  Starting sleep 30 in background with 10s timeout..."
-"$SCRIPT_DIR/../bin/cca-tmux" -t "$SERVER" run "sleep 30" --timeout 10 2>&1 &
+run_cli "exit 42"
+assert_status "nonzero exit status" 42
+
+start_bg "echo SIGINT_READY; sleep 30" &
 bg_pid=$!
-sleep 2
-echo "  Sending Ctrl-C to tmux window '$SERVER'..."
-# Send Ctrl-C directly to the server window (cca-tmux uses window name = server name)
-tmux send-keys -t "$SERVER" C-c
-echo "  Waiting for cca-tmux to complete..."
-wait $bg_pid 2>/dev/null || true
-sleep 1
-# Now check the last marker (only AFTER cca-tmux run completed)
-last_marker=$("$SCRIPT_DIR/../bin/cca-tmux" -t "$SERVER" read --all 2>&1 | grep -E "^=== END.*===$" | tail -1)
-if echo "$last_marker" | grep -q "INTERRUPTED"; then
-    echo "  PASS: Found INTERRUPTED marker"
-    echo "  Marker: $last_marker"
-else
-    echo "  FAIL: Expected INTERRUPTED marker"
-    echo "  Last marker: $last_marker"
+if wait_for_pane '^SIGINT_READY$'; then
+    tmux send-keys -t "$WINDOW" C-c
 fi
-echo ""
+wait "$bg_pid"
+RUN_STATUS=$?
+RUN_OUTPUT=$(cat "$TEST_TMP/bg-output")
+assert_status "Ctrl-C reports INTERRUPTED status" 130
+assert_last_end_marker "Ctrl-C prints INTERRUPTED marker" INTERRUPTED
 
-# Test 4: SIGTERM (kill) - skip if localhost (can't kill remote process easily)
-echo "Test 4: SIGTERM (kill)"
-echo "  Starting 'sleep 30' and will kill the sleep process..."
-"$SCRIPT_DIR/../bin/cca-tmux" -t "$SERVER" run 'echo "TEST4_PID=$$"; sleep 30' --timeout 10 2>&1 &
+start_bg 'echo "SIGTERM_PID=$$"; sleep 30' &
 bg_pid=$!
-sleep 2
-# Read the PID from tmux pane directly (not via cca-tmux which would conflict)
-tmux_output=$(tmux capture-pane -t "$SERVER" -p 2>/dev/null)
-sleep_pid=$(echo "$tmux_output" | grep -oP 'TEST4_PID=\K[0-9]+' | tail -1)
-if [[ -n "$sleep_pid" ]]; then
-    echo "  Found PID: $sleep_pid, sending SIGTERM..."
-    kill "$sleep_pid" 2>/dev/null || true
-else
-    echo "  WARNING: Could not extract PID, sending Ctrl-C instead"
-    tmux send-keys -t "$SERVER" C-c
+if wait_for_pane '^SIGTERM_PID=[0-9][0-9]*$'; then
+    kill -TERM "$(tmux capture-pane -t "$WINDOW" -p | sed -n 's/^SIGTERM_PID=\([0-9][0-9]*\)$/\1/p' | tail -n 1)"
 fi
-echo "  Waiting for cca-tmux to complete..."
-wait $bg_pid 2>/dev/null || true
-sleep 1
-last_marker=$("$SCRIPT_DIR/../bin/cca-tmux" -t "$SERVER" read --all 2>&1 | grep -E "^=== END.*===$" | tail -1)
-if echo "$last_marker" | grep -q "TERMINATED"; then
-    echo "  PASS: Found TERMINATED marker"
-    echo "  Marker: $last_marker"
-elif echo "$last_marker" | grep -q "INTERRUPTED"; then
-    echo "  INFO: Got INTERRUPTED (Ctrl-C fallback worked)"
-    echo "  Marker: $last_marker"
-else
-    echo "  FAIL: Expected TERMINATED or INTERRUPTED marker"
-    echo "  Last marker: $last_marker"
-fi
-echo ""
+wait "$bg_pid"
+RUN_STATUS=$?
+RUN_OUTPUT=$(cat "$TEST_TMP/bg-output")
+assert_status "SIGTERM reports TERMINATED status" 143
+assert_last_end_marker "SIGTERM prints TERMINATED marker" TERMINATED
 
-echo "=== Tests completed ==="
+run_cli "echo still usable"
+assert_status "shell survives signals" 0
+
+echo
+echo "Passed: $PASSED, Failed: $FAILED"
+[ "$FAILED" -eq 0 ]

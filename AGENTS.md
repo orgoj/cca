@@ -24,7 +24,7 @@ Run test scripts directly (they are executable), never as `bash tests/...`; new 
 | `tests/test-curl-secret.sh` | cca-curl-secret with fake sops/curl |
 | `tests/test-command-safety.sh` | Test command safety validation |
 | `tests/test-tmux-cli-script.sh` | Test literal multiline script execution with fake tmux |
-| `tests/test-signal-handling.sh` | Test signal handling |
+| `tests/test-signal-handling.sh` | cca-tmux-cli exit codes and Ctrl-C/SIGTERM markers (private tmux server, skips without tmux) |
 | `tests/test-shared-clean.sh` | Check repo has no project-specific names (run from project dir) |
 
 ## Key Files
