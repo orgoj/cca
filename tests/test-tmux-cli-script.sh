@@ -27,8 +27,13 @@ send-keys)
     command=${*: -2:1}
     printf '%s' "$command" >"$FAKE_TMUX_STATE/sent-command"
     if [ "${FAKE_TMUX_TIMEOUT:-false}" = true ]; then
-        marker=$(printf '%s' "$command" | sed -n "s/.*=== START \([^ ]*\) ===.*/\1/p")
+        marker=$(printf '%s' "$command" | sed -n "s/.*echo '\(TMUX_MARKER_[^ ]*\) ===.*/\1/p")
         printf '=== START %s ===\nstill running\n' "$marker" >"$FAKE_TMUX_STATE/pane"
+    elif [ "${FAKE_TMUX_WRAP_TYPED:-false}" = true ]; then
+        # Echo the typed command as tmux shows it, wrapped right before each
+        # "=== START " so a wrapped line starts with the START marker text.
+        printf '$ %s\n' "$command" | sed 's/=== START /\n&/g' >"$FAKE_TMUX_STATE/pane"
+        bash -c "$command" >>"$FAKE_TMUX_STATE/pane" 2>&1
     else
         bash -c "$command" >"$FAKE_TMUX_STATE/pane" 2>&1
     fi
@@ -367,6 +372,10 @@ run_cli run --script <<'REMOTE'
 exit 23
 REMOTE
 assert_status "ordinary nonzero status propagated" 23
+
+FAKE_TMUX_WRAP_TYPED=true run_cli run "printf '0\n'; exit 1"
+assert_status "wrapped typed command keeps nonzero status" 1
+assert_output "wrapped typed command does not fake START marker" "0"
 
 run_cli run --timeout 1 --script <<'REMOTE'
 exit 23

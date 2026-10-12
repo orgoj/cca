@@ -685,14 +685,15 @@ run)
     marker="TMUX_MARKER_$(date +%s%N)_$$"
 
     # Send start marker and command with END marker attached
-    # Split END marker: "echo -n '=== END '; echo '...'" prevents false grep matches in source code
+    # Split START/END markers ("echo -n '=== START '; echo '...'"): when tmux wraps the typed
+    # command, a wrapped line must never start with a complete marker (and source greps stay clean)
     # Use base64 encoding to safely handle newlines, quotes, heredocs - everything
     # Base64 output contains only safe chars (A-Za-z0-9+/=), decoded and executed via pipe
     # Show decoded command BEFORE marker (visible in terminal, not in captured output)
     # Trap INT/TERM/HUP ensures END marker prints even on Ctrl-C/kill (subshell restores signals)
     # Exit codes: 130=SIGINT, 143=SIGTERM, 129=SIGHUP, 137=SIGKILL (SIGKILL can't be trapped but detected)
     encoded_cmd=$(printf '%s' "$run_command" | base64 | tr -d '\n')
-    tmux send-keys "${target_window_param[@]}" "trap '' INT TERM HUP; echo; echo '# Command:'; echo '$encoded_cmd' | base64 -d; echo; echo '=== START $marker ==='; ( trap - INT TERM HUP; echo '$encoded_cmd' | base64 -d | bash ); exitcode=\$?; trap - INT TERM HUP; echo; echo -n '=== END '; case \$exitcode in 130) echo '$marker INTERRUPTED ===';; 143) echo '$marker TERMINATED ===';; 129) echo '$marker HANGUP ===';; 137) echo '$marker KILLED ===';; *) echo '$marker EXITCODE='\$exitcode' ===';; esac" Enter
+    tmux send-keys "${target_window_param[@]}" "trap '' INT TERM HUP; echo; echo '# Command:'; echo '$encoded_cmd' | base64 -d; echo; echo -n '=== START '; echo '$marker ==='; ( trap - INT TERM HUP; echo '$encoded_cmd' | base64 -d | bash ); exitcode=\$?; trap - INT TERM HUP; echo; echo -n '=== END '; case \$exitcode in 130) echo '$marker INTERRUPTED ===';; 143) echo '$marker TERMINATED ===';; 129) echo '$marker HANGUP ===';; 137) echo '$marker KILLED ===';; *) echo '$marker EXITCODE='\$exitcode' ===';; esac" Enter
 
     # Wait for command to complete with polling for END marker
     elapsed=0

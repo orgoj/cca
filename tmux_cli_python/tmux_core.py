@@ -264,13 +264,15 @@ def run_command(
     # - trap INT/TERM/HUP in outer shell
     # - run command in subshell with restored signals
     # - print START marker, execute, print END marker with exit code
+    # - split marker echoes so a pane-wrapped line of the typed command
+    #   never starts with a complete marker line
     wrapped = (
         f"trap '' INT TERM HUP; "
         f"echo; "
         f"echo '# Command:'; "
         f"echo '{encoded_cmd}' | base64 -d; "
         f"echo; "
-        f"echo '=== START {marker} ==='; "
+        f"echo -n '=== START '; echo '{marker} ==='; "
         f"( trap - INT TERM HUP; echo '{encoded_cmd}' | base64 -d | bash ); "
         f"exitcode=$?; "
         f"trap - INT TERM HUP; "

@@ -655,7 +655,7 @@ class TestRunCommand:
             # Extract marker from the sent command
             import re
 
-            match = re.search(r"=== START (TMUX_MARKER_\S+) ===", sent_text)
+            match = re.search(r"echo '(TMUX_MARKER_\S+) ===", sent_text)
             if match:
                 marker = match.group(1)
                 return textwrap.dedent(f"""\
@@ -697,7 +697,7 @@ class TestRunCommand:
             sent_text = mock_send.call_args_list[0][0][1] if mock_send.call_args_list else ""
             import re
 
-            match = re.search(r"=== START (TMUX_MARKER_\S+) ===", sent_text)
+            match = re.search(r"echo '(TMUX_MARKER_\S+) ===", sent_text)
             if match:
                 marker = match.group(1)
                 return textwrap.dedent(f"""\
@@ -760,7 +760,7 @@ class TestRunCommand:
             sent_text = mock_send.call_args_list[0][0][1] if mock_send.call_args_list else ""
             import re
 
-            match = re.search(r"=== START (TMUX_MARKER_\S+) ===", sent_text)
+            match = re.search(r"echo '(TMUX_MARKER_\S+) ===", sent_text)
             if match:
                 marker = match.group(1)
                 return textwrap.dedent(f"""\
