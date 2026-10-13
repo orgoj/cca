@@ -45,6 +45,7 @@ EFFORTS = ("e15", "e1h", "e4h", "exl")
 CHANGE_RISKS = ("r0", "r1", "r2", "r3")
 WINDOWS = ("wany", "woff", "wnight", "wfreeze")
 PRIORITIES = ("p1", "p2", "p3")
+DESCRIPTION_MAX_CHARS = 300
 EFFORT_RANK = {value: rank for rank, value in enumerate(EFFORTS)}
 CHANGE_RISK_RANK = {value: rank for rank, value in enumerate(CHANGE_RISKS)}
 WINDOW_RANK = {value: rank for rank, value in enumerate(WINDOWS)}
@@ -1132,6 +1133,10 @@ States:
   standby - wait for an event; excluded from list-today, ready and next
   done    - finished, hidden unless --all
 
+Description:
+  add-* and edit accept one line of at most 300 characters; put details in a
+  referenced incident/guide file (--refs). Existing longer items stay readable.
+
 Standby:
   standby ID waits for the event in description; next_action says what to capture.
   list --standby finds candidates; show ID displays trigger and capture details.
@@ -1352,6 +1357,17 @@ Examples:
     if not args.command:
         parser.print_help()
         sys.exit(0)
+
+    # Only a newly supplied description is checked, so long legacy items stay readable/editable.
+    description = getattr(args, "description", None)
+    if description and (
+        len(description.splitlines()) > 1 or len(description) > DESCRIPTION_MAX_CHARS
+    ):
+        die(
+            f"--description must be one line of at most {DESCRIPTION_MAX_CHARS} characters "
+            f"(got {len(description)}). Keep a short summary here and move details "
+            "into an incident/guide file referenced with --refs."
+        )
 
     debug = getattr(args, "debug", False)
     filepath = resolve_watchlist_path(getattr(args, "watchlist", None))

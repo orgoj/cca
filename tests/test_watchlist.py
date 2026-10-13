@@ -288,6 +288,36 @@ def test_edit_without_any_change_is_refused(wl):
     assert "at least one field" in result.stderr
 
 
+@pytest.mark.parametrize("description", ["x" * 301, "line one\nline two"])
+def test_long_or_multiline_description_is_refused(wl, description):
+    for args in (("add-routine", "--name", "Thing"), ("add-note", "--name", "Info")):
+        result = run_cli(wl, *args, "--description", description, expect_ok=False)
+        assert result.returncode == 1
+        assert "--refs" in result.stderr
+    assert run_json(wl, "list", "--all", "--json") == []
+
+    run_cli(wl, "add-routine", "--name", "Thing", "--description", "x" * 300)
+    result = run_cli(wl, "edit", "thing", "--description", description, expect_ok=False)
+    assert result.returncode == 1
+    assert run_json(wl, "list", "--all", "--json")[0]["description"] == "x" * 300
+
+
+def test_existing_long_description_stays_readable_and_editable(wl):
+    long_text = "legacy details\n" + "y" * 500
+    item = {
+        "id": "legacy", "name": "Legacy", "type": "routine", "state": "active",
+        "description": long_text, "last_check": "never",
+    }
+    wl.write_text(json.dumps({"version": "2.0", "items": [item]}), encoding="utf-8")
+    assert "legacy details" in run_cli(wl, "show", "legacy").stdout
+    edited = run_json(wl, "edit", "legacy", "--prio", "p1")
+    assert edited["prio"] == "p1"
+    assert edited["description"] == long_text
+    assert run_json(wl, "edit", "legacy", "--description", "Short summary")["description"] == (
+        "Short summary"
+    )
+
+
 def test_list_filters_by_area_and_state(wl, tmp_path):
     (tmp_path / "r.md").write_text("r", encoding="utf-8")
     run_cli(wl, "add-routine", "--name", "A", "--description", "d", "--area", "server1")
