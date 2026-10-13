@@ -979,6 +979,8 @@ def test_discovery_limits_large_result_sets(wl, command):
         assert lines[0] == "25 matches; first 20:"
         assert lines[1:21] == [i["id"] for i in items[:20]]
         assert "more specific search query" in lines[-1]
+    elif command == "list-today":
+        assert [line.split(" | ")[0] for line in lines] == [i["id"] for i in items]
     else:
         assert len(lines) == 21
         assert [line.split(" | ")[0] for line in lines[:20]] == [i["id"] for i in items[:20]]

@@ -79,7 +79,8 @@ selects one state. One match displays full detail. Use `search "term" --brief` t
 check for a duplicate before adding, and `show ID` for later detail. Multiple
 matches show short ID/name lines; if more than 20 match, refine the query.
 `list` keeps state, type, area and priority on one line per item; `list-today` shows
-priority, effort and due age. Both cap text at 20 items.
+priority, effort and due age. `list` caps text at 20 items; `list-today` always shows
+every due item.
 Avoid `--json` on discovery commands unless the caller needs full machine-readable data.
 
 Before reporting an item as work to do, run `cca-watchlist show ID` and read its

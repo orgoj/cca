@@ -992,7 +992,9 @@ def format_list(items: list[dict[str, Any]], command: str):
         print("No items found")
         return
 
-    for item in items[:LIST_DISPLAY_LIMIT]:
+    # The daily check must see every due item, so list-today is never capped.
+    limit = len(items) if command == "list-today" else LIST_DISPLAY_LIMIT
+    for item in items[:limit]:
         if command == "list-today":
             fields = (item.get("id") or "-", item.get("prio") or "-",
                       item.get("effort") or "-", due_label(item))
@@ -1006,11 +1008,10 @@ def format_list(items: list[dict[str, Any]], command: str):
                 item.get("name") or "-",
             )
         print(" | ".join(" ".join(str(value).split()) for value in fields))
-    if len(items) > LIST_DISPLAY_LIMIT:
+    if len(items) > limit:
         hint = {
             "search": "Use a more specific search query",
             "list": "Narrow with list filters",
-            "list-today": "Narrow with list-today --type",
         }[command]
         print(f"Showing {LIST_DISPLAY_LIMIT} of {len(items)} items. {hint}; use show ID for details.")
 
@@ -1148,7 +1149,7 @@ Notes:
 Discovery:
   agenda shows due checks, then actionable p1 work, in at most 20 lines.
   Due age uses UTC dates: +Nd overdue, dnes due today, - no deadline.
-  list-today and list show one line per item, up to 20 items.
+  list-today shows every due item, one line each; list shows up to 20 items.
   ready text shows ID, priority, effort and effective window (20 rows);
   --verbose adds next_action. ready --json returns every candidate.
   search requires every word; ID/name/keywords rank above descriptions/actions.
