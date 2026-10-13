@@ -1,3 +1,4 @@
+allow ./tests/test-shared-clean.sh
 allow bash -n *
 allow bash tests/test-shared-clean.sh
-allow ./tests/test-shared-clean.sh
+allow python3 -m pytest -q tests/* *
