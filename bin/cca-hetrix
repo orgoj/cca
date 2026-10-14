@@ -48,16 +48,29 @@ Requires:
     cca-curl-secret   Secure credential management (sops-based)
     jq                JSON processing
 
+Exit status 2: an API request failed (e.g. sops missing, network error).
+
 EOF
 }
 
 # Gap (seconds) that separates two outage windows in --monitor-outages
 OUTAGE_WINDOW_GAP=${OUTAGE_WINDOW_GAP:-900}
 
-# API call helper - uses cca-curl-secret for secure credential management
+# A failed request (e.g. sops missing, network error) must abort the whole script with
+# exit 2; calls run in pipelines and $(...) subshells, where a plain exit is not enough.
+trap 'exit 2' USR1
+
+# Request helper - uses cca-curl-secret for secure credential management
+secret_curl() {
+    cca-curl-secret -s "$1" && return
+    echo "Error: HetrixTools API request failed" >&2
+    kill -USR1 $$
+    exit 2
+}
+
 api_call() {
     local endpoint="$1"
-    cca-curl-secret -s "https://api.hetrixtools.com/v3${endpoint}"
+    secret_curl "https://api.hetrixtools.com/v3${endpoint}"
 }
 
 get_monitors() {
@@ -322,7 +335,7 @@ show_monitor_info() {
 # The API key needs this call enabled under "Configure Access" in the client area.
 get_server_stats() {
     local monitor_id="$1"
-    cca-curl-secret -s "https://api.hetrixtools.com/v1/{TOKEN}/server/stats/$monitor_id/"
+    secret_curl "https://api.hetrixtools.com/v1/{TOKEN}/server/stats/$monitor_id/"
 }
 
 format_pct() {
