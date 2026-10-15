@@ -93,3 +93,7 @@ tag; tags never move; subcommands are not released one by one).
 - ⛔ **Legacy config loading (`lib/cca-env.sh`, loader in `cca-tmux-cli`) is load-bearing** until
   TASK-2: projects contain nested git repos that inherit the parent project's `.cca-env`, and config
   files use CWD-relative paths. Never change the search walk, priority or stop condition.
+- `pipefail` + a reader that exits before EOF (`head`, `grep -q`, a test fake that ignores
+  stdin) kills the writer with SIGPIPE (exit 141): a flaky failure only under load. Test
+  fakes fed through a pipe must read stdin (`cat >/dev/null`); don't pipe into early-exit
+  readers under `pipefail`.
