@@ -3,7 +3,7 @@
 Run a command on a server of the project's `[servers]`.
 
 ```
-cca run [--timeout SEC] SERVER [-- CMD...]
+cca run [--timeout SEC] -t SERVER [-- CMD...]
 cca run [--timeout SEC] --all [-- CMD...]
 cca run [--timeout SEC] --create-file PATH SERVER < FILE
 cca run --list
@@ -11,13 +11,14 @@ cca run --read [--lines N | --marker M | --scrollback] SERVER
 cca run --session [SERVER...]
 ```
 
-- Options go only before SERVER; the command goes after `--` or on stdin. Several words
-  after `--` are joined with spaces, as ssh does: quote a pipeline as one argument
-  (`cca run server1 -- 'ps aux | grep nginx'`).
-- Multiline scripts: a quoted heredoc on stdin, nothing after SERVER:
+- The server goes after `-t`, options only before `--`, the command after `--` or on
+  stdin; command validators rely on this exact shape. Several words after `--` are
+  joined with spaces, as ssh does: quote a pipeline as one argument
+  (`cca run -t server1 -- 'ps aux | grep nginx'`).
+- Multiline scripts: a quoted heredoc on stdin, nothing after the options:
 
   ```
-  cca run server1 <<'EOF'
+  cca run -t server1 <<'EOF'
   df -h /
   systemctl is-active nginx
   EOF

@@ -126,7 +126,7 @@ allowed is the job of the command validator, not of `cca curl`.
 - Surfaces are options, so no server name is reserved:
 
   ```
-  cca run [--timeout SEC] SERVER [-- CMD...]
+  cca run [--timeout SEC] -t SERVER [-- CMD...]
   cca run [--timeout SEC] --all [-- CMD...]
   cca run [--timeout SEC] --create-file PATH SERVER   # content on stdin
   cca run --list
@@ -174,11 +174,16 @@ allowed is the job of the command validator, not of `cca curl`.
   list`); `info` = inventory (hostname, OS, CPU, memory size, disks, `zpool status`,
   interfaces matching `server_info.net_iface_prefixes`, loopback aliases, Docker,
   Swarm, LXC via `sudo -n`, QEMU). No overlap between the two.
-- Shape: `cca run [options] SERVER -- CMD...` or `cca run [options] SERVER <<'EOF'`.
-  No CMD → read the command from stdin: stdin is a TTY → error; empty stdin → error
-  (`--create-file` accepts empty content).
-  Server is the first positional; value options only before it, from a known list.
-  The shape is a public contract for external validators (Dippy).
+- Shape: `cca run [options] -t SERVER -- CMD...` or `cca run [options] -t SERVER
+  <<'EOF'` (quoted heredoc, nothing after the options). With `-- CMD` stdin is never
+  read; without CMD stdin is only the remote script: stdin is a TTY → error; empty
+  stdin → error (`--create-file` accepts empty content).
+  The shape is a public contract for external validators, agreed with Dippy (wrapper
+  `cca` with subcommand `run`, command after `--`, context `-t`, script on stdin):
+  options and `-t` only before `--`, from a known list; `--all` instead of `-t`. The
+  other surfaces (`--create-file`, `--read`, `--list`, `--session`) take SERVER
+  positionally and exit 2 with `-t` or `-- CMD`, so a validator never reads their
+  arguments as a command.
 - Security: no local shell is involved in building the call; SERVER only from
   `[servers]`, ssh target validated and passed as separate argv; tmux targets passed as
   separate argv. If output redaction is added later, it applies to every output path

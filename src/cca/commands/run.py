@@ -1,7 +1,9 @@
 """cca run: run a command on a configured server over tmux or ssh (doc-1 "cca run").
 
 A thin CLI over cca.executor. The command shape is a public contract for external
-validators: options only before SERVER, the command after `--` or on stdin.
+validators (Dippy wrapper `cca run`, context `-t`): the server only as `-t SERVER`, the
+command after `--` or on stdin; the other surfaces take SERVER positionally and reject
+`-t` and `-- CMD`, so a validator never mistakes their arguments for a command.
 """
 
 from __future__ import annotations
@@ -16,7 +18,7 @@ from cca import config, executor, validate
 from cca.output import CcaError
 
 USAGE = """\
-cca run [--timeout SEC] SERVER [-- CMD...]
+cca run [--timeout SEC] -t SERVER [-- CMD...]
        cca run [--timeout SEC] --all [-- CMD...]
        cca run [--timeout SEC] --create-file PATH SERVER
        cca run --list
@@ -30,7 +32,8 @@ ssh. Without CMD the command is read from stdin (a quoted heredoc for multiline
 scripts); the remote command's stdin is /dev/null."""
 
 EPILOG = """\
-options (only before SERVER):
+options (only before SERVER or --):
+  -t SERVER            the server to run the command on
   --timeout SEC        wait at most SEC seconds (1-86400, default 300); exit 124
   --all                run on every server in config order, stop on the first failure
   --create-file PATH   write stdin to the absolute remote PATH atomically
@@ -44,8 +47,8 @@ exit status: the remote command's; 124 timeout; 130/143/129/137 when the command
 interrupted, terminated, hung up or killed; 2 usage, config or transport error.
 
 examples:
-  cca run server1 -- uptime
-  cca run server1 <<'EOF'
+  cca run -t server1 -- uptime
+  cca run -t server1 <<'EOF'
   df -h /
   systemctl is-active nginx
   EOF
@@ -104,7 +107,10 @@ def parse(argv: list[str]) -> Request:
         if option in seen:
             raise CcaError(f"{option} given twice")
         seen.add(option)
-        if option == "--timeout":
+        if option == "-t":
+            req.servers = [_value(argv, i, option)]
+            i += 2
+        elif option == "--timeout":
             req.timeout = _number(_value(argv, i, option), option, 1, TIMEOUT_MAX)
             i += 2
         elif option == "--create-file":
@@ -136,17 +142,17 @@ def parse(argv: list[str]) -> Request:
     if "--timeout" in seen and req.surface in ("--list", "--read", "--session"):
         raise CcaError(f"--timeout does not apply to {req.surface}")
 
+    if "-t" in seen and req.surface is not None:
+        raise CcaError(f"-t cannot be combined with {req.surface}")
     rest = argv[i:]
     if req.surface in ("--all", None):
-        if req.surface is None:
-            if not rest or rest[0] == "--":
-                raise CcaError(f"SERVER required (usage: {USAGE})")
-            req.servers, rest = [rest[0]], rest[1:]
+        if req.surface is None and "-t" not in seen:
+            raise CcaError(f"-t SERVER required (usage: {USAGE})")
         if rest:
             if rest[0] != "--":
                 raise CcaError(
-                    f"unexpected '{validate.display(rest[0])}': options go before SERVER, "
-                    "the command after --"
+                    f"unexpected '{validate.display(rest[0])}': the server goes after -t, "
+                    "options before --, the command after --"
                 )
             if len(rest) == 1:
                 raise CcaError("no command after --")

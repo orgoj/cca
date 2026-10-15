@@ -99,17 +99,26 @@ def no_local_shell(monkeypatch):
 @pytest.mark.parametrize(
     "argv, message",
     [
-        ([], "SERVER required"),
-        (["--", "uptime"], "SERVER required"),
-        (["server1", "uptime"], "options go before SERVER"),
-        (["server1", "--timeout", "5", "--", "id"], "options go before SERVER"),
-        (["server1", "--"], "no command after --"),
-        (["--bogus", "server1"], "unknown option '--bogus'"),
-        (["--timeout", "0", "server1"], "--timeout must be an integer 1-86400"),
-        (["--timeout", "x", "server1"], "--timeout must be an integer"),
+        ([], "-t SERVER required"),
+        (["--", "uptime"], "-t SERVER required"),
+        (["server1", "--", "id"], "-t SERVER required"),
+        (["-t", "server1", "uptime"], "the server goes after -t"),
+        (["-t", "server1", "server2", "--", "id"], "the server goes after -t"),
+        (["-t", "server1", "--"], "no command after --"),
+        (["-t"], "-t needs a value"),
+        (["-t", "server1", "-t", "server2"], "-t given twice"),
+        (["--bogus", "-t", "server1"], "unknown option '--bogus'"),
+        (["--timeout", "0", "-t", "server1"], "--timeout must be an integer 1-86400"),
+        (["--timeout", "x", "-t", "server1"], "--timeout must be an integer"),
         (["--timeout"], "--timeout needs a value"),
-        (["--timeout", "5", "--timeout", "6", "server1"], "--timeout given twice"),
-        (["--all", "server1", "--", "id"], "options go before SERVER"),
+        (["--timeout", "5", "--timeout", "6", "-t", "server1"], "--timeout given twice"),
+        (["--all", "server1", "--", "id"], "the server goes after -t"),
+        (["--all", "-t", "server1", "--", "id"], "-t cannot be combined with --all"),
+        (["--create-file", "/tmp/x", "-t", "server1", "--", "id"], "-t cannot be combined"),
+        (["-t", "server1", "--create-file", "/tmp/x", "--", "id"], "-t cannot be combined"),
+        (["--read", "-t", "server1"], "-t cannot be combined with --read"),
+        (["--list", "-t", "server1"], "-t cannot be combined with --list"),
+        (["--session", "-t", "server1"], "-t cannot be combined with --session"),
         (["--list", "server1"], "--list takes no SERVER"),
         (["--list", "--all"], "--list and --all cannot be combined"),
         (["--read"], "--read needs exactly one SERVER"),
@@ -134,13 +143,13 @@ def test_usage_errors(env, monkeypatch, capsys, argv, message):
 def test_help(env, monkeypatch, capsys):
     assert cca(["--help"], monkeypatch) == 0
     out = capsys.readouterr().out
-    assert "cca run [--timeout SEC] SERVER [-- CMD...]" in out
+    assert "cca run [--timeout SEC] -t SERVER [-- CMD...]" in out
     assert "--create-file PATH" in out
 
 
 def test_unknown_server(env, monkeypatch, capsys):
     project(env)
-    assert cca(["server9;id", "--", "id"], monkeypatch) == 2
+    assert cca(["-t", "server9;id", "--", "id"], monkeypatch) == 2
     assert "unknown server 'server9;id'" in capsys.readouterr().err
     assert ssh_calls(env) == []
 
@@ -148,10 +157,8 @@ def test_unknown_server(env, monkeypatch, capsys):
 @pytest.mark.parametrize("name", ["a;b", "-oProxyCommand=x", "a b", "$(id)"])
 def test_malicious_server_name_rejected_at_load(env, monkeypatch, capsys, name):
     (env / "work" / ".cca.toml").write_text(f'schema_version = 1\n[servers."{name}"]\n')
-    assert cca([name, "--", "id"], monkeypatch) == 2
-    err = capsys.readouterr().err
-    # a leading "-" already fails as an option, before the config is read
-    assert "server name must match" in err or "unknown option" in err
+    assert cca(["-t", name, "--", "id"], monkeypatch) == 2
+    assert "server name must match" in capsys.readouterr().err
     assert ssh_calls(env) == []
 
 
@@ -160,13 +167,13 @@ def test_malicious_ssh_target_rejected_at_load(env, monkeypatch, capsys, target)
     (env / "work" / ".cca.toml").write_text(
         f'schema_version = 1\n[servers.server1]\nssh = "{target}"\n'
     )
-    assert cca(["server1", "--", "id"], monkeypatch) == 2
+    assert cca(["-t", "server1", "--", "id"], monkeypatch) == 2
     assert "servers.server1.ssh" in capsys.readouterr().err
     assert ssh_calls(env) == []
 
 
 def test_no_config(env, monkeypatch, capsys):
-    assert cca(["server1", "--", "id"], monkeypatch) == 2
+    assert cca(["-t", "server1", "--", "id"], monkeypatch) == 2
     assert "no .cca.toml found" in capsys.readouterr().err
 
 
@@ -175,20 +182,20 @@ def test_no_config(env, monkeypatch, capsys):
 
 def test_tty_stdin_without_command(env, monkeypatch, capsys):
     project(env)
-    assert cca(["server1"], monkeypatch, tty=True) == 2
+    assert cca(["-t", "server1"], monkeypatch, tty=True) == 2
     assert "stdin is a terminal" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("data", [b"", b"  \n\n"])
 def test_empty_stdin_without_command(env, monkeypatch, capsys, data):
     project(env)
-    assert cca(["server1"], monkeypatch, data) == 2
+    assert cca(["-t", "server1"], monkeypatch, data) == 2
     assert "empty command on stdin" in capsys.readouterr().err
 
 
 def test_command_too_long(env, monkeypatch, capsys):
     project(env)
-    assert cca(["server1"], monkeypatch, b"x" * (executor.COMMAND_MAX + 1)) == 2
+    assert cca(["-t", "server1"], monkeypatch, b"x" * (executor.COMMAND_MAX + 1)) == 2
     assert "longer than" in capsys.readouterr().err
 
 
@@ -203,7 +210,7 @@ def decoded(remote: str) -> str:
 
 def test_ssh_run_argv_and_output(env, monkeypatch, capsys):
     project(env)
-    assert cca(["server1", "--", "echo", "hello;", "echo", "$CCA_TARGET"], monkeypatch) == 0
+    assert cca(["-t", "server1", "--", "echo", "hello;", "echo", "$CCA_TARGET"], monkeypatch) == 0
     assert capsys.readouterr().out == "hello\nadmin@host1\n"
     (line,) = ssh_calls(env)
     assert line.startswith("-- admin@host1 bash -c ")
@@ -213,14 +220,14 @@ def test_ssh_run_argv_and_output(env, monkeypatch, capsys):
 
 def test_ssh_exit_code_and_stderr(env, monkeypatch, capsys):
     project(env)
-    assert cca(["server2", "--", "echo out; echo err >&2; exit 7"], monkeypatch) == 7
+    assert cca(["-t", "server2", "--", "echo out; echo err >&2; exit 7"], monkeypatch) == 7
     assert capsys.readouterr().out == "out\nerr\n"
 
 
 def test_ssh_stdin_command_multiline(env, monkeypatch, capsys):
     project(env)
     script = b"cat <<'EOF'\nquote ' \" $HOME `x`\nEOF\nprintf 'no newline'"
-    assert cca(["server1"], monkeypatch, script) == 0
+    assert cca(["-t", "server1"], monkeypatch, script) == 0
     assert capsys.readouterr().out == "quote ' \" $HOME `x`\nno newline"
 
 
@@ -230,7 +237,7 @@ def test_ssh_stdin_command_multiline(env, monkeypatch, capsys):
 )
 def test_ssh_malicious_command_reaches_remote_verbatim(env, monkeypatch, command):
     project(env)
-    cca(["server1", "--", command], monkeypatch)
+    cca(["-t", "server1", "--", command], monkeypatch)
     (line,) = ssh_calls(env)
     assert decoded(line) == command
     assert not (env / "work" / "pwned").exists()  # nothing ran locally
@@ -238,20 +245,29 @@ def test_ssh_malicious_command_reaches_remote_verbatim(env, monkeypatch, command
 
 def test_ssh_remote_stdin_is_devnull(env, monkeypatch, capsys):
     project(env)
-    assert cca(["server1", "--", "cat; echo done"], monkeypatch) == 0
+    assert cca(["-t", "server1", "--", "cat; echo done"], monkeypatch) == 0
     assert capsys.readouterr().out == "done\n"
+
+
+def test_command_after_dashes_never_reads_local_stdin(env, monkeypatch, capsys):
+    project(env)
+    assert cca(["-t", "server1", "--", "echo", "--timeout", "5"], monkeypatch, b"rm -rf /\n") == 0
+    assert capsys.readouterr().out == "--timeout 5\n"  # words after -- are the command
+    assert sys.stdin.read() == "rm -rf /\n"  # left unread
 
 
 def test_ssh_output_control_characters_escaped(env, monkeypatch, capsys):
     project(env)
-    assert cca(["server1", "--", r"printf 'a\033[2Jb\tc\n'"], monkeypatch) == 0
+    assert cca(["-t", "server1", "--", r"printf 'a\033[2Jb\tc\n'"], monkeypatch) == 0
     assert capsys.readouterr().out == "a\\x1b[2Jb\tc\n"
 
 
 def test_ssh_timeout(env, monkeypatch, capsys):
     project(env)
     started = time.monotonic()
-    assert cca(["--timeout", "1", "server1", "--", "echo early; sleep 10"], monkeypatch) == 124
+    assert (
+        cca(["--timeout", "1", "-t", "server1", "--", "echo early; sleep 10"], monkeypatch) == 124
+    )
     assert time.monotonic() - started < 5
     captured = capsys.readouterr()
     assert captured.out == "early\n"
@@ -339,7 +355,7 @@ def test_create_file_tty_stdin(env, monkeypatch, capsys):
 def test_log_lines(env, monkeypatch, capsys):
     project(env, extra='[run.log]\ndir = "logs"\noperator = "admin1"\n')
     (env / "work" / "logs").mkdir()
-    cca(["server1", "--", "mysql --password hunter2 -e 'select 1'\nexit 3"], monkeypatch)
+    cca(["-t", "server1", "--", "mysql --password hunter2 -e 'select 1'\nexit 3"], monkeypatch)
     cca(["--create-file", str(env / "remote" / "f"), "server2"], monkeypatch, b"x")
     (log,) = (env / "work" / "logs").iterdir()
     assert log.name.endswith("-admin1.log")
@@ -371,7 +387,7 @@ def test_sanitize(command, logged):
 
 def test_log_dir_missing_runs_nothing(env, monkeypatch, capsys):
     project(env, extra='[run.log]\noperator = "admin1"\n')
-    assert cca(["server1", "--", "id"], monkeypatch) == 2
+    assert cca(["-t", "server1", "--", "id"], monkeypatch) == 2
     assert "run.log.dir" in capsys.readouterr().err
     assert ssh_calls(env) == []
 
@@ -383,7 +399,7 @@ def test_log_symlink_not_followed(env, monkeypatch, capsys):
     victim.write_text("keep\n")
     today = time.strftime("%Y-%m-%d")
     (env / "work" / "logs" / f"{today}-admin1.log").symlink_to(victim)
-    assert cca(["server1", "--", "exit 4"], monkeypatch) == 4
+    assert cca(["-t", "server1", "--", "exit 4"], monkeypatch) == 4
     assert "cannot write command log" in capsys.readouterr().err
     assert victim.read_text() == "keep\n"
 
@@ -405,7 +421,7 @@ def fake_tokf(env: Path, probe: int = 0, process: int = 0) -> None:
 def test_tokf_processes_output(env, monkeypatch, capsys):
     project(env, run='transport = "ssh"\ntokf = true\n')
     fake_tokf(env)
-    assert cca(["server1", "--", "echo raw; exit 5"], monkeypatch) == 5
+    assert cca(["-t", "server1", "--", "echo raw; exit 5"], monkeypatch) == 5
     assert capsys.readouterr().out == "processed\n"
     assert (env / "tokf.in").read_text() == "raw\n"
     assert (env / "tokf.args").read_text() == (
@@ -418,14 +434,14 @@ def test_tokf_processes_output(env, monkeypatch, capsys):
 def test_tokf_fallback_raw(env, monkeypatch, capsys, probe, process):
     project(env, run='transport = "ssh"\ntokf = true\n')
     fake_tokf(env, probe, process)
-    assert cca(["server1", "--", "echo raw"], monkeypatch) == 0
+    assert cca(["-t", "server1", "--", "echo raw"], monkeypatch) == 0
     assert capsys.readouterr().out == "raw\n"
 
 
 def test_tokf_off_by_default(env, monkeypatch, capsys):
     project(env)
     fake_tokf(env)
-    assert cca(["server1", "--", "echo raw"], monkeypatch) == 0
+    assert cca(["-t", "server1", "--", "echo raw"], monkeypatch) == 0
     assert capsys.readouterr().out == "raw\n"
     assert not (env / "tokf.in").exists()
 
@@ -494,50 +510,53 @@ def tmux_out(*args: str) -> str:
 
 
 def test_tmux_run_opens_window_and_returns_output(tmux_env, monkeypatch, capsys):
-    assert cca(["server1", "--", "echo hello $CCA_TARGET; exit 3"], monkeypatch) == 3
+    assert cca(["-t", "server1", "--", "echo hello $CCA_TARGET; exit 3"], monkeypatch) == 3
     assert capsys.readouterr().out == "hello admin@host1\n"
     assert ssh_calls(tmux_env) == ["-- admin@host1"]  # window: ssh -- TARGET, no shell
     assert tmux_out("list-windows", "-t", "=cca-test", "-F", "#{window_name}") == "server1\n"
-    assert cca(["server1", "--", "echo again"], monkeypatch) == 0  # window reused
+    assert cca(["-t", "server1", "--", "echo again"], monkeypatch) == 0  # window reused
     assert capsys.readouterr().out == "again\n"
     assert len(ssh_calls(tmux_env)) == 1
 
 
 def test_tmux_multiline_stdin_and_quotes(tmux_env, monkeypatch, capsys):
     script = b"cat <<'EOF'\nquote ' \" $HOME `x` ;\nEOF\nprintf 'no newline'\n"
-    assert cca(["server1"], monkeypatch, script) == 0
+    assert cca(["-t", "server1"], monkeypatch, script) == 0
     assert capsys.readouterr().out == "quote ' \" $HOME `x` ;\nno newline\n"
 
 
 def test_tmux_large_command(tmux_env, monkeypatch, capsys):
     """Over the tmux send-keys argument limit (about 16 KB)."""
     command = "x=" + "a" * 30000 + "; echo ${#x}"
-    assert cca(["server1", "--", command], monkeypatch) == 0
+    assert cca(["-t", "server1", "--", command], monkeypatch) == 0
     assert capsys.readouterr().out == "30000\n"
 
 
 def test_tmux_remote_stdin_is_devnull(tmux_env, monkeypatch, capsys):
-    assert cca(["--timeout", "10", "server1", "--", "cat; echo done"], monkeypatch) == 0
+    assert cca(["--timeout", "10", "-t", "server1", "--", "cat; echo done"], monkeypatch) == 0
     assert capsys.readouterr().out == "done\n"
 
 
 @pytest.mark.parametrize("signal, code", [("INT", 130), ("TERM", 143), ("HUP", 129), ("KILL", 137)])
 def test_tmux_signal_markers(tmux_env, monkeypatch, capsys, signal, code):
     assert (
-        cca(["server1", "--", f"echo before; kill -{signal} $$; echo after"], monkeypatch) == code
+        cca(["-t", "server1", "--", f"echo before; kill -{signal} $$; echo after"], monkeypatch)
+        == code
     )
     assert capsys.readouterr().out == "before\n"
 
 
 def test_tmux_pane_shell_survives_signals(tmux_env, monkeypatch, capsys):
-    assert cca(["server1", "--", "kill -INT $$"], monkeypatch) == 130
-    assert cca(["server1", "--", "echo alive"], monkeypatch) == 0
+    assert cca(["-t", "server1", "--", "kill -INT $$"], monkeypatch) == 130
+    assert cca(["-t", "server1", "--", "echo alive"], monkeypatch) == 0
     assert capsys.readouterr().out == "alive\n"
 
 
 def test_tmux_timeout_then_read_marker(tmux_env, monkeypatch, capsys):
     assert (
-        cca(["--timeout", "1", "server1", "--", "echo early; sleep 2; echo late"], monkeypatch)
+        cca(
+            ["--timeout", "1", "-t", "server1", "--", "echo early; sleep 2; echo late"], monkeypatch
+        )
         == 124
     )
     captured = capsys.readouterr()
@@ -553,7 +572,7 @@ def test_tmux_timeout_then_read_marker(tmux_env, monkeypatch, capsys):
 
 
 def test_tmux_read_variants(tmux_env, monkeypatch, capsys):
-    assert cca(["server1", "--", "seq 1 300"], monkeypatch) == 0
+    assert cca(["-t", "server1", "--", "seq 1 300"], monkeypatch) == 0
     capsys.readouterr()
     assert cca(["--read", "server1"], monkeypatch) == 0
     visible = capsys.readouterr().out
@@ -588,7 +607,7 @@ def test_tmux_list_and_session(tmux_env, monkeypatch, capsys):
 def test_tmux_session_name_exact(tmux_env, monkeypatch, capsys):
     """=SESSION: an existing session whose name only starts with ours is not used."""
     subprocess.run([TMUX, "new-session", "-d", "-s", "cca-test-other"], check=True)
-    assert cca(["server1", "--", "echo x"], monkeypatch) == 0
+    assert cca(["-t", "server1", "--", "echo x"], monkeypatch) == 0
     sessions = tmux_out("list-sessions", "-F", "#{session_name}").split()
     assert sorted(sessions) == ["cca-test", "cca-test-other"]
 
@@ -608,7 +627,7 @@ def test_tmux_create_file_too_large(tmux_env, monkeypatch, capsys):
 
 def test_tmux_missing_session_setting(tmux_env, monkeypatch, capsys):
     project(tmux_env, run='transport = "tmux"\n')
-    assert cca(["server1", "--", "id"], monkeypatch) == 2
+    assert cca(["-t", "server1", "--", "id"], monkeypatch) == 2
     assert "run.tmux.session: required" in capsys.readouterr().err
 
 

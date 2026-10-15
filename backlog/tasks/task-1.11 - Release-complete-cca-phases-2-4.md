@@ -4,13 +4,14 @@ title: Release complete cca (phases 2-4)
 status: In Progress
 assignee: []
 created_date: '2026-10-15 07:43'
-updated_date: '2026-10-15 19:32'
+updated_date: '2026-10-15 19:58'
 labels: []
 dependencies:
-  - TASK-1.4
-  - TASK-1.10
   - TASK-1.2
   - TASK-1.3
+  - TASK-1.4
+  - TASK-1.10
+  - TASK-1.12
 parent_task_id: TASK-1
 priority: medium
 type: chore

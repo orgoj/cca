@@ -33,7 +33,7 @@ cca --version
 | `cca install skills [NAME] [--target DIR]` | Link the skills shipped in the package (`src/cca/skills/`) into `.claude/skills` |
 | `cca netdata [--server NAME\|--host H] COMMAND` | Netdata API of a server over ssh or directly: `list`, `meta`, `discover`, `stats`, `top`, `query`, `fping [--per-target\|--history\|--all]` |
 | `cca open-ports [-d SERVER] [-k] [-m nmap\|nc\|curl] [-n] HOST [PORT...]` | Probe TCP ports of a host, locally or from a `[servers]` entry over ssh |
-| `cca run [--timeout SEC] SERVER [-- CMD...]` | Run a command (or a stdin script) on a `[servers]` entry over tmux (visible window per server) or ssh; `--all`, `--create-file PATH`, `--list`, `--read`, `--session`; optional `[run.log]` command log and `tokf` |
+| `cca run [--timeout SEC] -t SERVER [-- CMD...]` | Run a command (or a stdin script) on a `[servers]` entry over tmux (visible window per server) or ssh; `--all`, `--create-file PATH`, `--list`, `--read`, `--session`; optional `[run.log]` command log and `tokf` |
 | `cca server hostname\|status\|info` | Hostname, quick status (time, load, memory, ext/xfs, ZFS) or inventory (OS, CPU, disks, ZFS, interfaces, loopback aliases, Docker/Swarm/LXC/QEMU) of a `[servers]` entry or `--all`, always over ssh, one tag per section |
 | `cca watchlist today\|notes\|checked` | Daily check over the project's Backlog.md (`backlog` CLI): due and `every:Nd` recurring tasks, notes (status `Note`, `from:`/`until:` labels) valid on a date, `checked ID` moves the next check |
 
