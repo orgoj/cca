@@ -146,15 +146,41 @@ Settled (doc-1):
 - English texts; examples use `server1`, `example.com`, `203.0.113.x`.
 - No secrets involved; no environment variables read.
 
-Proposed, decided in TASK-1.2.2 (each needs a compatibility-matrix row):
+Decided in TASK-1.2.2: see the matrix below.
 
-- `fping --history --target`: no consumer-specific default; the default target comes
-  from `.cca.toml` or the option becomes required.
-- History cache directory configurable in `.cca.toml` (default stays a CWD-relative
-  path).
-- `fping --all` honors the configured transport per server instead of always going
-  direct; `--all` follows doc-1 semantics where applicable.
-- Correlated-event verdict only when at least two servers show a shared-path event.
-- Bad time / `--exclude-hours` values → usage error (exit 2) instead of a traceback.
-- Fix the help examples (`--context` is required; drop the `--group` hint).
-- "Using server ..." line stays on stderr.
+## Compatibility matrix (`cca netdata`)
+
+Every row is tested in `tests/test_cca_netdata.py`.
+
+| Legacy | `cca netdata` | Change |
+|---|---|---|
+| no COMMAND: help, exit 1 | help on stderr, exit 2 | intentional |
+| global options only before COMMAND | `--server/--host/--port/--transport` before or after COMMAND; `--server` with `--host`/`--port` on either side → exit 2 | intentional |
+| no `--server`: `--host` (`localhost`), `--port` (19999), direct | same; host validated (DNS, IPv4, IPv6 without zone id), port 1–65535, IPv6 bracketed in the URL | intentional |
+| `--transport ssh` without `--server` ignored | exit 2 | intentional |
+| `.netdata-servers` next to the script | `[servers.NAME]` from `.cca.toml` (doc-2); missing config, unknown server, missing `netdata_host` → exit 2 | intentional |
+| `--transport` default `ssh`, third column = ssh host | `--transport` default `servers.NAME.netdata_transport` (`ssh`); ssh target `servers.NAME.ssh` (default the name) | intentional |
+| no config needed without `--server` | `.cca.toml` loaded whenever found (`fping_target`, cache dir); a malformed one → exit 2 also with `--host` | intentional |
+| `Using server NAME -> [ssh H ->] HOST:PORT` on stderr | same, English | – |
+| ssh: `ssh H "curl -fsS --max-time 10 URL"`, timeout 25 s | `ssh -- DEST 'curl -fsS --max-time 10 URL'` via `cca.ssh`, timeout 25 s | intentional |
+| direct: `urlopen`, timeout 10 s, proxy from env | timeout 10 s, environment proxies ignored | intentional |
+| fetch error (HTTP, ssh, timeout, JSON) exit 1 | `cca: error: fetching URL: ...`, exit 1; ssh 255 / remote 127 named; ssh missing locally → exit 2 | intentional |
+| direct: total time and response size unbounded; ssh: output buffered without a limit | response cap 64 MiB while reading (ssh killed at the cap); total deadline 25 s (12 + 15 in `--all`) also for slow headers and a trickled body; exit 1 | intentional |
+| API strings printed raw | control characters escaped in every printed string and error detail; `query` prints raw JSON (`json.dumps` escapes) | intentional |
+| bad `--after`/`--before`: traceback exit 1 | usage error, exit 2 | intentional |
+| `--points` > 1000 exit 1 | `--points` 1–1000, usage error exit 2 | intentional |
+| `list`, `query`, `stats`, `top`, `discover`, `meta` output | same tables and rules, English texts | – |
+| help examples `stats CONTEXT`, `list --group` hint | examples with `--context`; hint removed | intentional |
+| `fping` window: latency + `fping.quality` loss | same | – |
+| loss window joins dips up to 2 × step apart (one healthy bucket between bad ones stays one window) | same (user decision) | – |
+| `--history` event stays open across a sample gap (no data during an outage) | same (user decision) | – |
+| `fping --per-target` | same; with `--history` → exit 2 (legacy: `--history` won) | intentional |
+| `fping --history` default `--after -7776000` when left at `-900` | default when `--after` not given (an explicit `-900` stays) | intentional |
+| `--target` default: consumer-specific name | `netdata.fping_target`, else required for `--history` (exit 2); `^[A-Za-z0-9][A-Za-z0-9._-]*$` ≤ 64 | intentional |
+| cache `server-logs/fping/<server-or-host>-<target>.json` from the CWD | `netdata.fping_cache_dir` (config dir) / doc-2 name; no config → `server-logs/fping` from the CWD; resolved path must stay in the dir (exit 2); legacy files not reused | intentional |
+| `--cache PATH`, `--refresh`, unreadable cache → refetch | same (`--cache` from the CWD) | – |
+| bad `--exclude-hours`: traceback exit 1 | usage error exit 2 (UTC hours 0–23) | intentional |
+| `fping --all`: always direct, timeout 12 s | each server's configured transport (ssh curl `--max-time 12`), config order; entries without `netdata_host` listed as not configured | intentional |
+| `fping --all` per-server fetch errors → "unreachable", exit 0 | same, also for ssh failures | – |
+| `--all` ignores `--server/--host/--port/--transport/--cache/--per-target` | exit 2 | intentional |
+| correlated verdict when any one server has a shared-path event | only when ≥ 2 servers do; exactly one → "only SERVER: its own path or an asymmetric (one-direction) fault" | intentional |

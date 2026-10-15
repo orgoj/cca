@@ -9,6 +9,8 @@ NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
 NAME_MAX = 64
 # ssh destination [user@]host; never starts with "-" (doc-2 servers.<name>.ssh)
 SSH_TARGET_RE = re.compile(r"([A-Za-z0-9_][A-Za-z0-9._-]*@)?[A-Za-z0-9][A-Za-z0-9._-]*")
+# netdata.fping_target and `cca netdata fping --target` (doc-2 [netdata]), max NAME_MAX
+FPING_TARGET_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 _CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
 _LABEL_RE = re.compile(r"[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?")
 

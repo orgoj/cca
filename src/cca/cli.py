@@ -15,6 +15,7 @@ COMMANDS: dict[str, tuple[str, str]] = {
     "config": ("config", "show the project .cca.toml"),
     "doctor": ("doctor", "check that the current project is ready for cca"),
     "install": ("install", "install cca skills into an agent skill directory"),
+    "netdata": ("netdata", "query Netdata metrics of a server, over ssh or directly"),
     "open-ports": ("open_ports", "probe TCP ports of a host with nmap, nc or curl"),
 }
 

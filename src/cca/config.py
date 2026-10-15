@@ -19,7 +19,6 @@ SCHEMA_VERSION = 1
 
 _SESSION_RE = re.compile(r"[A-Za-z0-9_-]+")
 _OPERATOR_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
-_FPING_TARGET_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 _IFACE_RE = re.compile(r"[A-Za-z0-9]+")
 _MARKER_RE = re.compile(r"[A-Za-z0-9._~-]+(/[A-Za-z0-9._~-]+)*")
 
@@ -164,7 +163,7 @@ SCHEMA: dict[str, Any] = {
     },
     "netdata": {
         "fping_cache_dir": ("server-logs/fping", _path),
-        "fping_target": (ABSENT, _matching(_FPING_TARGET_RE, 64)),
+        "fping_target": (ABSENT, _matching(validate.FPING_TARGET_RE, validate.NAME_MAX)),
     },
     "cloudflare": {
         "export_dir": ("tmp/cloudflare", _path),
