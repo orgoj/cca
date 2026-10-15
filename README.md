@@ -23,6 +23,7 @@ cca --version
 
 | Subcommand | Description |
 |------------|-------------|
+| `cca cloudflare GROUP COMMAND` | Cloudflare zones through the official SDK (token from sops): `token`, `zone`, `dns`, `waf`, `ratelimit`, `config`, `access`, `ua`, `uam`, `bots`, `events`, `analytics`, `export`, `diff`; writes plan unless `--apply` |
 | `cca config show` | The `.cca.toml` in use and its values with defaults |
 | `cca doctor [--fix]` | Check the project (config, sops, `cca/` dirs, skill links, old `cca-*` scripts/skills not installed) |
 | `cca install skills [NAME] [--target DIR]` | Link the skills shipped in the package (`src/cca/skills/`) into `.claude/skills` |

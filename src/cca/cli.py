@@ -12,6 +12,7 @@ from cca.output import CcaError, error
 # subcommand -> (module under cca.commands, one-line help); each module provides
 # add_arguments(parser) and run(args) -> int
 COMMANDS: dict[str, tuple[str, str]] = {
+    "cloudflare": ("cloudflare", "Cloudflare zones: DNS records, WAF rules, audit, exports"),
     "config": ("config", "show the project .cca.toml"),
     "doctor": ("doctor", "check that the current project is ready for cca"),
     "install": ("install", "install cca skills into an agent skill directory"),

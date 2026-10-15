@@ -12,6 +12,7 @@ what.
 
 | Subcommand | Use it to | Reference |
 |---|---|---|
+| `cca cloudflare` | read and change Cloudflare zones: DNS, WAF rules, audit, events, traffic, exports | [cloudflare](references/cloudflare.md) |
 | `cca config show` | see which `.cca.toml` is used and its values with defaults | [config](references/config.md) |
 | `cca doctor` | check that the project is ready for cca | [doctor](references/doctor.md) |
 | `cca install skills` | link the shipped skills into an agent skill directory | [install](references/install.md) |

@@ -143,10 +143,47 @@ Settled (doc-1):
 - The token never appears in child argv, logs or diagnostics (doc-1 "Secrets").
 - English texts; examples use `example.com`.
 
-Proposed, decided in TASK-1.2.3 (each needs a compatibility-matrix row):
+Decided in TASK-1.2.3: the official `cloudflare` SDK stays (`cloudflare>=5.9,<6`, a
+dependency of the `cca` package); the legacy crawler list in `events` is kept unchanged.
+SDK 5.9 page iteration requests pages until one comes back empty; the port paginates
+explicitly. See the matrix below.
 
-- Zone listing: verify against the pinned SDK whether page iteration auto-paginates; the port must list all zones (matrix row with more than one page).
-- Uncaught SDK exceptions become clean errors (exit 1) instead of tracebacks.
-- Fix the export help text path.
-- The search-engine crawler regex in `events` lists generic crawlers only (the legacy
-  list includes a regional engine; keep or make configurable).
+## Compatibility matrix (`cca cloudflare`)
+
+Every row is tested in `tests/test_cca_cloudflare.py` (the real SDK against a fake API
+behind an `httpx.MockTransport`).
+
+| Legacy | `cca cloudflare` | Change |
+|---|---|---|
+| token from env `CLOUDFLARE_API_TOKEN` or `.cca-env*`/`.env*` next to the script | sops `secrets.cloudflare` key `api_token` only; missing file/key → exit 2 before any request, also with hostile `CLOUDFLARE_*` env | intentional |
+| SDK defaults: `CLOUDFLARE_BASE_URL`, `CLOUDFLARE_API_KEY`/`EMAIL`/`API_USER_SERVICE_KEY`, `CLOUDFLARE_CUSTOM_HEADERS`, `CLOUDFLARE_LOG`, proxy/CA env | all ignored: endpoint `cloudflare.api_base`, only `Authorization: Bearer`, SDK logging at warning, httpx `trust_env` off, no redirects | intentional |
+| venv bootstrap, missing SDK → exit 1 | SDK is a package dependency | intentional |
+| response size and total time unbounded | 64 MiB cap (decoded, `Accept-Encoding: identity`), 60 s per request incl. headers, never retried, exit 1 | intentional |
+| SDK retries | same (SDK default, 2) | – |
+| zones `per_page=50`, SDK page iteration | explicit pages until an empty or short page or `total_pages`; at most 1000 pages | intentional |
+| ids from the API used in request paths unchecked | zone, ruleset, rule and record ids must be 32 hex digits, else exit 1 | intentional |
+| uncaught SDK exceptions: traceback, exit 1 | `cca: error: HTTP <status>: <code>: <message>` (or the connection error), exit 1 | intentional |
+| API strings printed raw | non-printable characters escaped in every printed string; JSON output escapes them as `\uXXXX` | intentional |
+| SDK models dumped with every model field (`null` for unset ones), `ttl` as float | only fields the API returned; integral floats as integers | intentional |
+| DOMAIN, selectors, CNAME target/name unchecked, exact case-sensitive zone match | DNS names (lowercased, one trailing dot dropped), `--name` also `@`; invalid → exit 2 | intentional |
+| `--position 0` treated as no position; `--limit` any integer | positive integers, exit 2 | intentional |
+| no GROUP/COMMAND: argparse exit 2 | help on stderr, exit 2 | – |
+| `token verify`, `zone list/info/settings`, `dns show-domain/show-dkim`, `dump-zone`, `waf/ratelimit/config list`, `waf countries`, `access list`, `uam status`, `bots status` | same output, English texts | – |
+| `ua list`: any exception → empty list | only an HTTP status error → empty; a connection error → exit 1 (an outage never reads as "no rules") | intentional |
+| `bots status`: any exception → `ERROR` per zone | HTTP status errors only; others exit 1 | intentional |
+| `events`: `--since` clamp to 24 h − 1 min, crawler regex incl. a regional engine | same (user decision) | – |
+| bad `--since` → exit 1 | same | – |
+| GraphQL `errors` → exit 1 | same, message escaped | – |
+| `analytics` default `--since 24h`: `until` read after `since`, so the window is always over 1 day and the daily dataset is used | one clock reading; `24h` uses the hourly adaptive dataset | intentional |
+| `export`/`diff` default `tmp/cloudflare/<domain>.json` from the script root; help says `cca/cloudflare/` | `cloudflare.export_dir` (config dir) / doc-2 name; resolved path must stay in the dir and must not be a symlink (exit 2); help fixed | intentional |
+| `-o`/`-i` paths | from the CWD | – |
+| `diff`: no change `OK`, exit 0; change → unified diff, exit 1; missing export exit 1 | same | – |
+| write commands plan by default, `--apply` writes | same; plan ends with `PLAN - nothing changed in Cloudflare` | – |
+| `ensure-cname`/`ensure-dkim`: `OK`/`CREATE`/`UPDATE`, `CONFLICT` → exit 1 after all records | same | – |
+| `restore-zone`: match, `--delete-extras`, summary line | same | – |
+| WAF selectors: id, unique description, position rejected with `--apply` | same | – |
+| `waf add` quota (disabled rules count), missing entrypoint created only for the recognized 404 | same; the recognized message also covers "could not find entrypoint ruleset" | intentional |
+| `waf edit` keeps writable fields, refuses an action change with `action_parameters` | same | – |
+| `waf move` refuses the moved rule as its anchor | same | – |
+| pre-write snapshot `tmp/cloudflare/<domain>-<stamp>[-N].json`, failure aborts | `cloudflare.export_dir` / `<zone>+<stamp>[-N].json` (doc-2), created exclusively, failure aborts before any write | intentional |
+| read-back after a write; mismatch exit 1 | same; expected position computed without the moved rule | intentional |

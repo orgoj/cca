@@ -12,7 +12,9 @@ license = "MIT"
 authors = [
     {name = "Michael Heca", email = "michael.heca@gmail.com"},
 ]
-dependencies = []
+dependencies = [
+    "cloudflare>=5.9.0,<6",
+]
 
 [project.scripts]
 cca = "cca.cli:main"
