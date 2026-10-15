@@ -87,11 +87,44 @@ Settled (doc-1):
 - External tools are checked lazily: a missing `nmap`/`nc`/`curl` gives a clear error
   naming the tool.
 
-Proposed, decided in TASK-1.2.1 (each needs a compatibility-matrix row):
+Decided in TASK-1.2.1:
 
-- Reject an unknown `--method` with exit 2 instead of silently doing nothing.
-- `curl` method: probe every port and report each result instead of stopping at the
-  first closed port; non-zero exit when any probe failed.
-- `telnet` method: drop it or give it a timeout; it never terminates by itself.
-- Options accepted after HOST (argparse), ports validated as 1–65535.
-- `-x/--xdebug` has no Python equivalent; drop it.
+- An unknown `--method` exits 2 instead of silently doing nothing.
+- `telnet` is dropped (it never terminates by itself; `nc` covers it).
+- `nc` and `curl` probe every port; exit 1 when any probe failed (legacy: `nc` ignored
+  failures, `curl` stopped at the first failing port). `curl` prints one result line
+  per port, because its own output is silent.
+- Options are accepted after HOST (argparse; not between ports); HOST is validated (DNS
+  name, IPv4, IPv6 without brackets), ports as 1–65535 (order and duplicates kept).
+- `nmap` gets `-6` for an IPv6 HOST; `curl` brackets it in the URL.
+- `.cca.toml` is loaded only with `--delegate`; a local scan needs no project.
+- `-x/--xdebug` is dropped.
+
+## Compatibility matrix (`cca open-ports`)
+
+Every row is tested in `tests/test_cca_open_ports.py`.
+
+| Legacy | `cca open-ports` | Change |
+|---|---|---|
+| `-d/--delegate HOST`, word-split `ssh HOST` prefix | `-d/--delegate SERVER` from `[servers]`; `ssh -- DEST 'cmd'` via `cca.ssh` | intentional |
+| `-k/--kubernetes`, ignored with positional ports | same | – |
+| `-m/--method nmap\|nc\|telnet\|curl`, default `nmap` | `nmap\|nc\|curl`, default `nmap` | `telnet` dropped |
+| unknown method: nothing run, exit 0 | exit 2 (usage) | intentional |
+| `-n/--noact` prints commands | prints commands (shell-quoted), runs nothing, exit 0 | – |
+| `-x/--xdebug` | unknown option, exit 2 | dropped |
+| `-h/--help` exit 0 | same | – |
+| unknown option exit 1 | exit 2 (usage) | intentional |
+| missing HOST exit 1 | exit 2 (usage) | intentional |
+| option without value: exit 1, no message | exit 2 with message | intentional |
+| options after HOST become ports | options accepted after HOST; between ports → exit 2 | intentional |
+| ports not validated | 1–65535; order and duplicates kept | intentional |
+| HOST not validated | DNS name, IPv4, IPv6 (no zone id `%…`) | intentional |
+| default ports `20 22 25 80 443`, `-k` adds 9 Kubernetes ports | same | – |
+| positional ports replace the list | same | – |
+| `nmap -Pn --reason -p P1,P2 HOST`, its exit code | same; `-6` added for IPv6 | IPv6 |
+| `nc -zv -w 5 HOST PORT` per port, failures ignored | same argv, every port, exit 1 on any failure | intentional |
+| `curl -s --connect-timeout 5 -o /dev/null http://HOST:PORT`, stops at first failure | same argv (`[v6]` in URL), every port, result line per port, exit 1 on any failure | intentional |
+| missing tool: shell error | `cca: error: TOOL not found on PATH`, exit 2 (with `-d`: only `ssh` checked locally) | intentional |
+| ssh failure: its exit code (255) | `ssh to SERVER failed (exit 255)`, exit 2, stops | intentional |
+| tool missing on the delegate (exit 127) | `TOOL not found on SERVER`, exit 2 | intentional |
+| no config | config only with `--delegate` (a local scan ignores `.cca.toml` and `--config`); unknown server exit 2 | intentional |
