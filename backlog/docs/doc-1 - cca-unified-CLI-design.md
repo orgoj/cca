@@ -153,12 +153,27 @@ allowed is the job of the command validator, not of `cca curl`.
   `cca run --all -- CMD` runs CMD on every `[servers]` entry in config order, output
   tagged per server (`<server-result name="..." exit="...">`), stops on the first
   failure; server-taking subcommands
-  (`server info/status/hostname`, `diagnose`) accept `--all` with the same semantics.
-  No arbitrary script names.
+  (`server info/status/hostname`, `diagnose`) accept `--all` with the same order and
+  stop rule; their own output already names the server (`<server-status
+  server="...">`), so it is not wrapped again. No arbitrary script names.
 - Execution is a reusable executor API (`cca.executor.execute(cfg, server, command,
-  timeout=, stdin=)` → `Result(code, output, marker, timed_out)`, `create_file`); `cca
-  run` is a thin CLI over it and `server`/`diagnose` use it instead of their own ssh
-  code. The executor writes the `[run.log]` line, so every caller is logged.
+  timeout=, stdin=, via=)` → `Result(code, output, marker, timed_out)`, `create_file`);
+  `cca run` is a thin CLI over it and `server`/`diagnose` use it instead of their own
+  ssh code. The executor writes the `[run.log]` line, so every caller is logged.
+- `run.transport` applies only to the agent's live `cca run` commands (tmux lets the
+  operator watch them). Finished scripts (`server`, `diagnose`) always pass `via="ssh"`
+  and may make one ssh call per section (ssh ControlMaster keeps that cheap).
+
+## `cca server`
+
+- `cca server {hostname,status,info} [--timeout SEC] (SERVER | --all)`; one ssh call
+  per section, XML-like tag per section, `exit="N"` on a failed section (the others
+  still run), `--timeout` total per server (default 120). Exit 0 all sections ran, 124
+  timeout, 255 ssh failed (stops that server), 2 usage/config.
+- `status` = quick state (local and server time, load, memory, ext/xfs usage, `zpool
+  list`); `info` = inventory (hostname, OS, CPU, memory size, disks, `zpool status`,
+  interfaces matching `server_info.net_iface_prefixes`, loopback aliases, Docker,
+  Swarm, LXC via `sudo -n`, QEMU). No overlap between the two.
 - Shape: `cca run [options] SERVER -- CMD...` or `cca run [options] SERVER <<'EOF'`.
   No CMD → read the command from stdin: stdin is a TTY → error; empty stdin → error
   (`--create-file` accepts empty content).

@@ -110,7 +110,7 @@ a server fail at use time.
 
 | Key | Type | Default | Rule |
 |---|---|---|---|
-| `transport` | string | `"tmux"` | `"tmux"` or `"ssh"`. |
+| `transport` | string | `"tmux"` | `"tmux"` or `"ssh"`. Only for `cca run` (the agent's live commands); `cca server` and `cca diagnose` always use ssh. |
 | `tokf` | boolean | `false` | `cca run` passes completed command output (both transports) through `tokf` (resolved lazily from PATH, protocol `cca-v1`; missing, unsupported or failing `tokf` → output unprocessed). |
 
 ### `[run.tmux]`

@@ -24,6 +24,7 @@ COMMANDS: dict[str, tuple[str, str]] = {
     "netdata": ("netdata", "query Netdata metrics of a server, over ssh or directly"),
     "open-ports": ("open_ports", "probe TCP ports of a host with nmap, nc or curl"),
     "run": ("run", "run a command on a configured server over tmux or ssh"),
+    "server": ("server", "hostname, quick status or inventory of a server, over ssh"),
     "watchlist": ("watchlist", "recurring checks, scheduled tasks and dated notes on Backlog.md"),
 }
 

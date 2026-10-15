@@ -158,19 +158,24 @@ def execute(
     timeout: float = 300,
     stdin: bytes | None = None,
     log_text: str | None = None,
+    via: str | None = None,
 ) -> Result:
     """Run command on server with the configured transport and return its output.
 
     stdin (bytes) becomes the remote command's stdin, otherwise it reads /dev/null.
-    log_text replaces the command in the log line. A local Ctrl-C raises CcaError 130
-    after logging; the remote command may keep running.
+    log_text replaces the command in the log line. via="ssh" overrides run.transport:
+    finished scripts (server, diagnose) always use ssh, run.transport is for the
+    agent's live `cca run` commands. A local Ctrl-C raises CcaError 130 after logging;
+    the remote command may keep running.
     """
+    if via not in (None, "ssh"):
+        raise ValueError(f"via must be None or 'ssh', not {via!r}")
     check_command(command)
     target = ssh.target(cfg, server)
     log_dir = _log_dir(cfg)
     text = command if log_text is None else log_text
     try:
-        if transport(cfg) == "ssh":
+        if (via or transport(cfg)) == "ssh":
             result = _ssh_execute(server, target, command, timeout, stdin)
         else:
             result = _tmux_execute(cfg, server, target, command, timeout, stdin)

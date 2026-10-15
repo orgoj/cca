@@ -23,6 +23,7 @@ what.
 | `cca netdata` | read Netdata metrics of a server: load, top N, network latency and packet loss | [netdata](references/netdata.md) |
 | `cca open-ports` | check which TCP ports of a host are reachable, locally or from a server | [open-ports](references/open-ports.md) |
 | `cca run` | run a command or a script on one or all servers, write a remote file, read a tmux window | [run](references/run.md) |
+| `cca server` | check a server: hostname, quick status (load, memory, disks), inventory (OS, hardware, network, containers) | [server](references/server.md) |
 | `cca watchlist` | run the daily check over Backlog.md: due and recurring tasks, notes valid on a date | [watchlist](references/watchlist.md) |
 
 Rules:
