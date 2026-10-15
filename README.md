@@ -6,6 +6,27 @@ Universal toolkit usable by any AI agent that supports skills: `bin/` scripts fo
 `skills/` in `skill-name/SKILL.md` format. Every script supports `--help`; it is the reference,
 this README is only the map.
 
+## `cca` - unified CLI (in progress)
+
+The `bin/` scripts are being replaced by one Python command, `cca <subcommand>`
+(design: `backlog/docs/doc-1`, config schema: `backlog/docs/doc-2`). It reads settings
+only from the project's `.cca.toml` and secrets only from the project's sops files.
+`bin/`, `lib/` and `skills/` below stay unchanged until every project has migrated.
+
+Install a release (Python 3.11+, [uv](https://docs.astral.sh/uv/)); non-editable, so work
+in this clone never affects running agents:
+
+```bash
+uv tool install --reinstall "cca @ git+file:///path/to/cca-clone@vX.Y.Z"
+cca --version
+```
+
+| Subcommand | Description |
+|------------|-------------|
+| `cca config show` | The `.cca.toml` in use and its values with defaults |
+| `cca doctor [--fix]` | Check the project (config, sops, `cca/` dirs, skill links) |
+| `cca install skills [NAME] [--target DIR]` | Link the skills shipped in the package (`src/cca/skills/`) into `.claude/skills` |
+
 ## bin/ - Scripts
 
 | Script | Description |
@@ -87,9 +108,29 @@ project/
 ## Tests
 
 ```bash
-tests/run-all.sh                 # shellcheck, bash tests, ruff, pytest
+tests/run-all.sh                 # shellcheck, bash tests, ruff, pytest, build + install smoke
 tests/test-shared-clean.sh       # run from a project directory that supplies the denylist
 ```
+
+`run-all.sh` also fails when `bin/`, `lib/` or `skills/` differ from the `legacy-baseline`
+tag, and scans `backlog/`, `src/` and the built wheel/sdist with the fixture denylist
+`tests/fixtures/leak-denylist.txt`.
+
+## Release
+
+One subcommand (or a tightly coupled family) per release; tags are `v<version>` and are
+never moved.
+
+1. Bump `version` in `pyproject.toml`, commit.
+2. Pre-tag check (needs the consumer project's denylist, fails without it):
+   `CCA_DENYLIST=/path/to/denylist tests/release-check.sh pre-tag`
+   (clean work tree, tag not yet present, `run-all.sh`, shared-clean and package checks
+   with that denylist).
+3. Tag: `git tag -a vX.Y.Z -m "cca X.Y.Z"`.
+4. Post-tag check: `CCA_DENYLIST=/path/to/denylist tests/release-check.sh post-tag`
+   (the tag equals the package version and points at HEAD).
+5. Install: `uv tool install --reinstall "cca @ git+file:///path/to/cca-clone@vX.Y.Z"`,
+   then `cca --version`.
 
 ## License
 
