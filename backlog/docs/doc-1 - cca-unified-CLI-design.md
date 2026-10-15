@@ -26,8 +26,12 @@ source checkout must be fully usable (incl. skills) at every release.
   `.cca.toml`. Validation of the agent's tool call `cca run SERVER ...` is done by Dippy
   with the agent CLI, outside CCA. Optional later: `cca run` asks the Dippy CLI to
   validate the inner command with server context.
-- Skills are packaged into the wheel; `cca install skills [NAME]` works from the
-  installed tool. Each skill is updated in the release of the subcommand it uses.
+- **Running agents must see no change until the new `cca` is finished and deployed.**
+  `bin/`, `lib/` and the root `skills/` (symlinked live into consumer projects) stay
+  byte-for-byte unchanged until TASK-2. New `cca` skills are written separately in
+  `src/cca/skills/`, packaged into the wheel, and reach a project only when it migrates
+  (old skill links removed, `cca install skills` run). Each new skill is added in the
+  release of the subcommand it uses.
 - Windows skill installation is out of scope for now (deferred task); on platforms
   without symlink support `cca install skills` fails with a clear error.
 - `cca-install` has no successor (uv installs `cca`; skills via `cca install skills`).
@@ -38,7 +42,9 @@ source checkout must be fully usable (incl. skills) at every release.
   hook/audit pipeline. It stays available in git history.
 - Old `cca-*` scripts stay unchanged (no deprecation notes, no edits) until all
   consumer projects are converted to `cca`, then they are deleted (with
-  `lib/cca-env.sh`) in a separate, user-approved task. `cca-tmux-cli` may remain as a
+  `lib/cca-env.sh` and root `skills/`) in a separate, user-approved task.
+  `tests/run-all.sh` enforces this: it fails when `bin/`, `lib/` or root `skills/`
+  differ from the `legacy-baseline` tag. `cca-tmux-cli` may remain as a
   thin wrapper over `cca run`, depending on how agents adapt; the user decides later.
 - Install: non-editable from a tag, so CCA work never breaks running agents.
 
@@ -131,13 +137,14 @@ pyproject.toml            # project "cca"; scripts: cca = "cca.cli:main"
 src/cca/cli.py            # argparse, lazy import per subcommand
 src/cca/{config,secrets,output,ssh}.py
 src/cca/commands/<name>.py
-skills/                   # unchanged location; packaged into the wheel as cca/skills
+src/cca/skills/           # new cca skills, packaged into the wheel
+skills/                   # old skills, unchanged until TASK-2 (live symlinks in projects)
 tests/                    # bash tests stay; pytest for cca
 ```
 
-- hatchling packages into `cca/skills` only skills whose every referenced command exists
-  in that release (a skill joins the wheel in the release that ports its commands); a
-  wheel-install test scans installed skills for references to commands not provided.
+- The wheel ships `src/cca/skills/` only; every skill there references only commands that
+  exist in that release; a wheel-install test scans installed skills for references to
+  commands not provided (incl. any old `cca-*` name).
 - `cca install skills [NAME] [TARGET]` symlinks from the installed package
   (`importlib.resources`); replaces only links it owns (pointing into a cca install),
   never overwrites other skills or follows existing destination links; idempotent;
@@ -189,8 +196,9 @@ so their ports and doc-2 can be done from a clone.
 
 ## Consumer migration
 
-Per consumer project (by its owning agent, after the relevant release): write
-`.cca.toml`, move secrets into sops files, switch calls/guides to `cca <sub>`.
+Per consumer project (by its owning agent, after `cca` is finished and deployed): write
+`.cca.toml`, move secrets into sops files, replace old skill links with
+`cca install skills`, switch calls/guides to `cca <sub>`.
 On deployment, every consumer project is checked with `cca doctor --legacy`: it always
 probes the known legacy paths (`.cca-env`, `.env`, `.cca-tmux-cli`,
 `.tmux-cli-python.yaml`, `.netdata-servers`, default agent-instruction files) in the

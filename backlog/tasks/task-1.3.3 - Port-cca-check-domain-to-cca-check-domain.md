@@ -4,7 +4,7 @@ title: Port cca-check-domain to cca check-domain
 status: To Do
 assignee: []
 created_date: '2026-10-15 07:32'
-updated_date: '2026-10-15 07:37'
+updated_date: '2026-10-15 09:05'
 labels: []
 dependencies:
   - TASK-1.1
@@ -23,5 +23,5 @@ Part of moving every cca-* script to a cca subcommand.
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Compatibility matrix vs bin/cca-check-domain; every row tested; CCA_* inputs from doc-2 keys
-- [ ] #2 Skills referencing cca-check-domain updated in the same change; release-ready: full pre-tag gate green
+- [ ] #2 New cca skills for this command added under src/cca/skills/; root skills/ untouched; release-ready: full pre-tag gate green
 <!-- AC:END -->

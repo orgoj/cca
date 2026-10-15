@@ -4,7 +4,7 @@ title: 'Phase 1: cca core, config, secrets, release gate'
 status: To Do
 assignee: []
 created_date: '2026-10-15 07:13'
-updated_date: '2026-10-15 07:37'
+updated_date: '2026-10-15 09:05'
 labels: []
 dependencies:
   - TASK-1.6
@@ -31,8 +31,9 @@ Every later port depends on a stable config contract (doc-2), one secrets path a
 - [ ] #7 Release step fails closed without the consumer denylist; automated gate uses a repository fixture denylist
 - [ ] #8 README documents the verified uv tool install command and the release steps (pre-tag and post-tag checks)
 - [ ] #9 Root pyproject.toml defines project cca with entry point cca; tmux_cli_python/, its tests, entry point and deps (typer, pyyaml, libtmux) removed; uv.lock and ruff target updated; remaining tests green
-- [ ] #10 The wheel ships only skills whose every referenced command exists in that release; a wheel-install test scans installed skills and fails on any reference to a command not provided
-- [ ] #11 Shared ssh helper: target only from [servers] or validated input, argv-only, used by every subcommand that calls ssh
+- [ ] #10 Shared ssh helper: target only from [servers] or validated input, argv-only, used by every subcommand that calls ssh
+- [ ] #11 The wheel ships src/cca/skills/ only; a wheel-install test scans installed skills and fails on any reference to a command not provided, incl. old cca-* names; root skills/ untouched
+- [ ] #12 A legacy-baseline tag marks the pre-refactor state; tests/run-all.sh fails when bin/, lib/ or root skills/ differ from it
 <!-- AC:END -->
 
 ## Implementation Notes

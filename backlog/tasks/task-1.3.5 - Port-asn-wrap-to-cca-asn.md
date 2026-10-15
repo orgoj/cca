@@ -4,7 +4,7 @@ title: Port asn-wrap to cca asn
 status: To Do
 assignee: []
 created_date: '2026-10-15 07:32'
-updated_date: '2026-10-15 07:37'
+updated_date: '2026-10-15 09:05'
 labels: []
 dependencies:
   - TASK-1.1
@@ -23,5 +23,5 @@ Part of moving every script to a cca subcommand; asn-wrap is the one unprefixed 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Compatibility matrix vs bin/asn-wrap; every row tested
-- [ ] #2 Skills referencing asn-wrap updated in the same change; release-ready: full pre-tag gate green
+- [ ] #2 New cca skills for this command added under src/cca/skills/; root skills/ untouched; release-ready: full pre-tag gate green
 <!-- AC:END -->
