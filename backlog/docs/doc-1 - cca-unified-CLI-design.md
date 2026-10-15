@@ -65,9 +65,10 @@ source checkout must be fully usable (incl. skills) at every release.
   supports → error. Unknown keys → warning on stderr (newer config on an older release
   stays usable, typos stay visible).
 - The normative schema (tables, keys, types, defaults, validation, per-command secret
-  file shapes, mapping from every legacy variable/file) lives in doc-2 with schema
-  fixtures; doc-2 is written before the core implementation.
-- Legacy inputs doc-2 must map: `CCA_OUR_IPS`, `CCA_HOSTING_MARKER`,
+  file shapes) lives in doc-2 with schema fixtures; doc-2 is written before the core
+  implementation. The mapping from every legacy variable/file lives in the migration
+  guide (doc-6 "Legacy inputs").
+- Legacy inputs the mapping must cover: `CCA_OUR_IPS`, `CCA_HOSTING_MARKER`,
   `CCA_APACHE_STATUS_CMD`, `CCA_MONGODB_STATUS_CMD`, `CCA_NET_IFACE_PREFIXES`,
   `CCA_LOGGING`, `ADMIN_NAME`, `CCA_AGENT`, `CCA_TMUX_TOKF`, `CCA_WATCHLIST`,
   `.cca-tmux-cli` settings (session, servers),
@@ -137,6 +138,16 @@ allowed is the job of the command validator, not of `cca curl`.
   `--read` and `--session` exist only for tmux; over ssh they exit 2. The
   robot-init/doctor/robot-help outputs of `cca-tmux-cli` are replaced by `cca doctor`
   (transport, ssh, tmux, session, tokf, log dir), `cca run --help` and the skill.
+- Shape: `cca run [options] -t SERVER -- CMD...` or `cca run [options] -t SERVER
+  <<'EOF'` (quoted heredoc, nothing after the options). With `-- CMD` stdin is never
+  read; without CMD stdin is only the remote script: stdin is a TTY → error; empty
+  stdin → error (`--create-file` accepts empty content).
+  The shape is a public contract for external validators, agreed with Dippy (wrapper
+  `cca` with subcommand `run`, command after `--`, context `-t`, script on stdin):
+  options and `-t` only before `--`, from a known list; `--all` instead of `-t`. The
+  other surfaces (`--create-file`, `--read`, `--list`, `--session`) take SERVER
+  positionally and exit 2 with `-t` or `-- CMD`, so a validator never reads their
+  arguments as a command.
 - Several CMD arguments are joined with spaces (ssh semantics). The remote command runs
   as `bash -c "$(printf %s B64 | base64 -d)" </dev/null` on both transports; output is
   captured (stdout and stderr together), control characters escaped, then optionally
@@ -163,6 +174,11 @@ allowed is the job of the command validator, not of `cca curl`.
 - `run.transport` applies only to the agent's live `cca run` commands (tmux lets the
   operator watch them). Finished scripts (`server`) always pass `via="ssh"`
   and may make one ssh call per section (ssh ControlMaster keeps that cheap).
+- Security: no local shell is involved in building the call; SERVER only from
+  `[servers]`, ssh target validated and passed as separate argv; tmux targets passed as
+  separate argv. If output redaction is added later, it applies to every output path
+  (normal, timeout, error, log) and empty redactor output stays empty.
+- Reserved for later: `[run] validator = "dippy"`.
 
 ## `cca server`
 
@@ -174,21 +190,6 @@ allowed is the job of the command validator, not of `cca curl`.
   list`); `info` = inventory (hostname, OS, CPU, memory size, disks, `zpool status`,
   interfaces matching `server_info.net_iface_prefixes`, loopback aliases, Docker,
   Swarm, LXC via `sudo -n`, QEMU). No overlap between the two.
-- Shape: `cca run [options] -t SERVER -- CMD...` or `cca run [options] -t SERVER
-  <<'EOF'` (quoted heredoc, nothing after the options). With `-- CMD` stdin is never
-  read; without CMD stdin is only the remote script: stdin is a TTY → error; empty
-  stdin → error (`--create-file` accepts empty content).
-  The shape is a public contract for external validators, agreed with Dippy (wrapper
-  `cca` with subcommand `run`, command after `--`, context `-t`, script on stdin):
-  options and `-t` only before `--`, from a known list; `--all` instead of `-t`. The
-  other surfaces (`--create-file`, `--read`, `--list`, `--session`) take SERVER
-  positionally and exit 2 with `-t` or `-- CMD`, so a validator never reads their
-  arguments as a command.
-- Security: no local shell is involved in building the call; SERVER only from
-  `[servers]`, ssh target validated and passed as separate argv; tmux targets passed as
-  separate argv. If output redaction is added later, it applies to every output path
-  (normal, timeout, error, log) and empty redactor output stays empty.
-- Reserved for later: `[run] validator = "dippy"`.
 
 ## Layout
 
@@ -283,15 +284,15 @@ Backlog tasks; `cca` has no importer.
 ## Consumer migration
 
 A one-time manual conversion (TASK-4), started only after the complete `cca` is
-finished, reviewed and approved by the user: per consumer project write `.cca.toml`
-from the doc-2 legacy input mapping, move secrets into sops files, replace old skill
-links with `cca install skills`, switch scripts, docs, skills and agent instructions to
-`cca <sub>`, remove legacy config files. `cca` itself never scans project content for
-old usage.
+finished, reviewed and approved by the user, following the migration guide (doc-6):
+per consumer project write `.cca.toml` from its legacy input mapping, move secrets
+into sops files, replace old skill links with `cca install skills`, switch scripts,
+docs, skills and agent instructions to `cca <sub>`, remove legacy config files. `cca`
+itself never scans project content for old usage.
 `cca doctor` checks only the new state, including that no agent skill dir or PATH dir
 is, or contains a link to, the old CCA `bin/` or root `skills/` (doc-2 "Old CCA links").
 Old scripts and skills are removed (TASK-2) only when every consumer is converted and
-`cca doctor` passes there.
+`cca doctor` passes there without any old CCA link finding (doc-6 step 8).
 
 ## Phases
 
@@ -302,6 +303,6 @@ Old scripts and skills are removed (TASK-2) only when every consumer is converte
 2. Ports, one task each: open-ports, netdata, cloudflare.
 3. Ports, one task each: curl, hetrix, check-domain, server-*, asn, watchlist (diagnose not ported).
 4. `cca run`, then one release of the complete `cca` (TASK-1.11).
-5. Global docs update and migration guide.
+5. Global docs update and migration guide (doc-6).
 Later, separate: Windows skills install (deferred); removal of old scripts after all
 consumers migrated (user approval).

@@ -2,24 +2,37 @@
 
 **Agent-agnostic server management, incident resolution, and knowledge management system.**
 
-Universal toolkit usable by any AI agent that supports skills: `bin/` scripts for PATH and
-`skills/` in `skill-name/SKILL.md` format. Every script supports `--help`; it is the reference,
-this README is only the map.
+One command, `cca <subcommand>`, for any project and any AI agent that supports skills.
+It reads settings only from the project's `.cca.toml` and secrets only from the
+project's sops files, never from environment variables. `cca --help` and
+`cca <subcommand> --help` are the reference; this README is only the map.
+Design: `backlog/docs/doc-1`, config schema: `backlog/docs/doc-2`, migration from the
+old scripts: `backlog/docs/doc-6`.
 
-## `cca` - unified CLI (in progress)
+## Install
 
-The `bin/` scripts are being replaced by one Python command, `cca <subcommand>`
-(design: `backlog/docs/doc-1`, config schema: `backlog/docs/doc-2`). It reads settings
-only from the project's `.cca.toml` and secrets only from the project's sops files.
-`bin/`, `lib/` and `skills/` below stay unchanged until every project has migrated.
-
-Install a release (Python 3.11+, [uv](https://docs.astral.sh/uv/)); non-editable, so work
-in this clone never affects running agents:
+Python 3.11+ and [uv](https://docs.astral.sh/uv/). Install a release tag, non-editable,
+so work in a clone never affects running agents:
 
 ```bash
 uv tool install --reinstall "cca @ git+file:///path/to/cca-clone@vX.Y.Z"
 cca --version
 ```
+
+Then, in a project:
+
+```bash
+cca install skills     # link the shipped skill `cca` into .claude/skills (must exist)
+cca doctor             # check config, sops, servers, transport, tools, skill links
+```
+
+External tools are looked up only by the subcommand that needs them: `ssh` (`run`,
+`server`, `netdata`, `open-ports -d`), `tmux` (`run` with the tmux transport), `sops`
+(secrets), `curl` (`curl`), `nmap`/`nc` (`open-ports`), `backlog`
+([Backlog.md](https://github.com/MrLesk/Backlog.md), `watchlist`), `tokf` (optional,
+`run.tokf`).
+
+## Subcommands
 
 | Subcommand | Description |
 |------------|-------------|
@@ -37,82 +50,41 @@ cca --version
 | `cca server hostname\|status\|info` | Hostname, quick status (time, load, memory, ext/xfs, ZFS) or inventory (OS, CPU, disks, ZFS, interfaces, loopback aliases, Docker/Swarm/LXC/QEMU) of a `[servers]` entry or `--all`, always over ssh, one tag per section |
 | `cca watchlist today\|notes\|checked` | Daily check over the project's Backlog.md (`backlog` CLI): due and `every:Nd` recurring tasks, notes (status `Note`, `from:`/`until:` labels) valid on a date, `checked ID` moves the next check |
 
-## bin/ - Scripts
-
-| Script | Description |
-|--------|-------------|
-| `cca-install` | Symlink scripts and skills into place |
-| `cca-doctor` | Check the project's CCA setup (`--fix` removes broken skill links) |
-| `cca-tmux-cli` | Run commands in visible SSH sessions via tmux |
-| `cca-run-on-server` | Run a command or create a file on a server (tmux-cli or ssh backend) |
-| `cca-run-all` | Run a `cca-*` script against every configured server |
-| `cca-server-hostname` / `cca-server-info` / `cca-server-status` | Basic server facts |
-| `cca-diagnose-gather` | Gather diagnostics for troubleshooting |
-| `cca-check-domain` | Domain health checks (DNS, our IPs, hosting marker) |
-| `cca-watchlist` | Manage `watchlist.json` (agenda, ready, search, edits) |
-| `cca-hetrix` | HetrixTools monitoring status |
-| `asn-wrap` | ASN/IP lookup with compact `-s` output (unprefixed name kept on purpose; install by hand, `cca-install bin` links only `cca-*`) |
-| `cca-curl-secret` | curl with credentials from a SOPS file |
-| `cca-validate-args` | Reject shell metacharacters in arguments |
-| `cca-check-shared-clean` | Check this repo against a project-supplied denylist |
-
-## skills/ - Agent Skills
-
-| Skill | Purpose |
-|-------|---------|
-| `cca-core` | Mandatory entry point before any server work |
-| `cca-solving-problems` | Unified problem resolution, including security incidents |
-| `cca-asking` | Natural-language server questions |
-| `cca-diagnosing` | Context-aware troubleshooting |
-| `cca-server-discovery` | Discover services on an unknown server |
-| `cca-server-logs` | System and service log analysis |
-| `cca-watching` | Daily watchlist check |
-| `cca-managing-watchlist` | Edit the watchlist with `cca-watchlist` |
-| `cca-creating-incidents` | Create or update incident records |
-| `cca-saving-guides` | Save a solved issue as a guide |
-| `cca-optimizing-guides` | Monthly knowledge-base maintenance |
-| `cca-learning` | Integrate session learnings into the knowledge base |
-| `cca-searching` | Full-text search of guides and incidents |
-| `cca-researching-web` | Web research: docs, bugs, CVEs |
-| `cca-hetrix-monitoring` | HetrixTools monitoring and outages |
-| `cca-tmux-cli` | `cca-tmux-cli` usage |
-| `cca-setting-up` | Initial CCA setup in a project |
-| `cca-migrating` | Migrate CCA between repositories |
-| `cca-creating-skills` | Create new CCA skills |
-
-## Installation
-
-Targets must already exist; links point back into this repo.
-
-```bash
-./bin/cca-install bin ~/bin      # scripts
-./bin/cca-install skills         # all skills into ./.claude/skills of the current project
-```
-
-### Dependencies
-
-- bash, Python 3.10+
-- tmux (`cca-tmux-cli`)
-- yq (mikefarah v4); sops (`cca-curl-secret`); jq (`cca-hetrix`); asn (`asn-wrap`)
-- [tantivy2agents](https://github.com/orgoj/tantivy2agents) for search
-
 ## Project configuration
 
-Scripts read project data from the current directory, never from their install location.
-Config is searched from the CWD up to the git root (never `$HOME` or above), closest first:
-`.cca-tmux-cli` > `.cca-env` > `.env` (legacy). Key variables: `ADMIN_NAME`,
-`TMUX_SESSION_NAME`, `TMUX_SESSION_SERVERS`, `RUN_ON_CMD`, plus project-specific `CCA_*`.
+`cca` uses the first `.cca.toml` found from the current directory upwards (or
+`--config PATH`); exactly one per project, no merging. Paths inside it resolve from its
+directory. Every key, default and rule: `backlog/docs/doc-2`.
+
+```toml
+schema_version = 1
+
+[servers.server1]                 # --all and listings use this order
+ssh = "admin@server1.example.com" # default: the server name
+
+[servers.server2]
+
+[run]
+transport = "tmux"                # or "ssh"
+
+[run.tmux]
+session = "example"
+
+[run.log]                         # optional command log
+dir = "logs"
+operator = "admin1"
+```
 
 ```
 project/
-├── .cca-env               # Project config
+├── .cca.toml              # Project config
+├── secrets/               # sops files: curl.secret.yaml, cloudflare.secret.yaml
 ├── cca/
 │   ├── guides/            # Knowledge base (incl. guides/servers/<name>.md)
-│   ├── incidents/         # Incident records
-│   └── watchlist.json     # Monitoring tasks
-├── logs/                  # Command logs (written when the directory exists)
-├── .claude/skills/        # Symlinks to shared cca-* skills
-└── .tantivy-data/         # Search index
+│   └── incidents/         # Incident records
+├── backlog/               # Backlog.md: tasks, recurring checks, notes (cca watchlist)
+├── logs/                  # Command log ([run.log])
+└── .claude/skills/        # Links made by `cca install skills`
 ```
 
 ## Tests
@@ -140,6 +112,63 @@ Subcommands are not released one by one. Tags are `v<version>` and are never mov
    (the tag equals the package version and points at HEAD).
 5. Install: `uv tool install --reinstall "cca @ git+file:///path/to/cca-clone@vX.Y.Z"`,
    then `cca --version`.
+
+## Migration from the old scripts
+
+Each project is converted once by hand following `backlog/docs/doc-6`: legacy config
+inputs → `.cca.toml` keys, old commands → `cca` subcommands, old skills, removal of the
+legacy config files, and `cca doctor` without old CCA links. The old scripts and skills
+below are deleted only after every project is converted.
+
+## Legacy: `bin/`, `lib/`, `skills/`
+
+Still linked into projects that are not converted yet, so they stay byte-for-byte
+unchanged until they are removed. Their configuration is read by `lib/cca-env.sh` from
+the CWD up to the git root, closest first: `.cca-tmux-cli` > `.cca-env` > `.env`.
+
+| Script | Description |
+|--------|-------------|
+| `cca-install` | Symlink scripts and skills into place |
+| `cca-doctor` | Check the project's CCA setup (`--fix` removes broken skill links) |
+| `cca-tmux-cli` | Run commands in visible SSH sessions via tmux |
+| `cca-run-on-server` | Run a command or create a file on a server (tmux-cli or ssh backend) |
+| `cca-run-all` | Run a `cca-*` script against every configured server |
+| `cca-server-hostname` / `cca-server-info` / `cca-server-status` | Basic server facts |
+| `cca-diagnose-gather` | Gather diagnostics for troubleshooting |
+| `cca-check-domain` | Domain health checks (DNS, our IPs, hosting marker) |
+| `cca-watchlist` | Manage `watchlist.json` (agenda, ready, search, edits) |
+| `cca-hetrix` | HetrixTools monitoring status |
+| `asn-wrap` | ASN/IP lookup with compact `-s` output |
+| `cca-curl-secret` | curl with credentials from a SOPS file |
+| `cca-validate-args` | Reject shell metacharacters in arguments |
+| `cca-check-shared-clean` | Check this repo against a project-supplied denylist (stays) |
+
+| Skill | Purpose |
+|-------|---------|
+| `cca-core` | Mandatory entry point before any server work |
+| `cca-solving-problems` | Unified problem resolution, including security incidents |
+| `cca-asking` | Natural-language server questions |
+| `cca-diagnosing` | Context-aware troubleshooting |
+| `cca-server-discovery` | Discover services on an unknown server |
+| `cca-server-logs` | System and service log analysis |
+| `cca-watching` | Daily watchlist check |
+| `cca-managing-watchlist` | Edit the watchlist with `cca-watchlist` |
+| `cca-creating-incidents` | Create or update incident records |
+| `cca-saving-guides` | Save a solved issue as a guide |
+| `cca-optimizing-guides` | Monthly knowledge-base maintenance |
+| `cca-learning` | Integrate session learnings into the knowledge base |
+| `cca-searching` | Full-text search of guides and incidents |
+| `cca-researching-web` | Web research: docs, bugs, CVEs |
+| `cca-hetrix-monitoring` | HetrixTools monitoring and outages |
+| `cca-tmux-cli` | `cca-tmux-cli` usage |
+| `cca-setting-up` | Initial CCA setup in a project |
+| `cca-migrating` | Migrate CCA between repositories |
+| `cca-creating-skills` | Create new CCA skills |
+
+Install (targets must already exist; links point back into this repo):
+`./bin/cca-install bin ~/bin`, `./bin/cca-install skills`. Dependencies: bash, Python
+3.10+, tmux, yq (mikefarah v4), sops, jq, asn,
+[tantivy2agents](https://github.com/orgoj/tantivy2agents) for search.
 
 ## License
 

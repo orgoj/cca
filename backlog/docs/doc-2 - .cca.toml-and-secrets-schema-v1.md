@@ -198,43 +198,12 @@ text). A checked dir that cannot be listed is reported at the dir's severity. Fi
 `PATH` dirs WARN, because those stay shared until every consumer project is converted.
 
 Project scripts, docs and agent instructions are not scanned: consumer projects are
-converted once by hand (TASK-4) using the mapping below.
+converted once by hand (TASK-4) using the migration guide (doc-6).
 
 ## Legacy input mapping
 
-Every input listed in doc-1 "Legacy inputs doc-2 must map", plus inputs found in the
-legacy sources. The one-time consumer conversion (TASK-4) replaces each name in the
-left column.
-
-| Legacy input | Read by | v1 |
-|---|---|---|
-| `CCA_OUR_IPS` (comma list) | `cca-check-domain` | `check_domain.our_ips` (split on `,`, trimmed) |
-| `CCA_HOSTING_MARKER` | `cca-check-domain` | `check_domain.hosting_marker` |
-| `CCA_APACHE_STATUS_CMD` | `cca-diagnose-gather` | dropped: `cca-diagnose-gather` is not ported (doc-1 inventory) |
-| `CCA_MONGODB_STATUS_CMD` | `cca-diagnose-gather` | dropped: `cca-diagnose-gather` is not ported (doc-1 inventory) |
-| `CCA_NET_IFACE_PREFIXES` (`a\|b` regex) | `cca-server-info` | `server_info.net_iface_prefixes` (split on `\|`) |
-| `CCA_LOGGING` | shown by `cca-tmux-cli --doctor` only | dropped: never controlled logging; presence of `[run.log]` does |
-| log dir `logs/` (hard-coded, logging when it exists) | `cca-tmux-cli`, `cca-run-on-server` | `run.log.dir`; **intentional change**: logging is explicit, not triggered by the directory |
-| `ADMIN_NAME` | `cca-tmux-cli`, `cca-run-on-server`, `cca-doctor` | `run.log.operator` |
-| `CCA_AGENT` | `tmux_cli_python` audit | dropped with `tmux_cli_python` (phase 1) |
-| `CCA_TMUX_TOKF=1` | `cca-tmux-cli` | `run.tokf = true` |
-| `CCA_WATCHLIST`, `watchlist.json` | `cca-watchlist` | dropped: the register is the project's Backlog.md (doc-1 "Watchlist on Backlog.md"); TASK-4 converts the items |
-| `TMUX_SESSION_NAME` (`.cca-tmux-cli`/`.cca-env`) | `cca-tmux-cli` | `run.tmux.session` |
-| `TMUX_SESSION_SERVERS` (space list) | `cca-tmux-cli`, `cca-run-on-server`, `cca-doctor` | one `[servers.<name>]` table per entry, same order |
-| `RUN_ON_CMD` (`cca-tmux-cli`\|`ssh`) | `cca-run-on-server` | `run.transport` (`"tmux"`\|`"ssh"`) |
-| `.cca-tmux-cli`, `.cca-env`, `.env` files | `lib/cca-env.sh`, `cca-tmux-cli` | dropped as config sources; their keys map by the rows above |
-| `.tmux-cli-python.yaml` | `tmux_cli_python` | dropped with `tmux_cli_python` |
-| `.netdata-servers` `NAME HOST[:PORT] [SSH_HOST]` | `netdata-cli` (doc-4) | `[servers.NAME]`: `netdata_host`, `netdata_port` (default 19999), `ssh = SSH_HOST`; no third column → `netdata_transport = "direct"` |
-| fping cache `server-logs/fping/` (CWD-relative) | `netdata-cli fping --history` | `netdata.fping_cache_dir` (config dir relative) |
-| consumer-specific default `--target` | `netdata-cli fping` | `netdata.fping_target` |
-| cloudflare export dir `tmp/cloudflare/` (script-relative root) | `cloudflare-cli` (doc-5) | `cloudflare.export_dir` (config dir relative) |
-| `CLOUDFLARE_API_TOKEN` (env, `.cca-env[.local]`, `.env[.local]`) | `cloudflare-cli` | sops `cloudflare` file, key `api_token` |
-| Cloudflare SDK ambient configuration (env base URL and other SDK defaults) | `cloudflare` SDK in `cloudflare-cli` | dropped; `cloudflare.api_base` is the only explicit replacement, all ambient SDK fallbacks disabled |
-| `secrets/curl.secret.yaml` (CWD-relative) | `cca-curl-secret`, `cca-hetrix` | `secrets.curl` (config dir relative) |
-| `HETRIX_API_KEY` (comment only, never read) | – | dropped; hetrix uses a `curl` credential |
-
-Not config (doc-1): `CCA_DENYLIST` (bash repo check), `CCA_ENV_FILES`, `CCA_ROOT`,
-`CCA_SKILLS`.
+Every legacy variable and file is mapped to its v1 key, or marked dropped, in doc-6
+"Legacy inputs".
 
 ## Secrets file shapes
 
