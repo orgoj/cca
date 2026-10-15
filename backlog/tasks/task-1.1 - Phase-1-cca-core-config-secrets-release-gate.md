@@ -4,9 +4,10 @@ title: 'Phase 1: cca core, config, secrets, release gate'
 status: To Do
 assignee: []
 created_date: '2026-10-15 07:13'
-updated_date: '2026-10-15 07:17'
+updated_date: '2026-10-15 07:32'
 labels: []
-dependencies: []
+dependencies:
+  - TASK-1.6
 parent_task_id: TASK-1
 priority: high
 type: feature
@@ -16,19 +17,20 @@ ordinal: 2000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Every later port depends on a stable config contract, one secrets path and a release/install flow that never affects running agents. See doc-1 sections Config, Secrets, Layout, Release gate.
+Every later port depends on a stable config contract (doc-2), one secrets path and a release/install flow that never affects running agents. See doc-1 sections Config, Secrets, Layout, Release gate.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Root pyproject.toml defines project cca with entry point cca; tmux-cli-python entry point removed
-- [ ] #2 .cca.toml schema v1 covers every configurable value of all inventoried tools; unknown keys and malformed files exit 2
-- [ ] #3 Discovery tests pass for exact CWD, descendant, nested shadow, none found, malformed nearest, filesystem root
-- [ ] #4 Secrets module decrypts via sops JSON and tests prove the secret never appears in child argv or output
-- [ ] #5 cca --version, cca config show, cca doctor and cca install skills work from a wheel install without a source checkout
-- [ ] #6 tests/run-all.sh runs pytest, ruff, uv build, wheel-content check and install smoke into a temporary tool dir
-- [ ] #7 Schema v1 includes every value listed in doc-1 Config inventory, checked by a test against the doc list
-- [ ] #8 README documents the verified uv tool install command and the release steps
+- [ ] #1 Root pyproject.toml defines project cca with entry point cca; tmux_cli_python with its deps and tests stays packaged and green, only its entry point is removed; uv.lock and ruff target updated
+- [ ] #2 Config loader implements doc-2: fixtures pass, higher schema_version exits 2, unknown keys warn, malformed nearest file exits 2
+- [ ] #3 Discovery tests pass for exact CWD, descendant, nested shadow, none found, malformed nearest, filesystem root and symlinked CWD (physical path)
+- [ ] #4 Secrets module decrypts via sops JSON; tests prove the secret is absent from CCA-generated argv, logs and diagnostics
+- [ ] #5 cca --version, config show, doctor [--fix] and install skills [NAME] work from a wheel install without a source checkout
+- [ ] #6 install skills replaces only links it owns, never overwrites or follows other skills, is idempotent and links stay valid after reinstall; fails clearly without symlink support
+- [ ] #7 tests/run-all.sh runs pytest, ruff, uv build, wheel/sdist content check and install smoke into a temporary tool dir
+- [ ] #8 Release step fails closed without the consumer denylist; automated gate uses a repository fixture denylist
+- [ ] #9 README documents the verified uv tool install command and the release steps (pre-tag and post-tag checks)
 <!-- AC:END -->
 
 ## Implementation Notes
