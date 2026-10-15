@@ -5,6 +5,7 @@ allow bash tests/test-shared-clean.sh
 allow cca *
 allow git *
 allow pytest *
+allow python -m pytest *
 allow python3 -m pytest -q tests/* *
 allow rm tmp/*+
 allow ruff *
