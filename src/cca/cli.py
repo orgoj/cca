@@ -13,6 +13,7 @@ from cca.output import CcaError, error
 # add_arguments(parser) and run(args) -> int; a module with RAW_ARGS = True gets the
 # arguments after its name unparsed in args.raw (wrappers of another tool's options)
 COMMANDS: dict[str, tuple[str, str]] = {
+    "asn": ("asn", "routing, owner, country, type and PTR of IP addresses"),
     "check-domain": ("check_domain", "check whether a domain points to our hosting"),
     "cloudflare": ("cloudflare", "Cloudflare zones: DNS records, WAF rules, audit, exports"),
     "config": ("config", "show the project .cca.toml"),

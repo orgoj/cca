@@ -135,7 +135,7 @@ decided in TASK-1.4 from the legacy behavior.
 
 | Key | Type | Default | Rule |
 |---|---|---|---|
-| `curl` | path | `"secrets/curl.secret.yaml"` | Used by `cca curl` and by every command that calls an HTTP API through it (`hetrix`). |
+| `curl` | path | `"secrets/curl.secret.yaml"` | Used by `cca curl` and by every command that calls an HTTP API through it (`hetrix`, `asn`). |
 | `cloudflare` | path | `"secrets/cloudflare.secret.yaml"` | Used by `cca cloudflare`. |
 
 Paths resolve from the config dir. The file is opened only by a command that needs the
@@ -252,7 +252,7 @@ sops files, any input format sops supports; `cca` reads them only through
 errors name the file and the key path, never a value. Unknown keys: warning (key path
 only), ignored.
 
-### `secrets.curl` — `cca curl`, `cca hetrix`
+### `secrets.curl` — `cca curl`, `cca hetrix`, `cca asn`
 
 ```yaml
 credentials:
@@ -287,6 +287,9 @@ credentials:
   then `example_com`) is replaced by the origin match. Credential ids are not secret;
   `cca curl --help` may list them only from sops metadata without decrypting values.
 - `cca hetrix` uses the credential matched for `https://api.hetrixtools.com`.
+- `cca asn` uses the credential matched for `https://api.ipapi.is` when one exists
+  (optional; `bearer` = ipapi.is API key, sent only in the POST body). No secrets file
+  or no matching credential → keyless lookup with a warning; more than one → exit 2.
 
 ### `secrets.cloudflare` — `cca cloudflare`
 
