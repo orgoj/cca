@@ -36,7 +36,7 @@ source checkout must be fully usable (incl. skills) at every release.
   without symlink support `cca install skills` fails with a clear error.
 - `cca-install` has no successor (uv installs `cca`; skills via `cca install skills`).
 - `cca-validate-args` is not ported (no consumers; command validation is Dippy's job).
-- `cca-check-shared-clean` stays bash, repo-only gate.
+- `cca-check-shared-clean` stays bash, repo-only check.
 - `tmux_cli_python/` (unused experiment: package, entry point, tests, YAML config, its
   hooks/audit features) is removed in phase 1; `cca run` does not inherit its
   hook/audit pipeline. It stays available in git history.
@@ -71,7 +71,7 @@ source checkout must be fully usable (incl. skills) at every release.
   `CCA_LOGGING`, `ADMIN_NAME`, `CCA_AGENT`, `CCA_TMUX_TOKF`, `CCA_WATCHLIST`,
   `.cca-tmux-cli` settings (session, servers),
   `.netdata-servers`, cloudflare exports and fping cache paths, secrets paths. Not
-  config: `CCA_DENYLIST` (bash repo gate), `CCA_ENV_FILES`, `CCA_ROOT`, `CCA_SKILLS`.
+  config: `CCA_DENYLIST` (bash repo check), `CCA_ENV_FILES`, `CCA_ROOT`, `CCA_SKILLS`.
 - `[servers.<name>]` is the shared server registry (ssh target, netdata address, ...).
 - `.cca.toml` may define commands CCA executes (e.g. status commands), so it is trusted
   project code, like a Makefile.
@@ -171,7 +171,7 @@ tests/                    # bash tests stay; pytest for cca
 | `watchlist` | `cca-watchlist` |
 | `run` | `cca-tmux-cli`, `cca-run-on-server`, `cca-run-all` |
 | not ported | `cca-validate-args`, `cca-install bin`, `tmux_cli_python` (removed in phase 1) |
-| stays bash | `cca-check-shared-clean` (repo gate) |
+| stays bash | `cca-check-shared-clean` (repo check) |
 
 Each port has a compatibility matrix (flags, defaults, output paths, exit codes,
 intentional changes); every row tested; external tools checked lazily; texts English
@@ -179,19 +179,19 @@ with `server1`/`example.com`/`203.0.113.x`. The three tools from the private Ans
 project are first captured in public-safe behavior specs in `backlog/docs` (TASK-1.9),
 so their ports and doc-2 can be done from a clone.
 
-## Release gate and install
+## Release check and install
 
 - `tests/run-all.sh` (stays bash) adds pytest + ruff, `uv build`, wheel/sdist content
   check (skills present, no denylisted strings), install smoke into temporary
   `UV_TOOL_DIR`/`UV_TOOL_BIN_DIR` running `cca --version` and `cca install skills`.
-- Leak gate: automated tests use a repository fixture denylist; the release step
+- Leak check: automated tests use a repository fixture denylist; the release step
   requires the consumer denylist and fails closed if it is unavailable.
-- Pre-tag gate: version not yet tagged. Post-tag check: tag equals package version.
+- Pre-tag check: version not yet tagged. Post-tag check: tag equals package version.
   Tags are never moved.
 - Install: `uv tool install --reinstall "cca @ git+file://<clone>@vX.Y.Z"` (syntax
   verified in phase 1, recorded in README). Version from `importlib.metadata`.
 - One subcommand (or one tightly coupled family) per release. A port task closes when
-  release-ready (pre-tag gate green, fixture denylist); tagging, consumer-denylist check,
+  release-ready (pre-tag check green, fixture denylist); tagging, consumer-denylist check,
   post-tag check and install are tracked on the phase parent task (phases 2, 3) or on a
   dedicated release task (core + doctor --legacy: TASK-1.10; cca run: TASK-1.11).
 
@@ -219,7 +219,7 @@ Old scripts and skills are removed only when every consumer reports none.
 0. Public-safe behavior specs of the three Ansible-project tools (TASK-1.9), then
    doc-2: normative `.cca.toml` + secrets schema v1 with fixtures.
 1. Core: skeleton, config + secrets modules, `config show`, `doctor`, `install skills`,
-   release gate, install smoke.
+   release check, install smoke.
 2. Ports, one task and release each: open-ports, netdata, cloudflare.
 3. Ports, one task and release each: curl, hetrix, check-domain, server-*, asn,
    diagnose, watchlist.

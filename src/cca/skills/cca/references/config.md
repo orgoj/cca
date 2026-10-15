@@ -8,7 +8,7 @@ validated document with every default filled in. It never decrypts secrets.
   explicit file instead.
 - Path values in the file are relative to the file's directory.
 - Unknown keys are reported as warnings on stderr and ignored; an invalid value or a
-  `schema_version` newer than the installed cca exits 2 naming the key.
+  `schema_version` newer than the installed `cca` exits 2 naming the key.
 
 Minimal file:
 

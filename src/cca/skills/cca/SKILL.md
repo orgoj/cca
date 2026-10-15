@@ -1,6 +1,6 @@
 ---
 name: cca
-description: The `cca` command (Cyber-CLI Admin) for server administration in a project with a .cca.toml. Use before running any cca subcommand, when setting up or checking a project's cca configuration, or when installing cca skills.
+description: The `cca` command (Cyber-CLI Admin) for server administration in a project with a .cca.toml. Use before running any `cca` subcommand, when setting up or checking a project's .cca.toml, or when installing skills with `cca install skills`.
 ---
 
 # cca
@@ -14,10 +14,10 @@ what.
 |---|---|---|
 | `cca config show` | see which `.cca.toml` is used and its values with defaults | [config](references/config.md) |
 | `cca doctor` | check that the project is ready for cca | [doctor](references/doctor.md) |
-| `cca install skills` | link the cca skills into an agent skill directory | [install](references/install.md) |
+| `cca install skills` | link the shipped skills into an agent skill directory | [install](references/install.md) |
 
 Rules:
 
-- Run cca from the project directory (or below it); never pass secrets on the command line.
+- Run `cca` from the project directory (or below it); never pass secrets on the command line.
 - Exit code 2 means a usage or configuration error; the message names the file and key.
 - `cca --version` prints the installed release.

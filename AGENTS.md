@@ -21,6 +21,10 @@ Run test scripts directly (they are executable), never as `bash tests/...`; new 
 | `./bin/cca-install bin ~/bin` | Symlink bin scripts to ~/bin |
 | `./bin/cca-install skills` | Symlink skills to .claude/skills |
 | `tests/run-all.sh` | Run everything: shellcheck, bash tests, ruff, pytest |
+| `tests/test-legacy-baseline.sh` | bin/, lib/, root skills/ unchanged vs tag `legacy-baseline` (incl. untracked files) |
+| `tests/test-leak-scan.sh` | backlog/ and src/ against the fixture denylist; release check fails closed |
+| `tests/test-package.sh [DENYLIST]` | uv build, wheel/sdist content, install smoke into a temp uv tool dir, skill command scan |
+| `tests/release-check.sh pre-tag\|post-tag` | Release check with the consumer denylist (`CCA_DENYLIST`), see README "Release" |
 | `tests/test-run-on-server.sh` | cca-run-on-server config loading, logging, --create-file (fake ssh/tmux) |
 | `tests/test-curl-secret.sh` | cca-curl-secret with fake sops/curl |
 | `tests/test-command-safety.sh` | Test command safety validation |
@@ -41,9 +45,10 @@ Run test scripts directly (they are executable), never as `bash tests/...`; new 
   `CCA_HOSTING_MARKER`, `CCA_APACHE_STATUS_CMD`, `CCA_NET_IFACE_PREFIXES`). Examples in docs and
   `--help` use `server1`, `server2`, `example.com`. This applies to tests too — a test fixture is
   not an exception.
-  Guard: `bash tests/test-shared-clean.sh` (wraps `cca-check-shared-clean`) scans this repo against a
-  denylist the PROJECT supplies via `$CCA_DENYLIST` or its cwd. **The denylist never lives here** —
-  storing it would leak the very names it guards.
+  Guard: `tests/test-shared-clean.sh` (wraps `cca-check-shared-clean`, plus `tests/leak_scan.py`
+  for backlog/ and src/) scans this repo against a denylist the PROJECT supplies via
+  `$CCA_DENYLIST` or its cwd. **The project denylist never lives here** — storing it would leak
+  the very names it guards; `tests/fixtures/leak-denylist.txt` only exercises the mechanism.
 - naming: new bin scripts and skills use `cca-` prefix; never rename a shipped script or skill without explicit approval (project docs and reports reference them, e.g. `asn-wrap` stays unprefixed)
 - naming: user's explicit choice overrides conventions (e.g., `commit` not `committing`)
 - project tracking: dependent projects are documented only in each project's own

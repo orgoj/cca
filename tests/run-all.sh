@@ -1,6 +1,7 @@
 #!/bin/bash
 
-# Run the whole CCA test suite: shellcheck, bash tests, ruff, pytest.
+# Run the whole CCA test suite: shellcheck, bash tests (incl. legacy baseline, leak scan,
+# package build + install smoke), ruff, pytest.
 # Usage: tests/run-all.sh   (exit 0 only when everything passes)
 
 set -u

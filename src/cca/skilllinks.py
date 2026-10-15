@@ -66,16 +66,17 @@ def write_manifest(target: Path, links: dict[str, str]) -> None:
     path = target / MANIFEST
     if path.is_symlink():
         raise CcaError(f"{path} is a symlink; refusing to write it")
-    # a fresh file created exclusively: never writes through a planted link
-    fd, tmp = tempfile.mkstemp(prefix=f"{MANIFEST}.", dir=target)
+    tmp = None
     try:
+        # a fresh file created exclusively: never writes through a planted link
+        fd, tmp = tempfile.mkstemp(prefix=f"{MANIFEST}.", dir=target)
         with os.fdopen(fd, "w") as f:
             json.dump({"version": 1, "links": dict(sorted(links.items()))}, f, indent=2)
         os.replace(tmp, path)
-    except BaseException:
-        if os.path.lexists(tmp):
+    except OSError as e:
+        if tmp is not None and os.path.lexists(tmp):
             os.unlink(tmp)
-        raise
+        raise CcaError(f"cannot write {path}: {e.strerror}") from None
 
 
 def owned(dest: Path, name: str, manifest: dict[str, str]) -> bool:
@@ -95,16 +96,20 @@ class Result:
     detail: str = ""
 
 
-def _symlink(source: Path, dest: Path) -> None:
-    """Create or atomically replace dest with a link to source (never follows dest)."""
+def _symlink(text: str, dest: Path) -> None:
+    """Create or atomically replace dest with a link to text (never follows dest)."""
     tmp = dest.parent / f".{dest.name}.cca-tmp-{os.getpid()}"
     try:
-        os.symlink(source, tmp, target_is_directory=True)
+        os.symlink(text, tmp, target_is_directory=True)
     except (OSError, NotImplementedError) as e:
         if isinstance(e, NotImplementedError) or getattr(e, "winerror", None) == 1314:
             raise CcaError("cannot create symlinks on this system; skills need symlinks") from None
         raise CcaError(f"cannot create link {dest}: {e.strerror}") from None
-    os.replace(tmp, dest)
+    try:
+        os.replace(tmp, dest)
+    except OSError as e:
+        os.unlink(tmp)
+        raise CcaError(f"cannot create link {dest}: {e.strerror}") from None
 
 
 def install(target: Path, names: list[str]) -> list[Result]:
@@ -112,22 +117,33 @@ def install(target: Path, names: list[str]) -> list[Result]:
     manifest = read_manifest(target)
     results = []
     for name in names:
-        source = root / name
+        source = str(root / name)
         dest = target / name
+        previous = None  # link text to restore when the manifest cannot be written
         if not os.path.lexists(dest):
             _symlink(source, dest)
             status = "linked"
-        elif dest.is_symlink() and os.readlink(dest) == str(source):
+        elif dest.is_symlink() and os.readlink(dest) == source:
             status = "unchanged"
         elif owned(dest, name, manifest):
+            previous = os.readlink(dest)
             _symlink(source, dest)
             status = "replaced"
         else:
             kind = "link" if dest.is_symlink() else "directory" if dest.is_dir() else "file"
             results.append(Result(name, "skipped", f"{dest} is a {kind} not owned by cca"))
             continue
-        manifest[name] = str(source)
-        write_manifest(target, manifest)
+        recorded = dict(manifest, **{name: source})
+        try:
+            write_manifest(target, recorded)
+        except CcaError:
+            # never leave a changed link without its record
+            if status == "linked":
+                dest.unlink()
+            elif status == "replaced":
+                _symlink(previous, dest)
+            raise
+        manifest = recorded
         results.append(Result(name, status))
     return results
 

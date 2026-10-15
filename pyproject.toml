@@ -26,6 +26,9 @@ dev = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/cca"]
 
+[tool.hatch.build.targets.sdist]
+only-include = ["src/cca", "README.md", "pyproject.toml"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]

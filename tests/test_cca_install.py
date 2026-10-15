@@ -157,6 +157,26 @@ def test_manifest_write_never_follows_planted_temp_links(target, tmp_path):
     assert manifest(target) == {"cca": str(skilllinks.package_dir() / "cca")}
 
 
+def no_space(*args, **kwargs):
+    raise OSError(28, "No space left on device")
+
+
+def test_manifest_failure_removes_new_link(target, monkeypatch, capsys):
+    monkeypatch.setattr(skilllinks.tempfile, "mkstemp", no_space)
+    assert main(["install", "skills"]) == 2
+    assert "cannot write" in capsys.readouterr().err
+    assert os.listdir(target) == []
+
+
+def test_manifest_failure_restores_replaced_link(target, tmp_path, monkeypatch, capsys):
+    old = other_install(tmp_path)
+    (target / "cca").symlink_to(old / "cca")
+    monkeypatch.setattr(skilllinks.tempfile, "mkstemp", no_space)
+    assert main(["install", "skills"]) == 2
+    assert os.readlink(target / "cca") == str(old / "cca")
+    assert os.listdir(target) == ["cca"]
+
+
 def test_no_symlink_support(target, monkeypatch, capsys):
     def unsupported(*args, **kwargs):
         raise NotImplementedError

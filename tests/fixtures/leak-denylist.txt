@@ -1,0 +1,6 @@
+# Fixture denylist for the automated leak checks in tests/run-all.sh.
+# The consumer project's real denylist never lives in this repo; release-check.sh
+# requires it via $CCA_DENYLIST.
+\bleak-canary-[0-9]+\b
+\binternal\.example\.invalid\b
+\bcorp-secret-project\b

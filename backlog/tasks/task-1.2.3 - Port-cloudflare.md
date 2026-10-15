@@ -4,7 +4,7 @@ title: Port cloudflare
 status: To Do
 assignee: []
 created_date: '2026-10-15 07:32'
-updated_date: '2026-10-15 09:25'
+updated_date: '2026-10-15 10:46'
 labels: []
 dependencies:
   - TASK-1.1
@@ -28,6 +28,6 @@ Port of cloudflare-cli (cloudflare SDK; DNS, WAF/rulesets, zone audit, exports) 
 - [ ] #1 Token only from the configured sops file; SDK ambient credential/endpoint fallback disabled; test with a hostile CLOUDFLARE_API_TOKEN in env and missing project secret fails closed
 - [ ] #2 Write operations default to plan and change nothing without --apply
 - [ ] #3 Exports go to the doc-2 configured path
-- [ ] #4 Release-ready: full pre-tag gate green incl. fixture denylist
+- [ ] #4 Release-ready: full pre-tag check green incl. fixture denylist
 - [ ] #5 Compatibility matrix derived from the TASK-1.9 spec; every row tested with an injected fake client
 <!-- AC:END -->

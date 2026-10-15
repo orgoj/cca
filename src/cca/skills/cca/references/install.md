@@ -1,7 +1,7 @@
 # cca install skills
 
 `cca install skills [NAME] [--target DIR]` symlinks the skills shipped with the installed
-cca into `DIR` (default `.claude/skills` in the current directory; it must exist). NAME
+`cca` into `DIR` (default `.claude/skills` in the current directory; it must exist). NAME
 limits it to one skill.
 
 - Idempotent: links that already point to the installed skill are left as they are.

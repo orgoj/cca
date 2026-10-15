@@ -4,7 +4,7 @@ title: Port open-ports
 status: To Do
 assignee: []
 created_date: '2026-10-15 07:32'
-updated_date: '2026-10-15 09:25'
+updated_date: '2026-10-15 10:46'
 labels: []
 dependencies:
   - TASK-1.1
@@ -26,6 +26,6 @@ Port of check-open-ports (nmap/nc/telnet/curl methods, optional delegate host) f
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Targets and delegate hosts come from [servers] or validated CLI args; only the chosen method's executable is required
-- [ ] #2 Release-ready: full pre-tag gate green incl. fixture denylist
+- [ ] #2 Release-ready: full pre-tag check green incl. fixture denylist
 - [ ] #3 Compatibility matrix derived from the TASK-1.9 spec; every row tested
 <!-- AC:END -->

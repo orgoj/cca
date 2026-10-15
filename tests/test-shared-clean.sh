@@ -35,7 +35,14 @@ if [ -z "$CCA_DENYLIST" ] && [ ! -f "cca-shared-denylist.txt" ] && [ ! -f ".cca-
     exit 0
 fi
 
-if "$REPO_ROOT/bin/cca-check-shared-clean" "$REPO_ROOT"; then
+DENYLIST=${CCA_DENYLIST:-}
+[ -n "$DENYLIST" ] || { [ -f cca-shared-denylist.txt ] && DENYLIST=cca-shared-denylist.txt; }
+[ -n "$DENYLIST" ] || DENYLIST=.cca-shared-denylist.txt
+
+# bin/cca-check-shared-clean stays unchanged until TASK-2; backlog/ and src/ are
+# scanned by tests/leak_scan.py with the same denylist
+if "$REPO_ROOT/bin/cca-check-shared-clean" "$REPO_ROOT" \
+    && python3 -I "$REPO_ROOT/tests/leak_scan.py" "$DENYLIST" --repo "$REPO_ROOT" backlog src; then
     echo "All tests passed!"
     exit 0
 else
