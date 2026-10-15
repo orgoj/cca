@@ -1,0 +1,6 @@
+# expect: servers.server1.netdata_port
+schema_version = 1
+
+[servers.server1]
+netdata_host = "203.0.113.10"
+netdata_port = 70000

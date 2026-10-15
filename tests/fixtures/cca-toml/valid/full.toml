@@ -1,0 +1,55 @@
+# Every v1 table and key with non-default values.
+schema_version = 1
+
+[servers.server1]
+ssh = "admin@server1.example.com"
+netdata_host = "203.0.113.10"
+netdata_port = 19998
+netdata_transport = "ssh"
+
+[servers.server2]
+netdata_host = "2001:db8::2"
+netdata_transport = "direct"
+
+[servers.server3]
+
+[run]
+transport = "ssh"
+
+[run.tmux]
+session = "cca-example"
+tokf = true
+
+[run.log]
+dir = "logs"
+operator = "admin1"
+
+[secrets]
+curl = "secrets/curl.secret.yaml"
+cloudflare = "/srv/example/secrets/cloudflare.secret.yaml"
+
+[netdata]
+fping_cache_dir = "server-logs/fping"
+fping_target = "gateway1"
+
+[cloudflare]
+export_dir = "tmp/cloudflare"
+api_base = "https://api.cloudflare.com/client/v4"
+
+[check_domain]
+our_ips = ["203.0.113.10", "203.0.113.11", "2001:db8::10"]
+hosting_marker = "/.example.hosting.info.txt"
+
+[server_info]
+net_iface_prefixes = ["en", "eth", "wg"]
+
+[diagnose]
+apache_status_cmd = "sudo apache2ctl"
+mongodb_status_cmd = "mongosh --quiet --eval 'db.serverStatus().ok'"
+
+[watchlist]
+file = "cca/watchlist.json"
+
+[legacy]
+include = ["docs/**/*.md", "scripts/*"]
+allow = ["docs/migration.md"]

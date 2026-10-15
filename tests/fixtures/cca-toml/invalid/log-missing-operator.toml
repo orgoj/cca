@@ -1,0 +1,5 @@
+# expect: run.log.operator
+schema_version = 1
+
+[run.log]
+dir = "logs"

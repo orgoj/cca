@@ -1,0 +1,3 @@
+# expect: servers
+schema_version = 1
+servers = ["server1", "server2"]

@@ -1,0 +1,9 @@
+# warn: run.validator, servers.server1.port, extra
+schema_version = 1
+extra = "x"
+
+[servers.server1]
+port = 22
+
+[run]
+validator = "dippy"

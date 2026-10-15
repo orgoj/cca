@@ -1,0 +1,7 @@
+{
+  "credentials": {
+    "example_api": {
+      "bearer": "dummy-token"
+    }
+  }
+}

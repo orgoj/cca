@@ -1,0 +1,12 @@
+{
+  "credentials": {
+    "example_api": {
+      "origins": ["https://api.example.com"],
+      "bearer": "dummy-token-rw"
+    },
+    "example_api_readonly": {
+      "origins": ["https://api.example.com:443"],
+      "bearer": "dummy-token-ro"
+    }
+  }
+}

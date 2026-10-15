@@ -4,7 +4,7 @@ title: 'cca doctor --legacy: find old command usage in a project'
 status: To Do
 assignee: []
 created_date: '2026-10-15 07:35'
-updated_date: '2026-10-15 09:07'
+updated_date: '2026-10-15 09:51'
 labels: []
 dependencies:
   - TASK-1.1
@@ -28,4 +28,5 @@ Old cca-* commands are removed once consumers migrate. On each deployment the co
 - [ ] #4 README deployment steps require running it in every consumer project after installing a release
 - [ ] #5 Always probes the known legacy paths (.cca-env, .env, .cca-tmux-cli, .tmux-cli-python.yaml, .netdata-servers, default agent-instruction files) in the project root and nested repos regardless of git tracking; additionally scans git-tracked files plus [legacy] include, skipping binaries, symlinks and the doc-2 exclusion list; fixtures include ignored/untracked legacy files
 - [ ] #6 Checks symlink metadata (without following for content) in known skill install dirs (.claude/skills, .agents/skills and other agent skill dirs listed in doc-2) and in PATH dirs, and fails on any link resolving into the old CCA bin/ or root skills/ tree; fixture with an untracked/gitignored .claude/skills link
+- [ ] #7 Tests cover doc-2 Containment: linked directory inside an include pattern (not descended), linked directory cycle, linked leaf file, linked ancestor of a known-path probe; no traversal through any link and none of their targets is read
 <!-- AC:END -->

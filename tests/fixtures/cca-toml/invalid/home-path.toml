@@ -1,0 +1,5 @@
+# expect: secrets.curl
+schema_version = 1
+
+[secrets]
+curl = "~/secrets/curl.secret.yaml"

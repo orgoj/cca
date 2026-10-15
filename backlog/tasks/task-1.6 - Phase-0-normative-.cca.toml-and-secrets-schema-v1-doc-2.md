@@ -1,10 +1,11 @@
 ---
 id: TASK-1.6
 title: 'Phase 0: normative .cca.toml and secrets schema v1 (doc-2)'
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@cca_dev'
 created_date: '2026-10-15 07:32'
-updated_date: '2026-10-15 09:25'
+updated_date: '2026-10-15 09:57'
 labels: []
 dependencies:
   - TASK-1.9
@@ -26,11 +27,17 @@ The core config API is public contract; later ports must not change it silently.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 backlog/docs doc-2 defines every table, key, type, default and validation rule of schema v1
-- [ ] #2 doc-2 maps every legacy input listed in doc-1 Config to a .cca.toml key or marks it intentionally dropped
-- [ ] #3 doc-2 defines the sops file shape for each secret-using command, incl. curl allowed origins and cloudflare api_token
-- [ ] #4 Valid and invalid TOML fixtures for schema v1 exist under tests/fixtures/ for the core tests
-- [ ] #5 doc-2 carries the cca curl request-policy fields (allowed origins with scheme, host, port) from doc-1
-- [ ] #6 doc-2 defines the [legacy] table (include, allow) and the default exclusion list for cca doctor --legacy
-- [ ] #7 doc-2 lists the agent skill install dirs probed by cca doctor --legacy
+- [x] #1 backlog/docs doc-2 defines every table, key, type, default and validation rule of schema v1
+- [x] #2 doc-2 maps every legacy input listed in doc-1 Config to a .cca.toml key or marks it intentionally dropped
+- [x] #3 doc-2 defines the sops file shape for each secret-using command, incl. curl allowed origins and cloudflare api_token
+- [x] #4 Valid and invalid TOML fixtures for schema v1 exist under tests/fixtures/ for the core tests
+- [x] #5 doc-2 carries the cca curl request-policy fields (allowed origins with scheme, host, port) from doc-1
+- [x] #6 doc-2 defines the [legacy] table (include, allow) and the default exclusion list for cca doctor --legacy
+- [x] #7 doc-2 lists the agent skill install dirs probed by cca doctor --legacy
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+doc-2 now defines .cca.toml schema v1 (general/URL/file-name rules, every table and key with type, default, validation; load vs use time), maps every legacy input from doc-1 and the bash sources, defines the curl (origins, auth, selection by origin) and cloudflare sops shapes, the [legacy] table with exclusions, containment, known paths and skill dirs. User decisions: ssh defaults to server name, explicit [run.log], mongodb status runs on the server, configurable [secrets] paths. Fixtures: tests/fixtures/cca-toml/{valid,invalid} and tests/fixtures/sops-shapes (all parsed; only syntax-error.toml fails TOML by design). Code and security reviews closed with no findings; containment regression tests added as TASK-1.8 AC #7.
+<!-- SECTION:FINAL_SUMMARY:END -->

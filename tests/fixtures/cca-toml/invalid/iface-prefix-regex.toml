@@ -1,0 +1,5 @@
+# expect: server_info.net_iface_prefixes
+schema_version = 1
+
+[server_info]
+net_iface_prefixes = ["en|eth"]

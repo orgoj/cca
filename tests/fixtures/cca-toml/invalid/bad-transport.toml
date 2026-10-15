@@ -1,0 +1,5 @@
+# expect: run.transport
+schema_version = 1
+
+[run]
+transport = "cca-tmux-cli"

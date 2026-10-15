@@ -1,0 +1,8 @@
+{
+  "credentials": {
+    "Example-API": {
+      "origins": ["https://api.example.com"],
+      "bearer": "dummy-token"
+    }
+  }
+}

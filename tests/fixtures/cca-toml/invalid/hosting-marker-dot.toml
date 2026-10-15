@@ -1,0 +1,5 @@
+# expect: check_domain.hosting_marker
+schema_version = 1
+
+[check_domain]
+hosting_marker = "/a/./b"

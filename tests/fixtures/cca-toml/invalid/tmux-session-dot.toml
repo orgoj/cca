@@ -1,0 +1,5 @@
+# expect: run.tmux.session
+schema_version = 1
+
+[run.tmux]
+session = "cca.example"

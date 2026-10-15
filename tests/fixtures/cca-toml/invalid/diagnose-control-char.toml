@@ -1,0 +1,5 @@
+# expect: diagnose.apache_status_cmd
+schema_version = 1
+
+[diagnose]
+apache_status_cmd = "apache2ctl\nreboot"

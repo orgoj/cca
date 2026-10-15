@@ -1,0 +1,5 @@
+# expect: servers.server1.ssh
+schema_version = 1
+
+[servers.server1]
+ssh = "-oProxyCommand=touch /tmp/x"

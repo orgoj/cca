@@ -1,0 +1,10 @@
+{
+  "credentials": {
+    "example_api": {
+      "origins": ["https://api.example.com"],
+      "bearer": "dummy-token",
+      "username": "admin1",
+      "password": "dummy-password"
+    }
+  }
+}

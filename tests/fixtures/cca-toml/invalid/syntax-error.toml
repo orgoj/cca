@@ -1,0 +1,3 @@
+# expect: syntax
+schema_version = 1
+[servers.server1

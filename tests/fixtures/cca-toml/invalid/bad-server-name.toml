@@ -1,0 +1,4 @@
+# expect: servers.-server1
+schema_version = 1
+
+[servers.-server1]

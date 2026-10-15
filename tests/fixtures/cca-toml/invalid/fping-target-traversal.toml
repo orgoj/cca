@@ -1,0 +1,5 @@
+# expect: netdata.fping_target
+schema_version = 1
+
+[netdata]
+fping_target = "../../../etc/x"

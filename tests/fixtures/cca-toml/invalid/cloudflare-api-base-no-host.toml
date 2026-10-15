@@ -1,0 +1,5 @@
+# expect: cloudflare.api_base
+schema_version = 1
+
+[cloudflare]
+api_base = "https:///client/v4"

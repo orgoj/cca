@@ -1,0 +1,18 @@
+{
+  "credentials": {
+    "example_api": {
+      "origins": ["https://api.example.com", "https://API.example.com.:8443/"],
+      "bearer": "dummy-token-1"
+    },
+    "example_panel": {
+      "origins": ["https://panel.example.com"],
+      "username": "admin1",
+      "password": "dummy-password",
+      "csrf": true
+    },
+    "example_ip": {
+      "origins": ["https://203.0.113.10:9443", "https://[2001:db8::10]"],
+      "bearer": "dummy-token-2"
+    }
+  }
+}
