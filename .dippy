@@ -6,3 +6,5 @@ allow git *
 allow python3 -m pytest -q tests/* *
 allow tests/run-all.sh *
 allow tests/test-*.sh *
+
+allow hcom *
