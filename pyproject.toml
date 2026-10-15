@@ -14,6 +14,7 @@ authors = [
 ]
 dependencies = [
     "cloudflare>=5.9.0,<6",
+    "dnspython>=2.7,<3",
 ]
 
 [project.scripts]

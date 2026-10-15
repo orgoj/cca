@@ -159,7 +159,7 @@ secret (doc-1 "Secrets").
 
 | Key | Type | Default | Rule |
 |---|---|---|---|
-| `our_ips` | array of strings | `[]` | Each an IPv4 or IPv6 address (`ipaddress.ip_address`). Empty → the command warns that ownership cannot be verified (legacy behavior). |
+| `our_ips` | array of strings | `[]` | Each an IPv4 or IPv6 address (`ipaddress.ip_address`). Empty → the command warns that ownership cannot be verified. |
 | `hosting_marker` | string | – | URL path of the hosting marker file. One leading `/` is stripped; the rest must match `^[A-Za-z0-9._~-]+(/[A-Za-z0-9._~-]+)*$` and contain no `.` or `..` segment. Absent → marker check reports "not configured". |
 
 ## `[server_info]`
