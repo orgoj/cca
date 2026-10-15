@@ -184,55 +184,36 @@ quoting rules as `cca run`). `.cca.toml` is trusted project code (doc-1).
 |---|---|---|---|
 | `file` | path | see rule | Absent → first existing of `cca/watchlist.json`, `watchlist.json` (config dir); none exists → `cca/watchlist.json` when the `cca/` directory exists, else `watchlist.json`. |
 
-## `[legacy]` — `cca doctor --legacy`
+## Old CCA links — `cca doctor`
 
-| Key | Type | Default | Rule |
-|---|---|---|---|
-| `include` | array of strings | `[]` | Extra files to scan besides git-tracked files. |
-| `allow` | array of strings | `[]` | Files whose findings are reported as allowed (migration notes). |
+`cca doctor` (config required) checks that no old CCA script or skill is still
+installed. It reads link metadata only (`lstat`, `os.path.realpath`, `stat` of the two
+old-tree marker files), never opens a file, never descends into an entry and never
+lists a checked dir whose realpath (itself or a linked ancestor) lies in an old tree;
+such a dir under the old `bin/` or `skills/` is reported as one finding.
 
-Patterns are relative to the config dir and use `/`; absolute patterns and `..`
-segments are errors. Matching is glob-compatible: `*`, `?` and `[…]` match within one
-path segment (`fnmatch.fnmatchcase`, hidden names included), `**` as a whole segment
-matches zero or more segments. Files are enumerated by walking the config dir with
-`os.walk(followlinks=False)`; directory symlinks are pruned before descent and counted,
-so expansion never leaves the config dir and cannot loop. A line containing `cca-legacy-ok` is
-always reported as allowed.
+**Agent skill install dirs**: project-relative (config dir) `.claude/skills`,
+`.agents/skills`, `.codex/skills`, `.gemini/skills`, `.opencode/skills`,
+`.cursor/skills`, `.pi/skills`, `.github/skills`; user-level `~/.claude/skills`,
+`~/.agents/skills`, `~/.codex/skills`, `~/.gemini/skills`, `~/.config/opencode/skills`,
+`~/.cursor/skills`, `~/.pi/agent/skills`; and every directory in `PATH` (an empty entry
+is the CWD). Each dir itself and its direct symlink entries are checked. A checked dir
+or a linked entry is a finding when its `os.path.realpath` lies under `<R>/bin` or
+`<R>/skills` of an **old CCA tree** `R`: a directory containing both `lib/cca-env.sh`
+and `bin/cca-run-on-server`. This covers a dir reached through a linked ancestor and an
+old `bin/` placed directly in `PATH`; a checked dir elsewhere inside `R` is neither
+reported nor listed. Dangling links are resolved the same way (realpath of the link
+text). A checked dir that cannot be listed is reported at the dir's severity. Findings in project dirs are FAIL; in user-level and
+`PATH` dirs WARN, because those stay shared until every consumer project is converted.
 
-**Default exclusion list** (not scanned for content, even when tracked or included):
-`.git/**`, `**/node_modules/**`, `**/.venv/**`, `**/venv/**`, `**/__pycache__/**`,
-`logs/**`, `server-logs/**`, `backlog/completed/**`, `backlog/archive/**`, `*.log`.
-Binary files (NUL byte in the first 8 KiB), symlinks and files over 2 MiB are skipped
-and counted in the report. The exclusion list never applies to the probes below.
-
-**Containment** (every content read: tracked, included and known-path files): a file is
-read only when no component of its path below the config dir is a symlink (checked with
-`lstat` per component, so `docs/link/file.md` with `docs/link` a directory link is
-skipped) and its `os.path.realpath` lies under the config dir. A skipped link is counted in the report; a known legacy path that exists only through a
-link is reported as present but not read. Regression tests in TASK-1.8 cover a linked
-directory inside an include pattern, a linked leaf file, and a linked ancestor of a
-known-path probe (nested repo reached through a link).
-
-**Known legacy paths**, probed in the project root and every nested repo regardless of
-git tracking and exclusions: `.cca-env`, `.cca-env.local`, `.env`, `.env.local`,
-`.cca-tmux-cli`, `.tmux-cli-python.yaml`, `.netdata-servers`, and the agent instruction
-files `AGENTS.md`, `CLAUDE.md`, `CLAUDE.local.md`, `.claude/CLAUDE.md`, `GEMINI.md`,
-`.cursorrules`, `.github/copilot-instructions.md`.
-
-**Agent skill install dirs** probed for symlinks (link metadata only, never following a
-link to read content): project-relative `.claude/skills`, `.agents/skills`,
-`.codex/skills`, `.gemini/skills`, `.opencode/skills`, `.cursor/skills`, `.pi/skills`,
-`.github/skills`; user-level `~/.claude/skills`, `~/.agents/skills`, `~/.codex/skills`,
-`~/.gemini/skills`, `~/.config/opencode/skills`, `~/.cursor/skills`,
-`~/.pi/agent/skills`; and every directory in `PATH`. A link fails the check when its
-`os.path.realpath` lies under `<R>/bin` or `<R>/skills` of an **old CCA tree** `R`: a
-directory containing both `lib/cca-env.sh` and `bin/cca-run-on-server`. Dangling links
-are resolved the same way (realpath of the link text).
+Project scripts, docs and agent instructions are not scanned: consumer projects are
+converted once by hand (TASK-4) using the mapping below.
 
 ## Legacy input mapping
 
 Every input listed in doc-1 "Legacy inputs doc-2 must map", plus inputs found in the
-legacy sources. `cca doctor --legacy` reports each name in the left column.
+legacy sources. The one-time consumer conversion (TASK-4) replaces each name in the
+left column.
 
 | Legacy input | Read by | v1 |
 |---|---|---|

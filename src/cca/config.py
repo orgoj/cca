@@ -8,7 +8,7 @@ import re
 import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path, PureWindowsPath
+from pathlib import Path
 from typing import Any
 
 from cca import validate
@@ -136,18 +136,6 @@ def _api_base(value: Any) -> str:
     return value
 
 
-def _legacy_pattern(value: Any) -> str:
-    value = _string(value)
-    if (
-        value.startswith("/")
-        or "\\" in value
-        or PureWindowsPath(value).drive  # C:/x is absolute on Windows, C:x drive-relative
-        or ".." in value.split("/")
-    ):
-        raise _InvalidError("must be relative, use / and have no .. segment")
-    return value
-
-
 # --- schema: table -> {key: (default, check)}; nested dicts are sub-tables
 
 SERVER: dict[str, tuple[Any, Callable[[Any], Any]]] = {
@@ -195,10 +183,6 @@ SCHEMA: dict[str, Any] = {
     },
     "watchlist": {
         "file": (ABSENT, _path),  # default chosen by _watchlist_default
-    },
-    "legacy": {
-        "include": ([], _string_list(_legacy_pattern)),
-        "allow": ([], _string_list(_legacy_pattern)),
     },
 }
 OPTIONAL_TABLES = {"run.log"}

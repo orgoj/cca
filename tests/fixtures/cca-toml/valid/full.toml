@@ -49,7 +49,3 @@ mongodb_status_cmd = "mongosh --quiet --eval 'db.serverStatus().ok'"
 
 [watchlist]
 file = "cca/watchlist.json"
-
-[legacy]
-include = ["docs/**/*.md", "scripts/*"]
-allow = ["docs/migration.md"]

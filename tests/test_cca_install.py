@@ -1,5 +1,6 @@
 """cca install skills and cca doctor: link ownership, idempotence, cleanup."""
 
+import io
 import json
 import os
 from pathlib import Path
@@ -200,7 +201,8 @@ def ready(target, tmp_path, monkeypatch):
     bindir.mkdir()
     (bindir / "sops").write_text("#!/bin/sh\nexit 1\n")
     (bindir / "sops").chmod(0o755)
-    monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("PATH", str(bindir))
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
     assert main(["install", "skills"]) == 0
     return tmp_path
 
@@ -246,3 +248,125 @@ def test_doctor_fix_removes_only_recorded_broken_links(ready, capsys):
     assert not os.path.lexists(target / "cca")
     assert manifest(target) == {}
     assert os.readlink(target / "foreign") == "/nonexistent/foreign"
+
+
+# --- doctor: old CCA links
+
+
+@pytest.fixture
+def old_tree(ready, monkeypatch):
+    """An old CCA checkout; doctor must never open or list anything inside it."""
+    root = ready / "old-cca"
+    for rel in ("lib/cca-env.sh", "bin/cca-run-on-server", "bin/cca-tmux-cli"):
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text("old\n")
+    (root / "skills" / "cca-core").mkdir(parents=True)
+    (root / "skills" / "cca-core" / "SKILL.md").write_text("old\n")
+
+    def inside(path) -> bool:
+        return os.path.realpath(os.fspath(path)).startswith(str(root) + os.sep)
+
+    real_scandir, real_open = os.scandir, open
+
+    def scandir(path="."):
+        assert not inside(path), f"listed {path}"
+        return real_scandir(path)
+
+    def guarded_open(path, *args, **kwargs):
+        assert not inside(path), f"opened {path}"
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "scandir", scandir)
+    monkeypatch.setattr("builtins.open", guarded_open)
+    monkeypatch.setattr(io, "open", guarded_open)  # pathlib opens through io.open
+    return root
+
+
+def link(path: Path, target: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.symlink_to(target)
+    return path
+
+
+def test_doctor_project_skill_links_into_old_tree_fail(ready, old_tree, capsys):
+    (ready / ".gitignore").write_text(".claude/skills/cca-core\n")  # ignored, still checked
+    core = link(ready / ".claude/skills/cca-core", old_tree / "skills/cca-core")
+    gone = link(ready / ".codex/skills/removed", old_tree / "skills/removed")  # dangling
+    linked_dir = link(ready / ".agents/skills", old_tree / "skills")
+    capsys.readouterr()
+    assert main(["doctor"]) == 1
+    out = capsys.readouterr().out
+    assert f"FAIL old cca: {core} -> {old_tree / 'skills/cca-core'}" in out
+    assert f"FAIL old cca: {gone} -> {old_tree / 'skills/removed'}" in out
+    assert f"FAIL old cca: {linked_dir} -> {old_tree / 'skills'}" in out
+    assert out.count("old cca:") == 3  # the linked dir's entries are not listed
+
+
+def test_doctor_linked_ancestor_and_old_bin_on_path(ready, old_tree, monkeypatch, capsys):
+    link(ready / ".gemini", old_tree)  # .gemini/skills is the old tree's real skills/ dir
+    monkeypatch.setenv("PATH", f"{ready / 'bin'}{os.pathsep}{old_tree / 'bin'}")
+    capsys.readouterr()
+    assert main(["doctor"]) == 1
+    out = capsys.readouterr().out
+    gemini = ready / ".gemini/skills"
+    assert f"FAIL old cca: {gemini} -> {old_tree / 'skills'}" in out
+    assert f"WARN old cca: {old_tree / 'bin'} -> {old_tree / 'bin'}" in out
+    assert out.count("old cca:") == 2
+
+
+def test_doctor_shared_old_links_warn(ready, old_tree, monkeypatch, capsys):
+    path_dir = ready / "home" / "bin"
+    script = link(path_dir / "cca-tmux-cli", old_tree / "bin/cca-tmux-cli")
+    skill = link(ready / "home/.claude/skills/cca-core", old_tree / "skills/cca-core")
+    monkeypatch.setenv("PATH", f"{ready / 'bin'}{os.pathsep}{path_dir}")
+    capsys.readouterr()
+    assert main(["doctor"]) == 0
+    out = capsys.readouterr().out
+    assert f"WARN old cca: {script} -> {old_tree / 'bin/cca-tmux-cli'}" in out
+    assert f"WARN old cca: {skill} -> {old_tree / 'skills/cca-core'}" in out
+    assert "FAIL" not in out
+
+
+def test_doctor_unrelated_links_pass(ready, old_tree, monkeypatch, capsys):
+    not_old = ready / "other" / "skills" / "x"  # a skills/ dir without the old tree markers
+    not_old.mkdir(parents=True)
+    link(ready / ".claude/skills/x", not_old)
+    link(ready / ".claude/skills/lib", old_tree / "lib")  # old tree, but not bin/ or skills/
+    link(ready / ".pi/skills/dangling", ready / "nonexistent")
+    link(ready / ".cursor/skills", old_tree / "lib")  # checked dir inside the old tree: not listed
+    monkeypatch.setenv("PATH", f"{ready / 'bin'}{os.pathsep}{old_tree}")  # old root itself
+    capsys.readouterr()
+    assert main(["doctor"]) == 0
+    out = capsys.readouterr().out
+    assert "OK   old cca: no links to old scripts or skills in" in out and "WARN" not in out
+
+
+def test_doctor_empty_path_entry_is_cwd(ready, old_tree, monkeypatch, capsys):
+    script = link(ready / "cca-doctor", old_tree / "bin/cca-doctor")
+    monkeypatch.setenv("PATH", f"{ready / 'bin'}{os.pathsep}")
+    capsys.readouterr()
+    assert main(["doctor"]) == 0
+    assert f"WARN old cca: {script} -> {old_tree / 'bin/cca-doctor'}" in capsys.readouterr().out
+
+
+def test_doctor_unlistable_project_skill_dir_fails(ready, monkeypatch, capsys):
+    locked = ready / ".cursor" / "skills"
+    locked.mkdir(parents=True)
+    real_scandir = os.scandir
+
+    def scandir(path="."):
+        if os.fspath(path) == str(locked):
+            raise PermissionError(13, "Permission denied")
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", scandir)
+    capsys.readouterr()
+    assert main(["doctor"]) == 1
+    assert f"FAIL old cca: cannot list {locked}: Permission denied" in capsys.readouterr().out
+
+
+def test_doctor_missing_path_dir_under_old_tree_ignored(ready, old_tree, monkeypatch, capsys):
+    monkeypatch.setenv("PATH", f"{ready / 'bin'}{os.pathsep}{old_tree / 'bin/missing'}")
+    capsys.readouterr()
+    assert main(["doctor"]) == 0
+    assert "OK   old cca: no links" in capsys.readouterr().out

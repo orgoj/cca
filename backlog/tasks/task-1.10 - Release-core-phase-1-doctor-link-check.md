@@ -1,9 +1,10 @@
 ---
 id: TASK-1.10
-title: Release core (phase 1 + doctor --legacy)
+title: Release core (phase 1 + doctor link check)
 status: To Do
 assignee: []
 created_date: '2026-10-15 07:43'
+updated_date: '2026-10-15 12:21'
 labels: []
 dependencies:
   - TASK-1.1

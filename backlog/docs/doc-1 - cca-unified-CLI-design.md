@@ -59,7 +59,8 @@ source checkout must be fully usable (incl. skills) at every release.
   CWD; paths inside the TOML resolve from the TOML's directory.
 - Malformed/unreadable nearest file → error (exit 2), never fall back to a parent.
   None found → commands needing config exit non-zero with a clear message; commands
-  that need none (`--version`, `doctor` install checks, `install skills`) still work.
+  that need none (`--version`, `install skills`) still work; `doctor` reports the missing
+  config as FAIL and still runs its install checks.
 - `schema_version` (integer). A file with a higher version than the installed `cca`
   supports → error. Unknown keys → warning on stderr (newer config on an older release
   stays usable, typos stay visible).
@@ -193,26 +194,20 @@ so their ports and doc-2 can be done from a clone.
 - One subcommand (or one tightly coupled family) per release. A port task closes when
   release-ready (pre-tag check green, fixture denylist); tagging, consumer-denylist check,
   post-tag check and install are tracked on the phase parent task (phases 2, 3) or on a
-  dedicated release task (core + doctor --legacy: TASK-1.10; cca run: TASK-1.11).
+  dedicated release task (core + doctor link check: TASK-1.10; cca run: TASK-1.11).
 
 ## Consumer migration
 
-Per consumer project (by its owning agent, after `cca` is finished and deployed): write
-`.cca.toml`, move secrets into sops files, replace old skill links with
-`cca install skills`, switch calls/guides to `cca <sub>`.
-On deployment, every consumer project is checked with `cca doctor --legacy`: it always
-probes the known legacy paths (`.cca-env`, `.env`, `.cca-tmux-cli`,
-`.tmux-cli-python.yaml`, `.netdata-servers`, default agent-instruction files) in the
-project root and nested repos regardless of git tracking, and additionally scans
-git-tracked files plus `[legacy] include`, skipping binaries, symlinks and the doc-2
-exclusion list. It reports every reference to a retired command and every
-legacy config input (`.cca-env`, `.env` CCA_* keys, `.cca-tmux-cli`,
-`.tmux-cli-python.yaml`, `.netdata-servers`, mapped `CCA_*` variables). Lines marked
-`cca-legacy-ok` or paths in `[legacy] allow` (migration notes) are reported as allowed.
-It also checks symlink metadata (without following links for content) in the agent
-skill install dirs listed in doc-2 and in PATH dirs, and fails on any link that
-resolves into the old CCA `bin/` or root `skills/` tree.
-Old scripts and skills are removed only when every consumer reports none.
+A one-time manual conversion (TASK-4), started only after the complete `cca` is
+finished, reviewed and approved by the user: per consumer project write `.cca.toml`
+from the doc-2 legacy input mapping, move secrets into sops files, replace old skill
+links with `cca install skills`, switch scripts, docs, skills and agent instructions to
+`cca <sub>`, remove legacy config files. `cca` itself never scans project content for
+old usage.
+`cca doctor` checks only the new state, including that no agent skill dir or PATH dir
+is, or contains a link to, the old CCA `bin/` or root `skills/` (doc-2 "Old CCA links").
+Old scripts and skills are removed (TASK-2) only when every consumer is converted and
+`cca doctor` passes there.
 
 ## Phases
 

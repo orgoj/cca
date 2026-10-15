@@ -24,7 +24,7 @@ cca --version
 | Subcommand | Description |
 |------------|-------------|
 | `cca config show` | The `.cca.toml` in use and its values with defaults |
-| `cca doctor [--fix]` | Check the project (config, sops, `cca/` dirs, skill links) |
+| `cca doctor [--fix]` | Check the project (config, sops, `cca/` dirs, skill links, old `cca-*` scripts/skills not installed) |
 | `cca install skills [NAME] [--target DIR]` | Link the skills shipped in the package (`src/cca/skills/`) into `.claude/skills` |
 
 ## bin/ - Scripts

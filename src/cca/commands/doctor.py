@@ -14,6 +14,27 @@ from cca.output import CcaError
 
 PROJECT_DIRS = ("cca/guides", "cca/incidents")
 
+# agent skill install dirs checked for links into an old CCA tree (doc-2 "Old CCA links")
+PROJECT_SKILL_DIRS = (
+    ".claude/skills",
+    ".agents/skills",
+    ".codex/skills",
+    ".gemini/skills",
+    ".opencode/skills",
+    ".cursor/skills",
+    ".pi/skills",
+    ".github/skills",
+)
+USER_SKILL_DIRS = (
+    ".claude/skills",
+    ".agents/skills",
+    ".codex/skills",
+    ".gemini/skills",
+    ".config/opencode/skills",
+    ".cursor/skills",
+    ".pi/agent/skills",
+)
+
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
@@ -65,7 +86,74 @@ def run(args: argparse.Namespace) -> int:
         )
 
     _check_skills(report, args.fix)
+    if cfg is not None:
+        _check_old_cca(report, cfg.dir)
     return 1 if failed else 0
+
+
+def _old_root(path: str) -> Path | None:
+    """The old CCA tree R containing path (R itself included), if any."""
+    for candidate in (Path(path), *Path(path).parents):
+        if os.path.isfile(candidate / "lib" / "cca-env.sh") and os.path.isfile(
+            candidate / "bin" / "cca-run-on-server"
+        ):
+            return candidate
+    return None
+
+
+def _old_install(path: str, root: Path) -> bool:
+    """True when path lies in <R>/bin or <R>/skills (the installed scripts and skills)."""
+    return Path(path).relative_to(root).parts[:1] in (("bin",), ("skills",))
+
+
+def _old_paths(directory: str) -> list[tuple[str, str]]:
+    """(path, realpath) of the dir itself or its direct entries resolving into an old tree.
+
+    Only link metadata is read; no file is opened, no entry is descended into and nothing
+    inside an old tree is listed.
+    """
+    if not os.path.lexists(directory):  # a dangling link exists and is classified below
+        return []
+    real = os.path.realpath(directory)  # resolves the dir itself and any linked ancestor
+    root = _old_root(real)
+    if root is not None:
+        return [(directory, real)] if _old_install(real, root) else []
+    if not os.path.isdir(directory):
+        return []
+    found = []
+    with os.scandir(directory) as entries:
+        for entry in sorted(entries, key=lambda e: e.name):
+            if entry.is_symlink():
+                real = os.path.realpath(entry.path)  # dangling: resolved from the link text
+                root = _old_root(real)
+                if root is not None and _old_install(real, root):
+                    found.append((entry.path, real))
+    return found
+
+
+def _check_old_cca(report, project: Path) -> None:
+    """Old cca-* scripts or skills still linked: FAIL in the project, WARN when shared."""
+    dirs: dict[str, str] = {}
+    for rel in PROJECT_SKILL_DIRS:
+        dirs.setdefault(os.path.abspath(project / rel), "FAIL")
+    home = Path.home()
+    for rel in USER_SKILL_DIRS:
+        dirs.setdefault(os.path.abspath(home / rel), "WARN")
+    for entry in os.environ.get("PATH", "").split(os.pathsep):
+        dirs.setdefault(os.path.abspath(entry or os.curdir), "WARN")  # empty entry = CWD
+    clean = True
+    for directory, status in dirs.items():
+        try:
+            found = _old_paths(directory)
+        except OSError as e:
+            clean = False
+            report(status, "old cca", f"cannot list {directory}: {e.strerror}")
+            continue
+        for path, real in found:
+            clean = False
+            report(status, "old cca", f"{path} -> {real}")
+    if clean:
+        report("OK", "old cca", f"no links to old scripts or skills in {len(dirs)} dirs")
 
 
 def _check_skills(report, fix: bool) -> None:
