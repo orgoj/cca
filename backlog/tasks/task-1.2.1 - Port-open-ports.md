@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@cca_dev'
 created_date: '2026-10-15 07:32'
-updated_date: '2026-10-15 13:07'
+updated_date: '2026-10-15 13:09'
 labels: []
 dependencies:
   - TASK-1.1
@@ -27,8 +27,8 @@ Port of check-open-ports (nmap/nc/curl methods, optional delegate server; legacy
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Targets and delegate hosts come from [servers] or validated CLI args; only the chosen method's executable is required
-- [x] #2 Release-ready: full pre-tag check green incl. fixture denylist
-- [x] #3 Compatibility matrix derived from the TASK-1.9 spec; every row tested
+- [x] #2 Compatibility matrix derived from the TASK-1.9 spec; every row tested
+- [x] #3 tests/run-all.sh green incl. fixture denylist (released with the complete cca, TASK-1.11)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -40,5 +40,5 @@ Decisions (user): nc and curl probe every port, exit 1 when any failed; telnet d
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Added cca open-ports (src/cca/commands/open_ports.py): nmap/nc/curl probes, -k/--kubernetes, -n/--noact, -d/--delegate SERVER from [servers] over cca.ssh (config loaded only then), validated HOST (no IPv6 zone id) and ports, lazy tool check naming the tool. User decisions: nc and curl probe every port and exit 1 on any failure, telnet dropped. Compatibility matrix in doc-3, every row tested in tests/test_cca_open_ports.py (51 tests, fake tools). Skill reference open-ports.md, SKILL.md and README rows. run-all ALL PASSED (fixture denylist leak scan, package + install smoke), shared-clean with consumer denylist clean; code and security reviews addressed. Version bump, tag and install are the release step on TASK-1.2.
+Added cca open-ports (src/cca/commands/open_ports.py): nmap/nc/curl probes, -k/--kubernetes, -n/--noact, -d/--delegate SERVER from [servers] over cca.ssh (config loaded only then), validated HOST (no IPv6 zone id) and ports, lazy tool check naming the tool. User decisions: nc and curl probe every port and exit 1 on any failure, telnet dropped. Compatibility matrix in doc-3, every row tested in tests/test_cca_open_ports.py (51 tests, fake tools). Skill reference open-ports.md, SKILL.md and README rows. run-all ALL PASSED (fixture denylist leak scan, package + install smoke), shared-clean with consumer denylist clean; code and security reviews addressed. Released with the complete cca (TASK-1.11).
 <!-- SECTION:FINAL_SUMMARY:END -->

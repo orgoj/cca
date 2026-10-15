@@ -4,7 +4,7 @@ title: Port netdata
 status: To Do
 assignee: []
 created_date: '2026-10-15 07:32'
-updated_date: '2026-10-15 10:46'
+updated_date: '2026-10-15 13:09'
 labels: []
 dependencies:
   - TASK-1.1
@@ -26,6 +26,6 @@ Port of netdata-cli.py (stdlib; Netdata API directly or over ssh; fping cache) f
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Server addresses come from [servers] in .cca.toml; cache paths from doc-2 keys
-- [ ] #2 Release-ready: full pre-tag check green incl. fixture denylist
-- [ ] #3 Compatibility matrix derived from the TASK-1.9 spec; every row tested, incl. ssh vs direct transport and fping paths
+- [ ] #2 Compatibility matrix derived from the TASK-1.9 spec; every row tested, incl. ssh vs direct transport and fping paths
+- [ ] #3 tests/run-all.sh green incl. fixture denylist (released with the complete cca, TASK-1.11)
 <!-- AC:END -->

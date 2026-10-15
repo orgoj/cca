@@ -4,7 +4,7 @@ title: 'Phase 4: cca run'
 status: To Do
 assignee: []
 created_date: '2026-10-15 07:13'
-updated_date: '2026-10-15 10:46'
+updated_date: '2026-10-15 13:09'
 labels: []
 dependencies:
   - TASK-1.1
@@ -29,5 +29,5 @@ Python successor of cca-tmux-cli, cca-run-on-server and cca-run-all; the bash sc
 - [ ] #5 No local shell is used to build tmux or ssh calls; tests with malicious server names and commands show no local shell execution on both transports
 - [ ] #6 Execution is a reusable executor API (server, command, transport) that other subcommands call; cca run is a thin CLI over it
 - [ ] #7 cca run --all -- CMD (and stdin) runs CMD on every [servers] entry in config order, output tagged per server, stops on the first failure; tests cover order and stop-on-failure
-- [ ] #8 New cca skills for cca run added under src/cca/skills/; root skills/ untouched; release-ready: full pre-tag check green
+- [ ] #8 New cca skills for cca run added under src/cca/skills/; root skills/ untouched; tests/run-all.sh green (released with the complete cca, TASK-1.11)
 <!-- AC:END -->

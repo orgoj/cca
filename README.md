@@ -119,8 +119,8 @@ tag, and scans `backlog/`, `src/` and the built wheel/sdist with the fixture den
 
 ## Release
 
-One subcommand (or a tightly coupled family) per release; tags are `v<version>` and are
-never moved.
+After v0.1.0 (core) the next release is the complete `cca` (all ports and `cca run`);
+subcommands are not released one by one. Tags are `v<version>` and are never moved.
 
 1. Bump `version` in `pyproject.toml`, commit.
 2. Pre-tag check (needs the consumer project's denylist, fails without it):

@@ -30,8 +30,8 @@ source checkout must be fully usable (incl. skills) at every release.
   `bin/`, `lib/` and the root `skills/` (symlinked live into consumer projects) stay
   byte-for-byte unchanged until TASK-2. New `cca` skills are written separately in
   `src/cca/skills/`, packaged into the wheel, and reach a project only when it migrates
-  (old skill links removed, `cca install skills` run). Each new skill is added in the
-  release of the subcommand it uses.
+  (old skill links removed, `cca install skills` run). Each new skill is added with the
+  subcommand it uses.
 - Windows skill installation is out of scope for now (deferred task); on platforms
   without symlink support `cca install skills` fails with a clear error.
 - `cca-install` has no successor (uv installs `cca`; skills via `cca install skills`).
@@ -191,10 +191,11 @@ so their ports and doc-2 can be done from a clone.
   Tags are never moved.
 - Install: `uv tool install --reinstall "cca @ git+file://<clone>@vX.Y.Z"` (syntax
   verified in phase 1, recorded in README). Version from `importlib.metadata`.
-- One subcommand (or one tightly coupled family) per release. A port task closes when
-  release-ready (pre-tag check green, fixture denylist); tagging, consumer-denylist check,
-  post-tag check and install are tracked on the phase parent task (phases 2, 3) or on a
-  dedicated release task (core + doctor link check: TASK-1.10; cca run: TASK-1.11).
+- Two releases: the core + doctor link check (TASK-1.10, v0.1.0) and the complete `cca`
+  with all ports and `cca run` (TASK-1.11); subcommands are not released one by one
+  (user decision). A port task closes when `tests/run-all.sh` is green (fixture
+  denylist); consumer-denylist check, tagging, post-tag check and install happen in
+  TASK-1.11.
 
 ## Consumer migration
 
@@ -215,10 +216,9 @@ Old scripts and skills are removed (TASK-2) only when every consumer is converte
    doc-2: normative `.cca.toml` + secrets schema v1 with fixtures.
 1. Core: skeleton, config + secrets modules, `config show`, `doctor`, `install skills`,
    release check, install smoke.
-2. Ports, one task and release each: open-ports, netdata, cloudflare.
-3. Ports, one task and release each: curl, hetrix, check-domain, server-*, asn,
-   diagnose, watchlist.
-4. `cca run`.
+2. Ports, one task each: open-ports, netdata, cloudflare.
+3. Ports, one task each: curl, hetrix, check-domain, server-*, asn, diagnose, watchlist.
+4. `cca run`, then one release of the complete `cca` (TASK-1.11).
 5. Global docs update and migration guide.
 Later, separate: Windows skills install (deferred); removal of old scripts after all
 consumers migrated (user approval).
