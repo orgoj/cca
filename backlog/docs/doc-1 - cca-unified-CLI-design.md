@@ -29,8 +29,10 @@ source checkout must be fully usable (incl. skills).
 - Dev tools: `cca-check-shared-clean` stays bash, repo-only gate; `cca-validate-args`
   becomes an internal module; `cca-run-all` becomes `cca run --all`.
 - `tmux-cli-python` as a separate command is dropped; it becomes `cca run`.
-- Old `cca-*` scripts stay unchanged until all consumer projects are converted, then
-  deleted (with `lib/cca-env.sh`). `cca-tmux-cli` stays until agents move to `cca run`.
+- Old `cca-*` scripts stay unchanged (no deprecation notes, no edits) until all
+  consumer projects are converted to `cca`, then they are deleted (with
+  `lib/cca-env.sh`). `cca-tmux-cli` may remain as a thin wrapper over `cca run`,
+  depending on how agents adapt; the user decides later.
 - Install: non-editable from a tag, so CCA work never breaks running agents.
 
 ## Config: `.cca.toml`
@@ -168,6 +170,5 @@ Per consumer project (by its owning agent, after the relevant release): write
 2. Ports, one release each: open-ports, netdata, cloudflare.
 3. Ports, one release each: curl, hetrix, check-domain, server-*, asn, diagnose, watchlist.
 4. `cca run` (+ `--all`).
-5. Docs/skills update to `cca <sub>`, deprecation notes for old scripts in docs and
-   `--help` only (runtime output of old scripts stays unchanged; agents parse it),
-   migration guide from `CCA_*`/config files to `.cca.toml` keys.
+5. Docs/skills update to `cca <sub>`, migration guide from `CCA_*`/config files to
+   `.cca.toml` keys. Old scripts are not touched.
