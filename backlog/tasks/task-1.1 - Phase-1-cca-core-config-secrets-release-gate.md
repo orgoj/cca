@@ -4,7 +4,7 @@ title: 'Phase 1: cca core, config, secrets, release gate'
 status: To Do
 assignee: []
 created_date: '2026-10-15 07:13'
-updated_date: '2026-10-15 09:05'
+updated_date: '2026-10-15 09:33'
 labels: []
 dependencies:
   - TASK-1.6
@@ -34,10 +34,13 @@ Every later port depends on a stable config contract (doc-2), one secrets path a
 - [ ] #10 Shared ssh helper: target only from [servers] or validated input, argv-only, used by every subcommand that calls ssh
 - [ ] #11 The wheel ships src/cca/skills/ only; a wheel-install test scans installed skills and fails on any reference to a command not provided, incl. old cca-* names; root skills/ untouched
 - [ ] #12 A legacy-baseline tag marks the pre-refactor state; tests/run-all.sh fails when bin/, lib/ or root skills/ differ from it
+- [ ] #13 Repo leak check covers backlog/ and src/ as well (without changing bin/); the existing generic 'gate' wording in backlog/ is resolved (reworded or denylist pattern narrowed by the consumer project) so the check passes
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
 Review: the root pyproject change breaks any editable tmux-cli-python install; uninstall it on machines that have it when this lands. Current tests/run-all.sh installs the root project; adapt it in the same change.
+
+Found in TASK-1.9: cca-check-shared-clean scans only bin, lib, skills, tests, tmux_cli_python and root md files, so backlog/ and src/ were never leak-checked. A direct scan of backlog/ with the consumer denylist only hits the generic word 'gate' (release gate, pre-tag gate).
 <!-- SECTION:NOTES:END -->
