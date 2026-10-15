@@ -111,13 +111,13 @@ a server fail at use time.
 | Key | Type | Default | Rule |
 |---|---|---|---|
 | `transport` | string | `"tmux"` | `"tmux"` or `"ssh"`. |
+| `tokf` | boolean | `false` | `cca run` passes completed command output (both transports) through `tokf` (resolved lazily from PATH, protocol `cca-v1`; missing, unsupported or failing `tokf` → output unprocessed). |
 
 ### `[run.tmux]`
 
 | Key | Type | Default | Rule |
 |---|---|---|---|
 | `session` | string | – | tmux session name, `^[A-Za-z0-9_-]+$`. Required at use time when `run.transport = "tmux"`. No name is derived from the directory. |
-| `tokf` | boolean | `false` | Pass completed command output through `tokf` (resolved lazily from PATH; missing `tokf` → output unprocessed, as legacy). |
 
 ### `[run.log]` — command log
 
@@ -128,8 +128,15 @@ Presence of the table enables logging; without it nothing is logged.
 | `dir` | path | `"logs"` | Must exist at use time (cca never creates it); missing → error naming the path. |
 | `operator` | string | required | Name of the operator in the log file name and lines, `^[A-Za-z0-9][A-Za-z0-9._-]*$`. |
 
-Log file `<dir>/<YYYY-MM-DD>-<operator>.log`; line format and secret sanitizing are
-decided in TASK-1.4 from the legacy behavior.
+Log file `<dir>/<YYYY-MM-DD>-<operator>.log` (created mode 0600, appended, never
+through a symlink; a write failure is a warning). One line per executed command, after
+it ends, for every command using the executor (`cca run` and the ports using it):
+`<ISO-8601 local time> <operator> <server> <command> [exit: <code>|timeout|interrupted]`.
+`--create-file` logs `create-file <path>`. The command is masked for likely secrets
+(URL userinfo, `key=value`/`key: "value"` for password/token/key/secret names,
+`--password VALUE` flags, AWS key ids, GitHub tokens, JWTs, Bearer tokens, database
+connection URLs, base64 runs of 40+ characters, private key headers) and kept on one
+line (control characters escaped).
 
 ## `[secrets]` — sops file locations
 
@@ -220,7 +227,7 @@ left column.
 | log dir `logs/` (hard-coded, logging when it exists) | `cca-tmux-cli`, `cca-run-on-server` | `run.log.dir`; **intentional change**: logging is explicit, not triggered by the directory |
 | `ADMIN_NAME` | `cca-tmux-cli`, `cca-run-on-server`, `cca-doctor` | `run.log.operator` |
 | `CCA_AGENT` | `tmux_cli_python` audit | dropped with `tmux_cli_python` (phase 1) |
-| `CCA_TMUX_TOKF=1` | `cca-tmux-cli` | `run.tmux.tokf = true` |
+| `CCA_TMUX_TOKF=1` | `cca-tmux-cli` | `run.tokf = true` |
 | `CCA_WATCHLIST`, `watchlist.json` | `cca-watchlist` | dropped: the register is the project's Backlog.md (doc-1 "Watchlist on Backlog.md"); TASK-4 converts the items |
 | `TMUX_SESSION_NAME` (`.cca-tmux-cli`/`.cca-env`) | `cca-tmux-cli` | `run.tmux.session` |
 | `TMUX_SESSION_SERVERS` (space list) | `cca-tmux-cli`, `cca-run-on-server`, `cca-doctor` | one `[servers.<name>]` table per entry, same order |

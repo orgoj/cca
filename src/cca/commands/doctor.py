@@ -9,6 +9,7 @@ from importlib.metadata import version
 from pathlib import Path
 
 from cca import config, skilllinks, validate
+from cca.commands import run as run_command
 from cca.commands import watchlist
 from cca.commands.install import DEFAULT_TARGET
 from cca.output import CcaError
@@ -78,6 +79,9 @@ def run(args: argparse.Namespace) -> int:
         ", ".join(missing or PROJECT_DIRS) + (" missing" if missing else ""),
     )
 
+    if cfg is not None:
+        _check_run(report, cfg)
+
     if cfg is not None and "log" in cfg.data["run"]:
         log_dir = cfg.resolve(cfg.data["run"]["log"]["dir"])
         report(
@@ -92,6 +96,36 @@ def run(args: argparse.Namespace) -> int:
     if cfg is not None:
         _check_old_cca(report, cfg.dir)
     return 1 if failed else 0
+
+
+def _check_run(report, cfg: config.Config) -> None:
+    """What cca run and the commands using its executor need."""
+    run_cfg = cfg.data["run"]
+    servers = cfg.data["servers"]
+    report(
+        "OK" if servers else "WARN",
+        "servers",
+        f"{len(servers)} configured" if servers else "none in [servers] (cca run needs them)",
+    )
+    report("OK", "run.transport", run_cfg["transport"])
+    ssh_path = shutil.which("ssh")
+    report("OK" if ssh_path else "FAIL", "ssh", ssh_path or "not on PATH")
+    if run_cfg["transport"] == "tmux":
+        tmux_path = shutil.which("tmux")
+        report("OK" if tmux_path else "FAIL", "tmux", tmux_path or "not on PATH")
+        session = run_cfg["tmux"].get("session")
+        report(
+            "OK" if session else "FAIL",
+            "run.tmux.session",
+            session or 'not set (required with run.transport = "tmux")',
+        )
+    if run_cfg["tokf"]:
+        found = run_command.tokf_path()
+        report(
+            "OK" if found else "WARN",
+            "tokf",
+            found or "not on PATH or no cca-v1 protocol support (output stays unprocessed)",
+        )
 
 
 def _check_backlog(report, project: str) -> None:

@@ -191,16 +191,23 @@ def test_no_symlink_support(target, monkeypatch, capsys):
 # --- doctor
 
 
+READY_TOML = (
+    'schema_version = 1\n[servers.server1]\n[run.tmux]\nsession = "cca-x"\n'
+    '[run.log]\noperator = "admin1"\n'
+)
+
+
 @pytest.fixture
 def ready(target, tmp_path, monkeypatch):
     """A project that passes every doctor check."""
-    (tmp_path / ".cca.toml").write_text('schema_version = 1\n[run.log]\noperator = "admin1"\n')
+    (tmp_path / ".cca.toml").write_text(READY_TOML)
     for d in ("cca/guides", "cca/incidents", "logs"):
         (tmp_path / d).mkdir(parents=True)
     bindir = tmp_path / "bin"
     bindir.mkdir()
-    (bindir / "sops").write_text("#!/bin/sh\nexit 1\n")
-    (bindir / "sops").chmod(0o755)
+    for tool in ("sops", "ssh", "tmux"):
+        (bindir / tool).write_text("#!/bin/sh\nexit 1\n")
+        (bindir / tool).chmod(0o755)
     fake_backlog(bindir, "To Do, In Progress, Note, Done")
     monkeypatch.setenv("PATH", str(bindir))
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
@@ -256,6 +263,48 @@ def test_doctor_empty_dir_fails(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     for line in ("FAIL config:", "WARN sops:", "FAIL directories:", "FAIL skills:"):
         assert line in out
+
+
+def test_doctor_run_checks_ready(ready, capsys):
+    capsys.readouterr()
+    assert main(["doctor"]) == 0
+    out = capsys.readouterr().out
+    for line in (
+        "OK   servers: 1 configured",
+        "OK   run.transport: tmux",
+        f"OK   ssh: {ready / 'bin' / 'ssh'}",
+        f"OK   tmux: {ready / 'bin' / 'tmux'}",
+        "OK   run.tmux.session: cca-x",
+    ):
+        assert line in out
+    assert "tokf" not in out
+
+
+def test_doctor_run_checks_fail(ready, capsys):
+    (ready / ".cca.toml").write_text("schema_version = 1\n[run]\ntokf = true\n")
+    (ready / "bin" / "ssh").unlink()
+    (ready / "bin" / "tmux").unlink()
+    assert main(["doctor"]) == 1
+    out = capsys.readouterr().out
+    for line in (
+        "WARN servers: none in [servers]",
+        "FAIL ssh: not on PATH",
+        "FAIL tmux: not on PATH",
+        'FAIL run.tmux.session: not set (required with run.transport = "tmux")',
+        "WARN tokf: not on PATH or no cca-v1 protocol support",
+    ):
+        assert line in out
+
+
+def test_doctor_run_checks_ssh_transport(ready, capsys):
+    (ready / ".cca.toml").write_text(
+        'schema_version = 1\n[servers.server1]\n[run]\ntransport = "ssh"\n'
+    )
+    (ready / "bin" / "tmux").unlink()
+    assert main(["doctor"]) == 0
+    out = capsys.readouterr().out
+    assert "OK   run.transport: ssh" in out
+    assert "tmux" not in out
 
 
 def test_doctor_invalid_config_and_missing_log_dir(ready, capsys):

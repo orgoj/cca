@@ -120,18 +120,48 @@ allowed is the job of the command validator, not of `cca curl`.
 
 ## `cca run`
 
-- Surfaces (all bash predecessors covered): run a command, `list`, `read`, `session`,
-  `--create-file` (atomic remote write), `--list` (servers), `--all`. Surfaces
-  meaningless for a transport (e.g. `read` over ssh) are rejected with a clear error.
+- Code basis: the tmux core of the removed `tmux_cli_python` (marker protocol, marker
+  parsing, its tests; in git history before phase 1) with direct `tmux` argv calls
+  instead of libtmux; the hook/audit pipeline is not carried over.
+- Surfaces are options, so no server name is reserved:
+
+  ```
+  cca run [--timeout SEC] SERVER [-- CMD...]
+  cca run [--timeout SEC] --all [-- CMD...]
+  cca run [--timeout SEC] --create-file PATH SERVER   # content on stdin
+  cca run --list
+  cca run --read [--lines N | --marker M | --scrollback] SERVER
+  cca run --session [SERVER...]
+  ```
+
+  `--read` and `--session` exist only for tmux; over ssh they exit 2. The
+  robot-init/doctor/robot-help outputs of `cca-tmux-cli` are replaced by `cca doctor`
+  (transport, ssh, tmux, session, tokf, log dir), `cca run --help` and the skill.
+- Several CMD arguments are joined with spaces (ssh semantics). The remote command runs
+  as `bash -c "$(printf %s B64 | base64 -d)" </dev/null` on both transports; output is
+  captured (stdout and stderr together), control characters escaped, then optionally
+  passed through `tokf` (`run.tokf`).
+- tmux: window per server found by exact name in session `=run.tmux.session`, opened
+  with `ssh -- TARGET` as separate tmux arguments (no shell); the marker line is
+  delivered with `load-buffer` + `paste-buffer` (send-keys arguments are limited to
+  about 16 KB and a lone `;` argument is a tmux command separator). Timeout: exit 124,
+  the command keeps running, `--read --marker M` returns its output and status later.
+- ssh: own process group, killed with its children on timeout or local Ctrl-C.
+- Exit status: the remote command's; 124 timeout; 130/143/129/137 signal markers; 2
+  usage/config/transport error.
 - `cca-run-all` (ran a server-taking script once per server) is replaced by `--all`:
   `cca run --all -- CMD` runs CMD on every `[servers]` entry in config order, output
-  tagged per server, stops on the first failure; server-taking subcommands
+  tagged per server (`<server-result name="..." exit="...">`), stops on the first
+  failure; server-taking subcommands
   (`server info/status/hostname`, `diagnose`) accept `--all` with the same semantics.
   No arbitrary script names.
-- Execution is a reusable executor API (server, command, transport); `cca run` is a
-  thin CLI over it and `server`/`diagnose` use it instead of their own ssh code.
+- Execution is a reusable executor API (`cca.executor.execute(cfg, server, command,
+  timeout=, stdin=)` → `Result(code, output, marker, timed_out)`, `create_file`); `cca
+  run` is a thin CLI over it and `server`/`diagnose` use it instead of their own ssh
+  code. The executor writes the `[run.log]` line, so every caller is logged.
 - Shape: `cca run [options] SERVER -- CMD...` or `cca run [options] SERVER <<'EOF'`.
-  No CMD → read the command from stdin: stdin is a TTY → error; empty stdin → error.
+  No CMD → read the command from stdin: stdin is a TTY → error; empty stdin → error
+  (`--create-file` accepts empty content).
   Server is the first positional; value options only before it, from a known list.
   The shape is a public contract for external validators (Dippy).
 - Security: no local shell is involved in building the call; SERVER only from

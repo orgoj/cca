@@ -65,7 +65,7 @@ def test_defaults_filled(tmp_path):
     assert cfg.data["servers"] == {
         "server1": {"ssh": "server1", "netdata_port": 19999, "netdata_transport": "ssh"}
     }
-    assert cfg.data["run"] == {"transport": "tmux", "tmux": {"tokf": False}}
+    assert cfg.data["run"] == {"transport": "tmux", "tokf": False, "tmux": {}}
     assert cfg.data["secrets"]["curl"] == "secrets/curl.secret.yaml"
     assert cfg.data["server_info"]["net_iface_prefixes"] == ["en", "eth"]
     assert cfg.resolve(cfg.data["secrets"]["curl"]) == tmp_path / "secrets/curl.secret.yaml"

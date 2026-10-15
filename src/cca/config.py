@@ -147,9 +147,9 @@ SERVER: dict[str, tuple[Any, Callable[[Any], Any]]] = {
 SCHEMA: dict[str, Any] = {
     "run": {
         "transport": ("tmux", _choice("tmux", "ssh")),
+        "tokf": (False, _boolean),
         "tmux": {
             "session": (ABSENT, _matching(_SESSION_RE)),
-            "tokf": (False, _boolean),
         },
         # present table = logging on; filled in only when present
         "log": {

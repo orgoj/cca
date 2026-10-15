@@ -45,7 +45,8 @@ step "dist leak scan" python3 -I "$ROOT/tests/leak_scan.py" "$DENY" --dir "$TMP/
 
 WHEEL=$(echo "$TMP"/dist/cca-*.whl)
 mkdir -p "$PROJ/.claude/skills" "$PROJ/cca/guides" "$PROJ/cca/incidents" "$PROJ/backlog"
-printf 'schema_version = 1\n\n[servers.server1]\n' >"$PROJ/.cca.toml"
+# ssh transport: cca doctor then needs ssh on PATH, not tmux and a session
+printf 'schema_version = 1\n\n[servers.server1]\n\n[run]\ntransport = "ssh"\n' >"$PROJ/.cca.toml"
 # cca doctor needs the backlog CLI and these statuses (cca watchlist)
 printf 'statuses: ["To Do", "In Progress", "Note", "Done"]\n' >"$PROJ/backlog/config.yml"
 

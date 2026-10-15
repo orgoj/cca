@@ -15,10 +15,10 @@ netdata_transport = "direct"
 
 [run]
 transport = "ssh"
+tokf = true
 
 [run.tmux]
 session = "cca-example"
-tokf = true
 
 [run.log]
 dir = "logs"
