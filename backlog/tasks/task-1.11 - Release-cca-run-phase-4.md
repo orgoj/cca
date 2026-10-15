@@ -4,9 +4,11 @@ title: Release cca run (phase 4)
 status: To Do
 assignee: []
 created_date: '2026-10-15 07:43'
+updated_date: '2026-10-15 07:44'
 labels: []
 dependencies:
   - TASK-1.4
+  - TASK-1.10
 parent_task_id: TASK-1
 priority: medium
 type: chore
