@@ -4,6 +4,7 @@ allow bash -n *
 allow bash tests/test-shared-clean.sh
 allow git *
 allow python3 -m pytest -q tests/* *
+allow rm tmp/*+
 allow tests/run-all.sh *
 allow tests/test-*.sh *
 
