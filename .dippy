@@ -2,6 +2,7 @@ allow ./tests/test-shared-clean.sh
 allow backlog *
 allow bash -n *
 allow bash tests/test-shared-clean.sh
+allow cca *
 allow git *
 allow pytest *
 allow python3 -m pytest -q tests/* *
