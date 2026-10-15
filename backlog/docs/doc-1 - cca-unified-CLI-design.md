@@ -270,7 +270,7 @@ Backlog tasks; `cca` has no importer.
 - Install: `uv tool install --reinstall "cca @ git+file://<clone>@vX.Y.Z"` (syntax
   verified in phase 1, recorded in README). Version from `importlib.metadata`.
 - Two releases: the core + doctor link check (TASK-1.10, v0.1.0) and the complete `cca`
-  with all ports and `cca run` (TASK-1.11); subcommands are not released one by one
+  with all ports and `cca run` (TASK-1.11, v1.0.0); subcommands are not released one by one
   (user decision). A port task closes when `tests/run-all.sh` is green (fixture
   denylist); consumer-denylist check, tagging, post-tag check and install happen in
   TASK-1.11.

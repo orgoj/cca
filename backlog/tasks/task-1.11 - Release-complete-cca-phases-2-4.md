@@ -1,10 +1,10 @@
 ---
 id: TASK-1.11
 title: Release complete cca (phases 2-4)
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-15 07:43'
-updated_date: '2026-10-15 13:08'
+updated_date: '2026-10-15 19:32'
 labels: []
 dependencies:
   - TASK-1.4
