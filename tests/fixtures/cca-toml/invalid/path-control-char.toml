@@ -1,0 +1,6 @@
+# expect: run.log.dir
+schema_version = 1
+
+[run.log]
+dir = "logs\nother"
+operator = "admin"

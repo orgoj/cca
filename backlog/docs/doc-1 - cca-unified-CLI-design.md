@@ -153,15 +153,15 @@ allowed is the job of the command validator, not of `cca curl`.
   `cca run --all -- CMD` runs CMD on every `[servers]` entry in config order, output
   tagged per server (`<server-result name="..." exit="...">`), stops on the first
   failure; server-taking subcommands
-  (`server info/status/hostname`, `diagnose`) accept `--all` with the same order and
+  (`server info/status/hostname`) accept `--all` with the same order and
   stop rule; their own output already names the server (`<server-status
   server="...">`), so it is not wrapped again. No arbitrary script names.
 - Execution is a reusable executor API (`cca.executor.execute(cfg, server, command,
   timeout=, stdin=, via=)` → `Result(code, output, marker, timed_out)`, `create_file`);
-  `cca run` is a thin CLI over it and `server`/`diagnose` use it instead of their own
+  `cca run` is a thin CLI over it and `server` uses it instead of its own
   ssh code. The executor writes the `[run.log]` line, so every caller is logged.
 - `run.transport` applies only to the agent's live `cca run` commands (tmux lets the
-  operator watch them). Finished scripts (`server`, `diagnose`) always pass `via="ssh"`
+  operator watch them). Finished scripts (`server`) always pass `via="ssh"`
   and may make one ssh call per section (ssh ControlMaster keeps that cheap).
 
 ## `cca server`
@@ -224,10 +224,9 @@ tests/                    # bash tests stay; pytest for cca
 | `check-domain` | `cca-check-domain` |
 | `server info/status/hostname` | `cca-server-*` |
 | `asn` | `asn-wrap` |
-| `diagnose` | `cca-diagnose-gather` |
 | `watchlist today/notes/checked` | `cca-watchlist` (register moves to Backlog.md, see below) |
 | `run` | `cca-tmux-cli`, `cca-run-on-server`, `cca-run-all` |
-| not ported | `cca-validate-args`, `cca-install bin`, `tmux_cli_python` (removed in phase 1) |
+| not ported | `cca-validate-args`, `cca-install bin`, `tmux_cli_python` (removed in phase 1), `cca-diagnose-gather` (servers differ too much for fixed checks; use `cca server status` and `cca run`) |
 | stays bash | `cca-check-shared-clean` (repo check) |
 
 Each port is specified and tested by the behavior of the new command (options,
@@ -296,7 +295,7 @@ Old scripts and skills are removed (TASK-2) only when every consumer is converte
 1. Core: skeleton, config + secrets modules, `config show`, `doctor`, `install skills`,
    release check, install smoke.
 2. Ports, one task each: open-ports, netdata, cloudflare.
-3. Ports, one task each: curl, hetrix, check-domain, server-*, asn, diagnose, watchlist.
+3. Ports, one task each: curl, hetrix, check-domain, server-*, asn, watchlist (diagnose not ported).
 4. `cca run`, then one release of the complete `cca` (TASK-1.11).
 5. Global docs update and migration guide.
 Later, separate: Windows skills install (deferred); removal of old scripts after all

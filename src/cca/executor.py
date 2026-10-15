@@ -164,7 +164,7 @@ def execute(
 
     stdin (bytes) becomes the remote command's stdin, otherwise it reads /dev/null.
     log_text replaces the command in the log line. via="ssh" overrides run.transport:
-    finished scripts (server, diagnose) always use ssh, run.transport is for the
+    finished scripts (cca server) always use ssh, run.transport is for the
     agent's live `cca run` commands. A local Ctrl-C raises CcaError 130 after logging;
     the remote command may keep running.
     """

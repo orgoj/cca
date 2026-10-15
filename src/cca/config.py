@@ -176,10 +176,6 @@ SCHEMA: dict[str, Any] = {
     "server_info": {
         "net_iface_prefixes": (["en", "eth"], _string_list(_matching(_IFACE_RE), non_empty=True)),
     },
-    "diagnose": {
-        "apache_status_cmd": ("apache2ctl", _string),
-        "mongodb_status_cmd": (ABSENT, _string),
-    },
 }
 OPTIONAL_TABLES = {"run.log"}
 

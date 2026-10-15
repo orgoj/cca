@@ -93,7 +93,7 @@ and target at 64 characters → basename ≤ 200; `a-b`+`c` vs `a`+`b-c`; target
 ## `[servers.<name>]` — server registry
 
 `<name>` is a name (see General rules); it is the server argument of `cca run`,
-`server`, `diagnose`, `netdata --server`, `open-ports --delegate`, and the tmux window
+`server`, `netdata --server`, `open-ports --delegate`, and the tmux window
 name. Names are unique case-insensitively: two tables differing only in case (`server1`,
 `Server1`) are a load-time error. Config order (TOML table order, preserved by `tomllib`) is the order for `--all`
 and listings. An empty or missing `[servers]` is valid at load time; commands that need
@@ -110,7 +110,7 @@ a server fail at use time.
 
 | Key | Type | Default | Rule |
 |---|---|---|---|
-| `transport` | string | `"tmux"` | `"tmux"` or `"ssh"`. Only for `cca run` (the agent's live commands); `cca server` and `cca diagnose` always use ssh. |
+| `transport` | string | `"tmux"` | `"tmux"` or `"ssh"`. Only for `cca run` (the agent's live commands); `cca server` always uses ssh. |
 | `tokf` | boolean | `false` | `cca run` passes completed command output (both transports) through `tokf` (resolved lazily from PATH, protocol `cca-v1`; missing, unsupported or failing `tokf` → output unprocessed). |
 
 ### `[run.tmux]`
@@ -175,16 +175,6 @@ secret (doc-1 "Secrets").
 |---|---|---|---|
 | `net_iface_prefixes` | array of strings | `["en", "eth"]` | Non-empty array; each `^[A-Za-z0-9]+$` (the values build a remote filter, so no regex or shell metacharacters). |
 
-## `[diagnose]`
-
-Both commands run **on the target server** through the executor (remote shell, same
-quoting rules as `cca run`). `.cca.toml` is trusted project code (doc-1).
-
-| Key | Type | Default | Rule |
-|---|---|---|---|
-| `apache_status_cmd` | string | `"apache2ctl"` | Program prefix; `cca diagnose` appends ` fullstatus` as legacy. No control characters. |
-| `mongodb_status_cmd` | string | – | Full remote command. Absent → MongoDB section reports "skipped: set diagnose.mongodb_status_cmd". No control characters. |
-
 ## Old CCA links — `cca doctor`
 
 `cca doctor` (config required) checks that no old CCA script or skill is still
@@ -220,8 +210,8 @@ left column.
 |---|---|---|
 | `CCA_OUR_IPS` (comma list) | `cca-check-domain` | `check_domain.our_ips` (split on `,`, trimmed) |
 | `CCA_HOSTING_MARKER` | `cca-check-domain` | `check_domain.hosting_marker` |
-| `CCA_APACHE_STATUS_CMD` | `cca-diagnose-gather` | `diagnose.apache_status_cmd` |
-| `CCA_MONGODB_STATUS_CMD` | `cca-diagnose-gather` | `diagnose.mongodb_status_cmd`; **intentional change**: legacy ran it locally as a single argv element, v1 runs it on the server like the Apache command (matrix row in TASK-1.3.6) |
+| `CCA_APACHE_STATUS_CMD` | `cca-diagnose-gather` | dropped: `cca-diagnose-gather` is not ported (doc-1 inventory) |
+| `CCA_MONGODB_STATUS_CMD` | `cca-diagnose-gather` | dropped: `cca-diagnose-gather` is not ported (doc-1 inventory) |
 | `CCA_NET_IFACE_PREFIXES` (`a\|b` regex) | `cca-server-info` | `server_info.net_iface_prefixes` (split on `\|`) |
 | `CCA_LOGGING` | shown by `cca-tmux-cli --doctor` only | dropped: never controlled logging; presence of `[run.log]` does |
 | log dir `logs/` (hard-coded, logging when it exists) | `cca-tmux-cli`, `cca-run-on-server` | `run.log.dir`; **intentional change**: logging is explicit, not triggered by the directory |

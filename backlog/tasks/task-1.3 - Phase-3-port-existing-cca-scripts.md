@@ -1,10 +1,10 @@
 ---
 id: TASK-1.3
 title: 'Phase 3: port existing cca-* scripts'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-15 07:13'
-updated_date: '2026-10-15 13:08'
+updated_date: '2026-10-15 19:11'
 labels: []
 dependencies:
   - TASK-1.10
@@ -22,5 +22,11 @@ Existing cca-* scripts read bash config and env; they move to subcommands with s
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 All child tasks are Done
+- [x] #1 All child tasks are Done
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+All ported scripts are cca subcommands (curl, hetrix, check-domain, server, asn, watchlist); cca-diagnose-gather not ported (TASK-1.3.6).
+<!-- SECTION:FINAL_SUMMARY:END -->
