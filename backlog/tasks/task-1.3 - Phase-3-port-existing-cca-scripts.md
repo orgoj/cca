@@ -4,6 +4,7 @@ title: 'Phase 3: port existing cca-* scripts'
 status: To Do
 assignee: []
 created_date: '2026-10-15 07:13'
+updated_date: '2026-10-15 07:17'
 labels: []
 dependencies:
   - TASK-1.1
@@ -23,4 +24,6 @@ curl, hetrix, check-domain, server-*, asn, diagnose and watchlist still read bas
 <!-- AC:BEGIN -->
 - [ ] #1 Each listed script has a cca subcommand with a tested compatibility matrix
 - [ ] #2 cca curl never puts a secret in curl argv, including {TOKEN} URL substitution
+- [ ] #3 Each subcommand is released as its own tagged version
+- [ ] #4 cca-validate-args has no consumers in bin/, skills/ or tests/; its validation lives in an internal module used by cca subcommands that take server/command args
 <!-- AC:END -->

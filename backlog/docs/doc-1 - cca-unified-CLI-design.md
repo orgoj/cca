@@ -44,11 +44,15 @@ source checkout must be fully usable (incl. skills).
 - Malformed/unreadable nearest file → error (exit 2), never fall back to a parent.
   None found → commands needing config exit non-zero with a clear message; commands
   that need none (`--version`, `doctor` install checks, `install skills`) still work.
-- Typed schema with top-level `schema_version = 1`, defined completely in phase 1 by
-  inventorying every configurable value of all ported tools (`CCA_OUR_IPS`,
+- Typed schema with top-level `schema_version = 1`, defined completely in phase 1.
+  Config inventory (every value the schema must cover): `CCA_OUR_IPS`,
   `CCA_HOSTING_MARKER`, `CCA_APACHE_STATUS_CMD`, `CCA_MONGODB_STATUS_CMD`,
-  `CCA_NET_IFACE_PREFIXES`, logging/admin/tokf settings, watchlist paths, run
-  server/session/transport, output/cache paths, secrets paths). Unknown keys → error.
+  `CCA_NET_IFACE_PREFIXES`, `CCA_LOGGING`, `ADMIN_NAME`, `CCA_TMUX_TOKF`,
+  `CCA_WATCHLIST`, `.cca-tmux-cli` / `.tmux-cli-python.yaml` settings (session,
+  servers, hooks, audit), `.netdata-servers`, run server/session/transport,
+  output/cache paths (cloudflare exports, fping cache), secrets paths. Not config:
+  `CCA_DENYLIST` (bash repo gate), `CCA_ENV_FILES` (old loader diagnostics),
+  `CCA_ROOT`/`CCA_SKILLS` (old installer internals). Unknown keys → error.
 - `[servers.<name>]` is the shared server registry (ssh target, netdata address, ...),
   replacing ad-hoc files like `.netdata-servers`.
 - `cca config show`: the config path plus the validated document; never decrypts secrets.
@@ -164,4 +168,6 @@ Per consumer project (by its owning agent, after the relevant release): write
 2. Ports, one release each: open-ports, netdata, cloudflare.
 3. Ports, one release each: curl, hetrix, check-domain, server-*, asn, diagnose, watchlist.
 4. `cca run` (+ `--all`).
-5. Docs/skills update to `cca <sub>`, deprecation notes for old scripts.
+5. Docs/skills update to `cca <sub>`, deprecation notes for old scripts in docs and
+   `--help` only (runtime output of old scripts stays unchanged; agents parse it),
+   migration guide from `CCA_*`/config files to `.cca.toml` keys.
