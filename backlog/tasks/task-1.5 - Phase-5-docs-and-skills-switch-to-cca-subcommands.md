@@ -4,7 +4,7 @@ title: 'Phase 5: global docs and migration guide'
 status: To Do
 assignee: []
 created_date: '2026-10-15 07:13'
-updated_date: '2026-10-15 09:05'
+updated_date: '2026-10-15 09:07'
 labels: []
 dependencies:
   - TASK-1.2
@@ -25,6 +25,6 @@ After all ports are released, global docs must describe the cca CLI and give con
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 AGENTS.md, CLAUDE.md and README describe the cca CLI, install and release
-- [ ] #2 A migration guide maps every legacy input from doc-2 to its .cca.toml key or states it was dropped
-- [ ] #3 No file under bin/, lib/ or root skills/ is modified by this task
+- [ ] #2 No file under bin/, lib/ or root skills/ is modified by this task
+- [ ] #3 A migration guide maps every legacy input from doc-2 to its .cca.toml key or states it was dropped, and requires zero legacy skill/bin links (cca doctor --legacy clean) before TASK-2
 <!-- AC:END -->

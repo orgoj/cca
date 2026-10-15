@@ -208,7 +208,10 @@ exclusion list. It reports every reference to a retired command and every
 legacy config input (`.cca-env`, `.env` CCA_* keys, `.cca-tmux-cli`,
 `.tmux-cli-python.yaml`, `.netdata-servers`, mapped `CCA_*` variables). Lines marked
 `cca-legacy-ok` or paths in `[legacy] allow` (migration notes) are reported as allowed.
-Old scripts are removed only when every consumer reports none.
+It also checks symlink metadata (without following links for content) in the agent
+skill install dirs listed in doc-2 and in PATH dirs, and fails on any link that
+resolves into the old CCA `bin/` or root `skills/` tree.
+Old scripts and skills are removed only when every consumer reports none.
 
 ## Phases
 

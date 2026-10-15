@@ -4,7 +4,7 @@ title: 'Phase 0: normative .cca.toml and secrets schema v1 (doc-2)'
 status: To Do
 assignee: []
 created_date: '2026-10-15 07:32'
-updated_date: '2026-10-15 07:37'
+updated_date: '2026-10-15 09:07'
 labels: []
 dependencies:
   - TASK-1.9
@@ -28,4 +28,5 @@ The core config API is public contract; later ports must not change it silently.
 - [ ] #4 Valid and invalid TOML fixtures for schema v1 exist under tests/fixtures/ for the core tests
 - [ ] #5 doc-2 carries the cca curl request-policy fields (allowed origins with scheme, host, port) from doc-1
 - [ ] #6 doc-2 defines the [legacy] table (include, allow) and the default exclusion list for cca doctor --legacy
+- [ ] #7 doc-2 lists the agent skill install dirs probed by cca doctor --legacy
 <!-- AC:END -->
