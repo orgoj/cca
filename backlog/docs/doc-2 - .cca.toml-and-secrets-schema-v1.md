@@ -178,12 +178,6 @@ quoting rules as `cca run`). `.cca.toml` is trusted project code (doc-1).
 | `apache_status_cmd` | string | `"apache2ctl"` | Program prefix; `cca diagnose` appends ` fullstatus` as legacy. No control characters. |
 | `mongodb_status_cmd` | string | – | Full remote command. Absent → MongoDB section reports "skipped: set diagnose.mongodb_status_cmd". No control characters. |
 
-## `[watchlist]`
-
-| Key | Type | Default | Rule |
-|---|---|---|---|
-| `file` | path | see rule | Absent → first existing of `cca/watchlist.json`, `watchlist.json` (config dir); none exists → `cca/watchlist.json` when the `cca/` directory exists, else `watchlist.json`. |
-
 ## Old CCA links — `cca doctor`
 
 `cca doctor` (config required) checks that no old CCA script or skill is still
@@ -227,7 +221,7 @@ left column.
 | `ADMIN_NAME` | `cca-tmux-cli`, `cca-run-on-server`, `cca-doctor` | `run.log.operator` |
 | `CCA_AGENT` | `tmux_cli_python` audit | dropped with `tmux_cli_python` (phase 1) |
 | `CCA_TMUX_TOKF=1` | `cca-tmux-cli` | `run.tmux.tokf = true` |
-| `CCA_WATCHLIST` | `cca-watchlist` | `watchlist.file` |
+| `CCA_WATCHLIST`, `watchlist.json` | `cca-watchlist` | dropped: the register is the project's Backlog.md (doc-1 "Watchlist on Backlog.md"); TASK-4 converts the items |
 | `TMUX_SESSION_NAME` (`.cca-tmux-cli`/`.cca-env`) | `cca-tmux-cli` | `run.tmux.session` |
 | `TMUX_SESSION_SERVERS` (space list) | `cca-tmux-cli`, `cca-run-on-server`, `cca-doctor` | one `[servers.<name>]` table per entry, same order |
 | `RUN_ON_CMD` (`cca-tmux-cli`\|`ssh`) | `cca-run-on-server` | `run.transport` (`"tmux"`\|`"ssh"`) |

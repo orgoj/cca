@@ -201,10 +201,24 @@ def ready(target, tmp_path, monkeypatch):
     bindir.mkdir()
     (bindir / "sops").write_text("#!/bin/sh\nexit 1\n")
     (bindir / "sops").chmod(0o755)
+    fake_backlog(bindir, "To Do, In Progress, Note, Done")
     monkeypatch.setenv("PATH", str(bindir))
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     assert main(["install", "skills"]) == 0
     return tmp_path
+
+
+def fake_backlog(bindir, statuses: str) -> None:
+    """`backlog --version` and `backlog config get statuses`; logs its cwd."""
+    script = bindir / "backlog"
+    script.write_text(
+        "#!/bin/sh\n"
+        f'echo "$(pwd) ${{BACKLOG_CWD-unset}}" > "{bindir}/backlog.cwd"\n'
+        'if [ "$1" = --version ]; then echo 1.53.0; exit 0; fi\n'
+        f'[ "$*" = "config get statuses" ] && echo "{statuses}" && exit 0\n'
+        "exit 3\n"
+    )
+    script.chmod(0o755)
 
 
 def test_doctor_ready_project(ready, capsys):
@@ -213,6 +227,26 @@ def test_doctor_ready_project(ready, capsys):
     out = capsys.readouterr().out
     assert "FAIL" not in out and "WARN" not in out
     assert f"OK   config: {ready / '.cca.toml'}" in out
+    assert "OK   backlog: 1.53.0" in out
+    assert "OK   backlog statuses: Note, Done present" in out
+
+
+def test_doctor_backlog_missing(ready, capsys):
+    (ready / "bin" / "backlog").unlink()
+    assert main(["doctor"]) == 1
+    assert "FAIL backlog: backlog CLI not found on PATH" in capsys.readouterr().out
+
+
+def test_doctor_backlog_statuses_without_note(ready, monkeypatch, capsys):
+    fake_backlog(ready / "bin", "To Do, In Progress, Done")
+    (ready / "sub").mkdir()
+    monkeypatch.chdir(ready / "sub")
+    monkeypatch.setenv("BACKLOG_CWD", "/nonexistent")
+    assert main(["doctor"]) == 1
+    out = capsys.readouterr().out
+    assert "FAIL backlog statuses: missing Note (add to the statuses list in" in out
+    # run in the config dir, BACKLOG_CWD not passed on
+    assert (ready / "bin" / "backlog.cwd").read_text().strip() == f"{ready} unset"
 
 
 def test_doctor_empty_dir_fails(tmp_path, monkeypatch, capsys):
@@ -264,6 +298,8 @@ def old_tree(ready, monkeypatch):
     (root / "skills" / "cca-core" / "SKILL.md").write_text("old\n")
 
     def inside(path) -> bool:
+        if isinstance(path, int):  # an already open descriptor (subprocess pipes)
+            return False
         return os.path.realpath(os.fspath(path)).startswith(str(root) + os.sep)
 
     real_scandir, real_open = os.scandir, open

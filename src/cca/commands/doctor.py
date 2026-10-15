@@ -8,7 +8,8 @@ import shutil
 from importlib.metadata import version
 from pathlib import Path
 
-from cca import config, skilllinks
+from cca import config, skilllinks, validate
+from cca.commands import watchlist
 from cca.commands.install import DEFAULT_TARGET
 from cca.output import CcaError
 
@@ -85,10 +86,32 @@ def run(args: argparse.Namespace) -> int:
             str(log_dir) + ("" if log_dir.is_dir() else " missing"),
         )
 
+    if cfg is not None:
+        _check_backlog(report, str(cfg.dir))
     _check_skills(report, args.fix)
     if cfg is not None:
         _check_old_cca(report, cfg.dir)
     return 1 if failed else 0
+
+
+def _check_backlog(report, project: str) -> None:
+    """The register of cca watchlist: backlog CLI and the statuses it relies on."""
+    try:
+        found = watchlist.run_backlog(project, ["--version"]).strip()
+        statuses = watchlist.run_backlog(project, ["config", "get", "statuses"])
+    except CcaError as e:
+        report("FAIL", "backlog", str(e))
+        return
+    report("OK", "backlog", validate.display(found[:40]))
+    names = {s.strip() for s in statuses.split(",")}
+    missing = [s for s in watchlist.REQUIRED_STATUSES if s not in names]
+    report(
+        "FAIL" if missing else "OK",
+        "backlog statuses",
+        "missing " + ", ".join(missing) + " (add to the statuses list in backlog/config.yml)"
+        if missing
+        else ", ".join(watchlist.REQUIRED_STATUSES) + " present",
+    )
 
 
 def _old_root(path: str) -> Path | None:

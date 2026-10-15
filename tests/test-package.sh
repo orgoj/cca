@@ -44,8 +44,10 @@ step "dist leak scan" python3 -I "$ROOT/tests/leak_scan.py" "$DENY" --dir "$TMP/
 [ "$FAIL" -eq 0 ] || exit 1
 
 WHEEL=$(echo "$TMP"/dist/cca-*.whl)
-mkdir -p "$PROJ/.claude/skills" "$PROJ/cca/guides" "$PROJ/cca/incidents"
+mkdir -p "$PROJ/.claude/skills" "$PROJ/cca/guides" "$PROJ/cca/incidents" "$PROJ/backlog"
 printf 'schema_version = 1\n\n[servers.server1]\n' >"$PROJ/.cca.toml"
+# cca doctor needs the backlog CLI and these statuses (cca watchlist)
+printf 'statuses: ["To Do", "In Progress", "Note", "Done"]\n' >"$PROJ/backlog/config.yml"
 
 step "uv tool install" uv tool install --quiet "$WHEEL"
 step "installed from the wheel, not the checkout" expect_out "$UV_TOOL_DIR/cca/" \

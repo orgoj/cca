@@ -46,6 +46,3 @@ net_iface_prefixes = ["en", "eth", "wg"]
 [diagnose]
 apache_status_cmd = "sudo apache2ctl"
 mongodb_status_cmd = "mongosh --quiet --eval 'db.serverStatus().ok'"
-
-[watchlist]
-file = "cca/watchlist.json"

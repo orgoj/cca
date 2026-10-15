@@ -180,7 +180,7 @@ tests/                    # bash tests stay; pytest for cca
 | `server info/status/hostname` | `cca-server-*` |
 | `asn` | `asn-wrap` |
 | `diagnose` | `cca-diagnose-gather` |
-| `watchlist` | `cca-watchlist` |
+| `watchlist today/notes/checked` | `cca-watchlist` (register moves to Backlog.md, see below) |
 | `run` | `cca-tmux-cli`, `cca-run-on-server`, `cca-run-all` |
 | not ported | `cca-validate-args`, `cca-install bin`, `tmux_cli_python` (removed in phase 1) |
 | stays bash | `cca-check-shared-clean` (repo check) |
@@ -191,6 +191,28 @@ deleted in TASK-2; external tools checked lazily; texts English with
 `server1`/`example.com`/`203.0.113.x`. The three tools from the private Ansible
 project are first captured in public-safe behavior specs in `backlog/docs` (TASK-1.9),
 so their ports and doc-2 can be done from a clone.
+
+## Watchlist on Backlog.md
+
+The project's work register is its Backlog.md (`backlog/`); `cca watchlist` adds only
+what Backlog lacks and talks to it only through the `backlog` CLI (JSON output, run in
+the config dir). Conventions, everything else is plain Backlog (refs, priority,
+dependencies, search, Done):
+
+- **Recurring check**: a task with label `every:Nd` (N days, 1–366); its due date is the
+  next check. Optional `until:YYYY-MM-DD` ends the checking.
+- **Scheduled task**: any open task with a due date.
+- **Note**: information, never work: a task in status `Note` (a project status) with
+  optional `from:YYYY-MM-DD` / `until:YYYY-MM-DD` labels, inclusive local dates;
+  missing boundaries are unlimited.
+
+Subcommands: `today` (open tasks due today or earlier, then notes valid today),
+`notes --on DATE` (notes valid on a date, e.g. to find a note about an outage),
+`checked ID` (recurring task: due date = today + N days, comment with the check time;
+past `until:` it is set Done instead). Malformed `every:`/`from:`/`until:` labels are
+reported, never skipped silently. `cca doctor` checks that `backlog` is installed and
+the project's statuses include `Note`. TASK-4 converts `watchlist.json` items into
+Backlog tasks; `cca` has no importer.
 
 ## Release check and install
 

@@ -68,27 +68,7 @@ def test_defaults_filled(tmp_path):
     assert cfg.data["run"] == {"transport": "tmux", "tmux": {"tokf": False}}
     assert cfg.data["secrets"]["curl"] == "secrets/curl.secret.yaml"
     assert cfg.data["server_info"]["net_iface_prefixes"] == ["en", "eth"]
-    assert cfg.data["watchlist"] == {"file": "watchlist.json"}
     assert cfg.resolve(cfg.data["secrets"]["curl"]) == tmp_path / "secrets/curl.secret.yaml"
-
-
-@pytest.mark.parametrize(
-    ("existing", "expected"),
-    [
-        (["cca/watchlist.json", "watchlist.json"], "cca/watchlist.json"),
-        (["cca/", "watchlist.json"], "watchlist.json"),
-        (["cca/"], "cca/watchlist.json"),
-        ([], "watchlist.json"),
-    ],
-)
-def test_watchlist_default(tmp_path, existing, expected):
-    for name in existing:
-        if name.endswith("/"):
-            (tmp_path / name).mkdir()
-        else:
-            write(tmp_path / name, "[]")
-    cfg = config.load(str(write(tmp_path / ".cca.toml", "schema_version = 1\n")))
-    assert cfg.data["watchlist"]["file"] == expected
 
 
 def test_operator_at_name_limit(tmp_path):

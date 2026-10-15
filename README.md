@@ -28,11 +28,12 @@ cca --version
 | `cca cloudflare GROUP COMMAND` | Cloudflare zones through the official SDK (token from sops): `token`, `zone`, `dns`, `waf`, `ratelimit`, `config`, `access`, `ua`, `uam`, `bots`, `events`, `analytics`, `export`, `diff`; writes plan unless `--apply` |
 | `cca config show` | The `.cca.toml` in use and its values with defaults |
 | `cca curl [--cred-id ID] [CURL-OPTION...] URL` | curl with a credential from the sops file, selected by the URL's origin (HTTPS only); kept out of argv and redacted from output and trace files |
-| `cca doctor [--fix]` | Check the project (config, sops, `cca/` dirs, skill links, old `cca-*` scripts/skills not installed) |
+| `cca doctor [--fix]` | Check the project (config, sops, `cca/` dirs, `backlog` CLI and its `Note`/`Done` statuses, skill links, old `cca-*` scripts/skills not installed) |
 | `cca hetrix COMMAND` | HetrixTools API v3 with the `curl` sops credential for its origin: `status`, `down`, `all`, `response-times`, `outages`, `monitor-outages`, `monitor-info`, `server-stats`, `blacklist [TARGET]` |
 | `cca install skills [NAME] [--target DIR]` | Link the skills shipped in the package (`src/cca/skills/`) into `.claude/skills` |
 | `cca netdata [--server NAME\|--host H] COMMAND` | Netdata API of a server over ssh or directly: `list`, `meta`, `discover`, `stats`, `top`, `query`, `fping [--per-target\|--history\|--all]` |
 | `cca open-ports [-d SERVER] [-k] [-m nmap\|nc\|curl] [-n] HOST [PORT...]` | Probe TCP ports of a host, locally or from a `[servers]` entry over ssh |
+| `cca watchlist today\|notes\|checked` | Daily check over the project's Backlog.md (`backlog` CLI): due and `every:Nd` recurring tasks, notes (status `Note`, `from:`/`until:` labels) valid on a date, `checked ID` moves the next check |
 
 ## bin/ - Scripts
 

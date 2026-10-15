@@ -180,9 +180,6 @@ SCHEMA: dict[str, Any] = {
         "apache_status_cmd": ("apache2ctl", _string),
         "mongodb_status_cmd": (ABSENT, _string),
     },
-    "watchlist": {
-        "file": (ABSENT, _path),  # default chosen by _watchlist_default
-    },
 }
 OPTIONAL_TABLES = {"run.log"}
 
@@ -290,16 +287,7 @@ def _validate(raw: dict[str, Any], path: Path) -> dict[str, Any]:
         if key not in SCHEMA and key not in ("schema_version", "servers"):
             warn(f"unknown key '{validate.display(key)}' in {path}")
     data.update(_table(raw, SCHEMA, "", path))
-    data["watchlist"].setdefault("file", _watchlist_default(path.parent))
     return data
-
-
-def _watchlist_default(config_dir: Path) -> str:
-    """doc-2 [watchlist]: first existing file, else by whether cca/ exists."""
-    for candidate in ("cca/watchlist.json", "watchlist.json"):
-        if (config_dir / candidate).exists():
-            return candidate
-    return "cca/watchlist.json" if (config_dir / "cca").is_dir() else "watchlist.json"
 
 
 def _servers(raw: Any, path: Path) -> dict[str, Any]:

@@ -23,6 +23,7 @@ COMMANDS: dict[str, tuple[str, str]] = {
     "install": ("install", "install cca skills into an agent skill directory"),
     "netdata": ("netdata", "query Netdata metrics of a server, over ssh or directly"),
     "open-ports": ("open_ports", "probe TCP ports of a host with nmap, nc or curl"),
+    "watchlist": ("watchlist", "recurring checks, scheduled tasks and dated notes on Backlog.md"),
 }
 
 
