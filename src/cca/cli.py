@@ -17,6 +17,7 @@ COMMANDS: dict[str, tuple[str, str]] = {
     "config": ("config", "show the project .cca.toml"),
     "curl": ("curl", "curl with a project credential hidden from argv and output"),
     "doctor": ("doctor", "check that the current project is ready for cca"),
+    "hetrix": ("hetrix", "HetrixTools monitors: status, outages, server stats, blacklists"),
     "install": ("install", "install cca skills into an agent skill directory"),
     "netdata": ("netdata", "query Netdata metrics of a server, over ssh or directly"),
     "open-ports": ("open_ports", "probe TCP ports of a host with nmap, nc or curl"),

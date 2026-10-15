@@ -322,7 +322,7 @@ class Netdata:
             data = json.loads(body.decode("utf-8"))
         except ValueError as e:  # includes UnicodeDecodeError
             raise FetchError(f"fetching {url}: invalid JSON ({e})") from None
-        return _clean(data) if clean else data
+        return validate.clean(data) if clean else data
 
     def _direct(self, url: str) -> bytes:
         """HTTP GET in a worker thread: the deadline also covers slow headers and a
@@ -415,17 +415,6 @@ class Netdata:
         params.update({k: str(v) for k, v in extra.items() if v is not None})
         params["format"] = "json"
         return self.fetch("v3", "/data", params, clean)
-
-
-def _clean(value: Any) -> Any:
-    """API JSON with every string made safe for the terminal (control characters escaped)."""
-    if isinstance(value, str):
-        return validate.display(value)
-    if isinstance(value, list):
-        return [_clean(v) for v in value]
-    if isinstance(value, dict):
-        return {validate.display(k): _clean(v) for k, v in value.items()}
-    return value
 
 
 def _result(data: Any) -> tuple[dict, list, list]:

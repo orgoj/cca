@@ -16,6 +16,7 @@ what.
 | `cca config show` | see which `.cca.toml` is used and its values with defaults | [config](references/config.md) |
 | `cca curl` | call an HTTP API with a project credential you never see | [curl](references/curl.md) |
 | `cca doctor` | check that the project is ready for cca | [doctor](references/doctor.md) |
+| `cca hetrix` | check HetrixTools monitors: UP/DOWN, outages, response times, server agent stats, blacklists | [hetrix](references/hetrix.md) |
 | `cca install skills` | link the shipped skills into an agent skill directory | [install](references/install.md) |
 | `cca netdata` | read Netdata metrics of a server: load, top N, network latency and packet loss | [netdata](references/netdata.md) |
 | `cca open-ports` | check which TCP ports of a host are reachable, locally or from a server | [open-ports](references/open-ports.md) |

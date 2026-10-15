@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 import re
+from typing import Any
 
 NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
 NAME_MAX = 64
@@ -22,6 +23,17 @@ def has_control(value: str) -> bool:
 def display(value: str) -> str:
     """A name or key safe to print: non-printable characters escaped."""
     return value if value.isprintable() else value.encode("unicode_escape").decode("ascii")
+
+
+def clean(value: Any) -> Any:
+    """API JSON with every string made safe for the terminal (control characters escaped)."""
+    if isinstance(value, str):
+        return display(value)
+    if isinstance(value, list):
+        return [clean(v) for v in value]
+    if isinstance(value, dict):
+        return {display(k): clean(v) for k, v in value.items()}
+    return value
 
 
 def is_name(value: str) -> bool:
