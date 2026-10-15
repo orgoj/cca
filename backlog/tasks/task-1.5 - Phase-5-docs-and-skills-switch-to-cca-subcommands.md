@@ -4,12 +4,12 @@ title: 'Phase 5: global docs and migration guide'
 status: To Do
 assignee: []
 created_date: '2026-10-15 07:13'
-updated_date: '2026-10-15 07:33'
+updated_date: '2026-10-15 07:43'
 labels: []
 dependencies:
   - TASK-1.2
   - TASK-1.3
-  - TASK-1.4
+  - TASK-1.11
 parent_task_id: TASK-1
 priority: low
 type: docs

@@ -184,15 +184,19 @@ so their ports and doc-2 can be done from a clone.
   verified in phase 1, recorded in README). Version from `importlib.metadata`.
 - One subcommand (or one tightly coupled family) per release. A port task closes when
   release-ready (pre-tag gate green, fixture denylist); tagging, consumer-denylist check,
-  post-tag check and install are tracked on the phase parent task.
+  post-tag check and install are tracked on the phase parent task (phases 2, 3) or on a
+  dedicated release task (core + doctor --legacy: TASK-1.10; cca run: TASK-1.11).
 
 ## Consumer migration
 
 Per consumer project (by its owning agent, after the relevant release): write
 `.cca.toml`, move secrets into sops files, switch calls/guides to `cca <sub>`.
-On deployment, every consumer project is checked with `cca doctor --legacy`: it scans
-git-tracked files (plus `[legacy] include`), skipping binaries, symlinks and the
-doc-2 exclusion list, and reports every reference to a retired command and every
+On deployment, every consumer project is checked with `cca doctor --legacy`: it always
+probes the known legacy paths (`.cca-env`, `.env`, `.cca-tmux-cli`,
+`.tmux-cli-python.yaml`, `.netdata-servers`, default agent-instruction files) in the
+project root and nested repos regardless of git tracking, and additionally scans
+git-tracked files plus `[legacy] include`, skipping binaries, symlinks and the doc-2
+exclusion list. It reports every reference to a retired command and every
 legacy config input (`.cca-env`, `.env` CCA_* keys, `.cca-tmux-cli`,
 `.tmux-cli-python.yaml`, `.netdata-servers`, mapped `CCA_*` variables). Lines marked
 `cca-legacy-ok` or paths in `[legacy] allow` (migration notes) are reported as allowed.

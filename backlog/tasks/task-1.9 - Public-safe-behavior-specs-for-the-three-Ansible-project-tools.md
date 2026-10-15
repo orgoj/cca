@@ -4,8 +4,12 @@ title: Public-safe behavior specs for the three Ansible-project tools
 status: To Do
 assignee: []
 created_date: '2026-10-15 07:36'
-labels: []
+updated_date: '2026-10-15 07:43'
+labels:
+  - 'blocked:external'
 dependencies: []
+references:
+  - private consumer project; maintainer with access delivers the specs
 parent_task_id: TASK-1
 priority: high
 type: docs
@@ -15,7 +19,7 @@ ordinal: 21000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-check-open-ports, netdata-cli.py and cloudflare-cli live in a private consumer project, so ports and the config schema could not be done from a clone. Their observable behavior is captured once in public-safe specs that the port tasks and doc-2 use instead of the sources.
+check-open-ports, netdata-cli.py and cloudflare-cli live in a private consumer project, so ports and the config schema could not be done from a clone. Their observable behavior is captured once in public-safe specs that the port tasks and doc-2 use instead of the sources. Done only by the CCA maintainer with access to that project; the committed specs are the deliverable.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
