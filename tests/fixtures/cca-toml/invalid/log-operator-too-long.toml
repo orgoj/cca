@@ -1,0 +1,5 @@
+# expect: run.log.operator
+schema_version = 1
+
+[run.log]
+operator = "a1234567890123456789012345678901234567890123456789012345678901234"

@@ -11,7 +11,9 @@ from cca.output import CcaError, error
 
 # subcommand -> (module under cca.commands, one-line help); each module provides
 # add_arguments(parser) and run(args) -> int
-COMMANDS: dict[str, tuple[str, str]] = {}
+COMMANDS: dict[str, tuple[str, str]] = {
+    "config": ("config", "show the project .cca.toml"),
+}
 
 
 def _selected(argv: list[str]) -> str | None:

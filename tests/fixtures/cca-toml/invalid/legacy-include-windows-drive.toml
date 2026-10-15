@@ -1,0 +1,5 @@
+# expect: legacy.include
+schema_version = 1
+
+[legacy]
+include = ["docs/*.md", "C:/outside/*.md"]
