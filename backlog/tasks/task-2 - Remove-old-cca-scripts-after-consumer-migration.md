@@ -4,10 +4,12 @@ title: Remove old cca-* scripts after consumer migration
 status: To Do
 assignee: []
 created_date: '2026-10-15 07:33'
+updated_date: '2026-10-15 07:35'
 labels:
   - 'blocked:external'
 dependencies:
   - TASK-1
+  - TASK-1.8
 priority: low
 type: chore
 ordinal: 19000
@@ -21,6 +23,6 @@ Old scripts and lib/cca-env.sh stay unchanged until every consumer project runs 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Every consumer project confirmed migrated to cca subcommands
+- [ ] #1 cca doctor --legacy reports no references in every consumer project
 - [ ] #2 bin/ and lib/cca-env.sh removed except an approved cca-tmux-cli wrapper; tests and docs updated
 <!-- AC:END -->

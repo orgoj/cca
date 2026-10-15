@@ -22,7 +22,7 @@ source checkout must be fully usable (incl. skills) at every release.
   variables (several projects with different keys share one machine).
 - Secrets only from per-project sops files.
 - `cca run` = improved Python successor of `cca-tmux-cli`, `cca-run-on-server` and
-  `cca-run-all` (built from `tmux_cli_python/`); transports tmux | ssh, chosen in
+  `cca-run-all` (the bash scripts are the behavioral reference); transports tmux | ssh, chosen in
   `.cca.toml`. Validation of the agent's tool call `cca run SERVER ...` is done by Dippy
   with the agent CLI, outside CCA. Optional later: `cca run` asks the Dippy CLI to
   validate the inner command with server context.
@@ -33,7 +33,9 @@ source checkout must be fully usable (incl. skills) at every release.
 - `cca-install` has no successor (uv installs `cca`; skills via `cca install skills`).
 - `cca-validate-args` is not ported (no consumers; command validation is Dippy's job).
 - `cca-check-shared-clean` stays bash, repo-only gate.
-- `tmux-cli-python` as a separate command is dropped; it becomes `cca run`.
+- `tmux_cli_python/` (unused experiment: package, entry point, tests, YAML config, its
+  hooks/audit features) is removed in phase 1; `cca run` does not inherit its
+  hook/audit pipeline. It stays available in git history.
 - Old `cca-*` scripts stay unchanged (no deprecation notes, no edits) until all
   consumer projects are converted to `cca`, then they are deleted (with
   `lib/cca-env.sh`) in a separate, user-approved task. `cca-tmux-cli` may remain as a
@@ -61,12 +63,12 @@ source checkout must be fully usable (incl. skills) at every release.
 - Legacy inputs doc-2 must map: `CCA_OUR_IPS`, `CCA_HOSTING_MARKER`,
   `CCA_APACHE_STATUS_CMD`, `CCA_MONGODB_STATUS_CMD`, `CCA_NET_IFACE_PREFIXES`,
   `CCA_LOGGING`, `ADMIN_NAME`, `CCA_AGENT`, `CCA_TMUX_TOKF`, `CCA_WATCHLIST`,
-  `.cca-tmux-cli` / `.tmux-cli-python.yaml` settings (session, servers, hooks, audit),
+  `.cca-tmux-cli` settings (session, servers),
   `.netdata-servers`, cloudflare exports and fping cache paths, secrets paths. Not
   config: `CCA_DENYLIST` (bash repo gate), `CCA_ENV_FILES`, `CCA_ROOT`, `CCA_SKILLS`.
 - `[servers.<name>]` is the shared server registry (ssh target, netdata address, ...).
-- `.cca.toml` may define executable hooks, so it is trusted project code, like a
-  Makefile.
+- `.cca.toml` may define commands CCA executes (e.g. status commands), so it is trusted
+  project code, like a Makefile.
 - `cca config show`: the config path plus the validated document; never decrypts secrets.
 
 ## Secrets: `cca.secrets`
@@ -85,18 +87,23 @@ source checkout must be fully usable (incl. skills) at every release.
 
 ## `cca curl` request policy
 
-- Each credential lists allowed origins (scheme + host); HTTPS only; the request URL
-  must match one allowed origin, every additional URL argument is rejected.
+- Each credential lists allowed origins: scheme + normalized host + effective port;
+  HTTPS only; the request URL must match one allowed origin.
+- URL checks cover every way curl accepts a URL: positional, `--url`, globbing/
+  alternate forms, URLs from config files; any second URL is rejected.
+- Ambient curl config is disabled (`-q` / no `.curlrc`); user `-K/--config`,
+  `--write-out`, `-v`, `--trace*`, `--libcurl` and other options that bypass the policy
+  or print request data are rejected when a credential is attached.
 - No credential forwarding on redirects to another origin.
-- Options that print headers/request data (`-v`, `--trace*`, `--libcurl`, ...) are
-  rejected when a credential is attached.
 - Values written to the curl config are escaped; control characters rejected.
+- Output: configured secret values are redacted from curl stdout, stderr and CCA error
+  paths (covers endpoints that reflect the token-bearing URL or header).
 - `secrets/curl.secret.yaml` keeps `credentials.<id>.*`; doc-2 adds the origin list.
 
 ## `cca run`
 
-- Surfaces (all predecessors covered): run a command, `list`, `read`, `session`,
-  `audit`, validation/redaction hooks, `--create-file` (atomic remote write), `--list`
+- Surfaces (all bash predecessors covered): run a command, `list`, `read`, `session`,
+  `--create-file` (atomic remote write), `--list`
   (servers), `--all` (cca-run-all: run a named local CCA script once per server, stop on
   first failure). Surfaces meaningless for a transport (e.g. `read` over ssh) are
   rejected with a clear error.
@@ -104,10 +111,10 @@ source checkout must be fully usable (incl. skills) at every release.
   No CMD → read the command from stdin: stdin is a TTY → error; empty stdin → error.
   Server is the first positional; value options only before it, from a known list.
   The shape is a public contract for external validators (Dippy).
-- Security: hook confirmations run as argv, the message passed as one argument or on
-  stdin, never through a shell; SERVER only from `[servers]`, ssh target validated and
-  passed as separate argv; redaction applies to every output path (normal, timeout,
-  error, log) and empty redactor output stays empty.
+- Security: no local shell is involved in building the call; SERVER only from
+  `[servers]`, ssh target validated and passed as separate argv; tmux targets passed as
+  separate argv. If output redaction is added later, it applies to every output path
+  (normal, timeout, error, log) and empty redactor output stays empty.
 - Reserved for later: `[run] validator = "dippy"`.
 
 ## Layout
@@ -120,8 +127,7 @@ src/cca/cli.py            # argparse, lazy import per subcommand
 src/cca/{config,secrets,output,ssh}.py
 src/cca/commands/<name>.py
 skills/                   # unchanged location; packaged into the wheel as cca/skills
-tmux_cli_python/          # kept (no entry point) until cca run absorbs it
-tests/                    # bash tests stay; pytest for cca and tmux_cli_python
+tests/                    # bash tests stay; pytest for cca
 ```
 
 - hatchling `force-include` maps `skills/` → `cca/skills`.
@@ -129,8 +135,8 @@ tests/                    # bash tests stay; pytest for cca and tmux_cli_python
   (`importlib.resources`); replaces only links it owns (pointing into a cca install),
   never overwrites other skills or follows existing destination links; idempotent;
   links stay valid after reinstall.
-- Until `cca run` lands, the root project keeps `tmux_cli_python` and its dependencies
-  and tests; only the `tmux-cli-python` entry point is removed.
+- Phase 1 removes `tmux_cli_python/`, its tests and its dependencies (typer, pyyaml,
+  libtmux) together with the root project switch.
 
 ## Subcommand inventory
 
@@ -148,8 +154,8 @@ tests/                    # bash tests stay; pytest for cca and tmux_cli_python
 | `asn` | `asn-wrap` |
 | `diagnose` | `cca-diagnose-gather` |
 | `watchlist` | `cca-watchlist` |
-| `run` | `cca-tmux-cli`, `cca-run-on-server`, `cca-run-all`, `tmux_cli_python` |
-| not ported | `cca-validate-args`, `cca-install bin` |
+| `run` | `cca-tmux-cli`, `cca-run-on-server`, `cca-run-all` |
+| not ported | `cca-validate-args`, `cca-install bin`, `tmux_cli_python` (removed in phase 1) |
 | stays bash | `cca-check-shared-clean` (repo gate) |
 
 Each port starts with a public-safe behavior spec in `backlog/docs` (compatibility
@@ -174,6 +180,10 @@ the source; every row tested; external tools checked lazily; texts English with
 
 Per consumer project (by its owning agent, after the relevant release): write
 `.cca.toml`, move secrets into sops files, switch calls/guides to `cca <sub>`.
+On deployment, every consumer project is checked for remaining uses of old commands
+(scripts, Makefiles, CI, docs, skills, agent instructions) with `cca doctor --legacy`,
+which reports each reference to a retired command; old scripts are removed only when
+every consumer reports none.
 
 ## Phases
 

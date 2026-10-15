@@ -4,6 +4,7 @@ title: Port cca-curl-secret to cca curl
 status: To Do
 assignee: []
 created_date: '2026-10-15 07:32'
+updated_date: '2026-10-15 07:35'
 labels: []
 dependencies:
   - TASK-1.1
@@ -22,7 +23,7 @@ cca-curl-secret puts {TOKEN} URL substitutions in curl argv (visible in the proc
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Compatibility matrix vs bin/cca-curl-secret; every row tested
-- [ ] #2 Request policy from doc-1 enforced: allowed origins per credential, HTTPS only, extra URLs rejected, no cross-origin redirect credential forwarding, header-printing options rejected with a credential, config values escaped and control characters rejected
-- [ ] #3 Tests prove the secret is absent from curl argv and CCA diagnostics, incl. {TOKEN} URLs
-- [ ] #4 Skills referencing cca-curl-secret updated in the same release; released as its own tag
+- [ ] #2 Skills referencing cca-curl-secret updated in the same release; released as its own tag
+- [ ] #3 Request policy from doc-1 enforced: allowed origin = scheme + normalized host + effective port, HTTPS only, every URL form (positional, --url, globbing, config file) checked and a second URL rejected, ambient .curlrc disabled, -K/--config, --write-out, -v, --trace*, --libcurl rejected with a credential, no cross-origin redirect credential forwarding, config values escaped and control characters rejected; each a negative test
+- [ ] #4 Configured secrets are absent from curl argv and CCA diagnostics and redacted from curl stdout, stderr and error paths; tests incl. {TOKEN} URLs and a reflected-token fixture
 <!-- AC:END -->
