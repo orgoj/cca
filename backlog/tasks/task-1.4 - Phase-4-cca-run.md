@@ -4,7 +4,7 @@ title: 'Phase 4: cca run'
 status: To Do
 assignee: []
 created_date: '2026-10-15 07:13'
-updated_date: '2026-10-15 13:09'
+updated_date: '2026-10-15 15:32'
 labels: []
 dependencies:
   - TASK-1.1
@@ -22,7 +22,7 @@ Python successor of cca-tmux-cli, cca-run-on-server and cca-run-all; the bash sc
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Compatibility matrices vs cca-tmux-cli (robot-init, doctor, robot-help, list, read, session, exit codes, Ctrl-C/SIGTERM markers, logging, tokf), cca-run-on-server (--list, --create-file) and cca-run-all; every row tested
+- [ ] #1 cca run surfaces specified and tested as new behavior: robot-init, doctor, robot-help, list, read, session, exit codes, Ctrl-C/SIGTERM markers, logging, tokf, --list, --create-file, --all
 - [ ] #2 cca run SERVER -- CMD and cca run SERVER with CMD on stdin work over tmux and ssh; no CMD with TTY stdin or empty stdin exits non-zero
 - [ ] #3 Surfaces meaningless for a transport (e.g. read over ssh) exit non-zero with a clear error
 - [ ] #4 SERVER only from [servers]; ssh target validated and passed as separate argv

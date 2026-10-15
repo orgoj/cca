@@ -94,17 +94,28 @@ source checkout must be fully usable (incl. skills) at every release.
 
 ## `cca curl` request policy
 
+`cca curl` is a light wrapper that hides authorization from the agent. Which calls are
+allowed is the job of the command validator, not of `cca curl`.
+
+- Every curl option passes through. The option table (which options take a value) is
+  read from the installed `curl --help all`, so short clusters (`-sSo FILE`) and `--`
+  parse as curl parses them; an option curl does not list → exit 2.
+- Rejected (exit 2): `-L`/`--location`/`--location-trusted` (no credential forwarding
+  on redirects), `-K`/`--config` and `--expand-url` (URLs that cannot be checked), also
+  as `--expand-` forms.
 - Each credential lists allowed origins: scheme + normalized host + effective port;
-  HTTPS only; the request URL must match one allowed origin.
-- URL checks cover every way curl accepts a URL: positional, `--url`, globbing/
-  alternate forms, URLs from config files; any second URL is rejected.
-- Ambient curl config is disabled (`-q` / no `.curlrc`); user `-K/--config`,
-  `--write-out`, `-v`, `--trace*`, `--libcurl` and other options that bypass the policy
-  or print request data are rejected when a credential is attached.
-- No credential forwarding on redirects to another origin.
-- Values written to the curl config are escaped; control characters rejected.
-- Output: configured secret values are redacted from curl stdout, stderr and CCA error
-  paths (covers endpoints that reflect the token-bearing URL or header).
+  HTTPS only; exactly one request URL (positional or `--url`, globbing off), which must
+  match one allowed origin; a second URL is rejected (curl sends the credential to
+  every URL of a command).
+- Ambient curl config is disabled (`-q`, no `.curlrc`).
+- Secrets never reach curl argv: credentials, the URL and every option value that
+  contains `{TOKEN}` go to curl as a config on stdin (so `@-` request data from stdin is
+  not available, as in legacy). Values are escaped; control characters rejected.
+- Output: configured secret values (also base64 `user:password` and URL-encoded forms)
+  are redacted from curl stdout and stderr and, after curl exits, from regular files
+  curl writes request data to (`--trace`, `--trace-ascii`, `--libcurl`, `--stderr`,
+  `-D`, `-w '%output{FILE}'`). `-o` output passes unchanged (response bodies do not
+  repeat credentials). CCA errors never print secret values.
 - `secrets/curl.secret.yaml` keeps `credentials.<id>.*`; doc-2 adds the origin list.
 
 ## `cca run`
@@ -174,9 +185,10 @@ tests/                    # bash tests stay; pytest for cca
 | not ported | `cca-validate-args`, `cca-install bin`, `tmux_cli_python` (removed in phase 1) |
 | stays bash | `cca-check-shared-clean` (repo check) |
 
-Each port has a compatibility matrix (flags, defaults, output paths, exit codes,
-intentional changes); every row tested; external tools checked lazily; texts English
-with `server1`/`example.com`/`203.0.113.x`. The three tools from the private Ansible
+Each port is specified and tested by the behavior of the new command (options,
+defaults, output paths, exit codes), not by a comparison with the old script, which is
+deleted in TASK-2; external tools checked lazily; texts English with
+`server1`/`example.com`/`203.0.113.x`. The three tools from the private Ansible
 project are first captured in public-safe behavior specs in `backlog/docs` (TASK-1.9),
 so their ports and doc-2 can be done from a clone.
 

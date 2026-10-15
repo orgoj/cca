@@ -10,10 +10,12 @@ from importlib.metadata import version
 from cca.output import CcaError, error
 
 # subcommand -> (module under cca.commands, one-line help); each module provides
-# add_arguments(parser) and run(args) -> int
+# add_arguments(parser) and run(args) -> int; a module with RAW_ARGS = True gets the
+# arguments after its name unparsed in args.raw (wrappers of another tool's options)
 COMMANDS: dict[str, tuple[str, str]] = {
     "cloudflare": ("cloudflare", "Cloudflare zones: DNS records, WAF rules, audit, exports"),
     "config": ("config", "show the project .cca.toml"),
+    "curl": ("curl", "curl with a project credential hidden from argv and output"),
     "doctor": ("doctor", "check that the current project is ready for cca"),
     "install": ("install", "install cca skills into an agent skill directory"),
     "netdata": ("netdata", "query Netdata metrics of a server, over ssh or directly"),
@@ -21,17 +23,17 @@ COMMANDS: dict[str, tuple[str, str]] = {
 }
 
 
-def _selected(argv: list[str]) -> str | None:
-    """The subcommand named in argv (first positional after the global options)."""
+def _selected(argv: list[str]) -> tuple[str | None, int]:
+    """The subcommand named in argv (first positional after the global options), its index."""
     skip = False
-    for arg in argv:
+    for i, arg in enumerate(argv):
         if skip:
             skip = False
         elif arg == "--config":
             skip = True
         elif arg == "--" or not arg.startswith("-"):
-            return arg if arg in COMMANDS else None
-    return None
+            return (arg, i) if arg in COMMANDS else (None, -1)
+    return None, -1
 
 
 def build_parser(selected: str | None = None) -> argparse.ArgumentParser:
@@ -50,9 +52,15 @@ def build_parser(selected: str | None = None) -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
-    selected = _selected(argv)
+    selected, index = _selected(argv)
     parser = build_parser(selected)
+    raw = None
+    if selected is not None:
+        if getattr(import_module(f"cca.commands.{COMMANDS[selected][0]}"), "RAW_ARGS", False):
+            argv, raw = argv[: index + 1], argv[index + 1 :]
     args = parser.parse_args(argv)
+    if raw is not None:
+        args.raw = raw
     if args.command is None:
         parser.print_help(sys.stderr)
         return 2

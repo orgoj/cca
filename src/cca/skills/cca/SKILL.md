@@ -14,6 +14,7 @@ what.
 |---|---|---|
 | `cca cloudflare` | read and change Cloudflare zones: DNS, WAF rules, audit, events, traffic, exports | [cloudflare](references/cloudflare.md) |
 | `cca config show` | see which `.cca.toml` is used and its values with defaults | [config](references/config.md) |
+| `cca curl` | call an HTTP API with a project credential you never see | [curl](references/curl.md) |
 | `cca doctor` | check that the project is ready for cca | [doctor](references/doctor.md) |
 | `cca install skills` | link the shipped skills into an agent skill directory | [install](references/install.md) |
 | `cca netdata` | read Netdata metrics of a server: load, top N, network latency and packet loss | [netdata](references/netdata.md) |
