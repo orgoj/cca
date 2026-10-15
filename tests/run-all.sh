@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Run the whole CCA test suite: shellcheck, bash tests, pytest.
+# Run the whole CCA test suite: shellcheck, bash tests, ruff, pytest.
 # Usage: tests/run-all.sh   (exit 0 only when everything passes)
 
 set -u
@@ -38,10 +38,9 @@ for t in "$ROOT"/tests/test-*.sh; do
     step "$(basename "$t")" "$t"
 done
 
-step pytest uv run --project "$ROOT" --extra dev pytest -q -p no:cacheprovider "$ROOT/tests"
-# Excluded from the default pytest run (needs no tmux conftest fixtures)
-step test_watchlist.py uv run --project "$ROOT" --extra dev \
-    pytest -q -p no:cacheprovider --noconftest "$ROOT/tests/test_watchlist.py"
+step ruff uv run --project "$ROOT" ruff check "$ROOT/src" "$ROOT/tests"
+step ruff-format uv run --project "$ROOT" ruff format --check "$ROOT/src" "$ROOT/tests"
+step pytest uv run --project "$ROOT" pytest -q -p no:cacheprovider "$ROOT/tests"
 
 echo
 if [ ${#FAILED[@]} -eq 0 ]; then

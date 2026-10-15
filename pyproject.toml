@@ -3,41 +3,40 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "tmux-cli-python"
+name = "cca"
 version = "0.1.0"
-description = "Python rewrite of cca-tmux-cli with hook pipeline and audit trail"
+description = "Cyber-CLI Admin toolkit: server administration commands for coding agents"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = "MIT"
 authors = [
     {name = "Michael Heca", email = "michael.heca@gmail.com"},
 ]
-dependencies = [
-    "typer>=0.9.0",
-    "pyyaml>=6.0",
-    "libtmux>=0.23.0",
-]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.0",
-    "pytest-cov>=4.0",
-    "ruff>=0.1.0",
-]
+dependencies = []
 
 [project.scripts]
-tmux-cli-python = "tmux_cli_python.cli:app"
+cca = "cca.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.6",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cca"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-addopts = "-v --tb=short --ignore=tests/test_watchlist.py"
+addopts = "-v --tb=short"
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 line-length = 100
+src = ["src", "tests"]
+# Tests of the legacy bin/ scripts; they go away with their ports
+extend-exclude = ["tests/test_asn_wrap.py", "tests/test_watchlist.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]

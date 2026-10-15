@@ -87,7 +87,7 @@ project/
 ## Tests
 
 ```bash
-tests/run-all.sh                 # shellcheck, bash tests, pytest
+tests/run-all.sh                 # shellcheck, bash tests, ruff, pytest
 tests/test-shared-clean.sh       # run from a project directory that supplies the denylist
 ```
 
