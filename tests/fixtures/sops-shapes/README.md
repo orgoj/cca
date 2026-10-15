@@ -13,9 +13,7 @@ must name the key below and must not contain any value from the file.
 | `invalid-curl-origin-userinfo.json` | curl | `credentials.example_api.origins[0]` |
 | `invalid-curl-origin-leading-hyphen.json` | curl | `credentials.example_api.origins[0]` |
 | `invalid-curl-origin-trailing-hyphen.json` | curl | `credentials.example_api.origins[0]` |
-
-`valid-curl.json` keeps the terminal-dot form `https://API.example.com.:8443/`, which
-must validate and normalize to (`https`, `api.example.com`, 8443).| `invalid-curl-http-origin.json` | curl | `credentials.example_api.origins[0]` |
+| `invalid-curl-http-origin.json` | curl | `credentials.example_api.origins[0]` |
 | `invalid-curl-origin-path.json` | curl | `credentials.example_api.origins[0]` |
 | `invalid-curl-duplicate-origin.json` | curl | `credentials.example_api.origins[1]` |
 | `invalid-curl-missing-origins.json` | curl | `credentials.example_api.origins` |
@@ -23,3 +21,6 @@ must validate and normalize to (`https`, `api.example.com`, 8443).| `invalid-cur
 | `invalid-curl-control-char.json` | curl | `credentials.example_api.bearer` |
 | `invalid-curl-bad-id.json` | curl | `credentials.Example-API` |
 | `invalid-cloudflare-missing-token.json` | cloudflare | `api_token` (and a warning for `token`) |
+
+`valid-curl.json` keeps the terminal-dot form `https://API.example.com.:8443/`, which
+must validate and normalize to (`https`, `api.example.com`, 8443).
