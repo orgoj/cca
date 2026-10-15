@@ -4,7 +4,7 @@ title: 'Phase 4: cca run'
 status: To Do
 assignee: []
 created_date: '2026-10-15 07:13'
-updated_date: '2026-10-15 07:35'
+updated_date: '2026-10-15 07:37'
 labels: []
 dependencies:
   - TASK-1.1
@@ -25,8 +25,9 @@ Python successor of cca-tmux-cli, cca-run-on-server and cca-run-all; the bash sc
 - [ ] #1 Compatibility matrices vs cca-tmux-cli (robot-init, doctor, robot-help, list, read, session, exit codes, Ctrl-C/SIGTERM markers, logging, tokf), cca-run-on-server (--list, --create-file) and cca-run-all; every row tested
 - [ ] #2 cca run SERVER -- CMD and cca run SERVER with CMD on stdin work over tmux and ssh; no CMD with TTY stdin or empty stdin exits non-zero
 - [ ] #3 Surfaces meaningless for a transport (e.g. read over ssh) exit non-zero with a clear error
-- [ ] #4 cca run --all runs a named local CCA script once per server and stops on the first failure
-- [ ] #5 SERVER only from [servers]; ssh target validated and passed as separate argv
-- [ ] #6 Skills referencing cca-tmux-cli or cca-run-on-server updated in the same release; released as its own tag
-- [ ] #7 No local shell is used to build tmux or ssh calls; tests with malicious server names and commands show no local shell execution on both transports
+- [ ] #4 SERVER only from [servers]; ssh target validated and passed as separate argv
+- [ ] #5 No local shell is used to build tmux or ssh calls; tests with malicious server names and commands show no local shell execution on both transports
+- [ ] #6 Execution is a reusable executor API (server, command, transport) that other subcommands call; cca run is a thin CLI over it
+- [ ] #7 Skills referencing cca-tmux-cli, cca-run-on-server or cca-run-all updated in the same change; release-ready: full pre-tag gate green
+- [ ] #8 cca run --all -- CMD (and stdin) runs CMD on every [servers] entry in config order, output tagged per server, stops on the first failure; tests cover order and stop-on-failure
 <!-- AC:END -->

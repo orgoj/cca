@@ -4,7 +4,7 @@ title: 'Phase 2: port open-ports, netdata, cloudflare'
 status: To Do
 assignee: []
 created_date: '2026-10-15 07:13'
-updated_date: '2026-10-15 07:32'
+updated_date: '2026-10-15 07:37'
 labels: []
 dependencies:
   - TASK-1.1
@@ -23,4 +23,5 @@ Three tools from an Ansible project's bin/ are generic and needed in non-Ansible
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 All child tasks are Done
+- [ ] #2 Each child is released: tag vX.Y.Z created after the consumer-denylist release check, post-tag version check passed, installed via uv tool install
 <!-- AC:END -->

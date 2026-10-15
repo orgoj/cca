@@ -4,7 +4,7 @@ title: 'Phase 3: port existing cca-* scripts'
 status: To Do
 assignee: []
 created_date: '2026-10-15 07:13'
-updated_date: '2026-10-15 07:32'
+updated_date: '2026-10-15 07:37'
 labels: []
 dependencies:
   - TASK-1.1
@@ -23,4 +23,5 @@ Existing cca-* scripts read bash config and env; they move to subcommands with s
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 All child tasks are Done
+- [ ] #2 Each child is released: tag vX.Y.Z created after the consumer-denylist release check, post-tag version check passed, installed via uv tool install
 <!-- AC:END -->

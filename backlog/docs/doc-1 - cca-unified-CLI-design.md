@@ -103,10 +103,15 @@ source checkout must be fully usable (incl. skills) at every release.
 ## `cca run`
 
 - Surfaces (all bash predecessors covered): run a command, `list`, `read`, `session`,
-  `--create-file` (atomic remote write), `--list`
-  (servers), `--all` (cca-run-all: run a named local CCA script once per server, stop on
-  first failure). Surfaces meaningless for a transport (e.g. `read` over ssh) are
-  rejected with a clear error.
+  `--create-file` (atomic remote write), `--list` (servers), `--all`. Surfaces
+  meaningless for a transport (e.g. `read` over ssh) are rejected with a clear error.
+- `cca-run-all` (ran a server-taking script once per server) is replaced by `--all`:
+  `cca run --all -- CMD` runs CMD on every `[servers]` entry in config order, output
+  tagged per server, stops on the first failure; server-taking subcommands
+  (`server info/status/hostname`, `diagnose`) accept `--all` with the same semantics.
+  No arbitrary script names.
+- Execution is a reusable executor API (server, command, transport); `cca run` is a
+  thin CLI over it and `server`/`diagnose` use it instead of their own ssh code.
 - Shape: `cca run [options] SERVER -- CMD...` or `cca run [options] SERVER <<'EOF'`.
   No CMD → read the command from stdin: stdin is a TTY → error; empty stdin → error.
   Server is the first positional; value options only before it, from a known list.
@@ -130,7 +135,9 @@ skills/                   # unchanged location; packaged into the wheel as cca/s
 tests/                    # bash tests stay; pytest for cca
 ```
 
-- hatchling `force-include` maps `skills/` → `cca/skills`.
+- hatchling packages into `cca/skills` only skills whose every referenced command exists
+  in that release (a skill joins the wheel in the release that ports its commands); a
+  wheel-install test scans installed skills for references to commands not provided.
 - `cca install skills [NAME] [TARGET]` symlinks from the installed package
   (`importlib.resources`); replaces only links it owns (pointing into a cca install),
   never overwrites other skills or follows existing destination links; idempotent;
@@ -158,10 +165,11 @@ tests/                    # bash tests stay; pytest for cca
 | not ported | `cca-validate-args`, `cca-install bin`, `tmux_cli_python` (removed in phase 1) |
 | stays bash | `cca-check-shared-clean` (repo gate) |
 
-Each port starts with a public-safe behavior spec in `backlog/docs` (compatibility
-matrix: flags, defaults, output paths, exit codes, intentional changes), written from
-the source; every row tested; external tools checked lazily; texts English with
-`server1`/`example.com`/`203.0.113.x`.
+Each port has a compatibility matrix (flags, defaults, output paths, exit codes,
+intentional changes); every row tested; external tools checked lazily; texts English
+with `server1`/`example.com`/`203.0.113.x`. The three tools from the private Ansible
+project are first captured in public-safe behavior specs in `backlog/docs` (TASK-1.9),
+so their ports and doc-2 can be done from a clone.
 
 ## Release gate and install
 
@@ -174,20 +182,26 @@ the source; every row tested; external tools checked lazily; texts English with
   Tags are never moved.
 - Install: `uv tool install --reinstall "cca @ git+file://<clone>@vX.Y.Z"` (syntax
   verified in phase 1, recorded in README). Version from `importlib.metadata`.
-- One subcommand (or one tightly coupled family) per release.
+- One subcommand (or one tightly coupled family) per release. A port task closes when
+  release-ready (pre-tag gate green, fixture denylist); tagging, consumer-denylist check,
+  post-tag check and install are tracked on the phase parent task.
 
 ## Consumer migration
 
 Per consumer project (by its owning agent, after the relevant release): write
 `.cca.toml`, move secrets into sops files, switch calls/guides to `cca <sub>`.
-On deployment, every consumer project is checked for remaining uses of old commands
-(scripts, Makefiles, CI, docs, skills, agent instructions) with `cca doctor --legacy`,
-which reports each reference to a retired command; old scripts are removed only when
-every consumer reports none.
+On deployment, every consumer project is checked with `cca doctor --legacy`: it scans
+git-tracked files (plus `[legacy] include`), skipping binaries, symlinks and the
+doc-2 exclusion list, and reports every reference to a retired command and every
+legacy config input (`.cca-env`, `.env` CCA_* keys, `.cca-tmux-cli`,
+`.tmux-cli-python.yaml`, `.netdata-servers`, mapped `CCA_*` variables). Lines marked
+`cca-legacy-ok` or paths in `[legacy] allow` (migration notes) are reported as allowed.
+Old scripts are removed only when every consumer reports none.
 
 ## Phases
 
-0. doc-2: normative `.cca.toml` + secrets schema v1 with fixtures.
+0. Public-safe behavior specs of the three Ansible-project tools (TASK-1.9), then
+   doc-2: normative `.cca.toml` + secrets schema v1 with fixtures.
 1. Core: skeleton, config + secrets modules, `config show`, `doctor`, `install skills`,
    release gate, install smoke.
 2. Ports, one task and release each: open-ports, netdata, cloudflare.
