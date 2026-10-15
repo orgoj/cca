@@ -13,6 +13,8 @@ from cca.output import CcaError, error
 # add_arguments(parser) and run(args) -> int
 COMMANDS: dict[str, tuple[str, str]] = {
     "config": ("config", "show the project .cca.toml"),
+    "doctor": ("doctor", "check that the current project is ready for cca"),
+    "install": ("install", "install cca skills into an agent skill directory"),
 }
 
 

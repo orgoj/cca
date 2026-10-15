@@ -145,10 +145,11 @@ tests/                    # bash tests stay; pytest for cca
 - The wheel ships `src/cca/skills/` only; every skill there references only commands that
   exist in that release; a wheel-install test scans installed skills for references to
   commands not provided (incl. any old `cca-*` name).
-- `cca install skills [NAME] [TARGET]` symlinks from the installed package
-  (`importlib.resources`); replaces only links it owns (pointing into a cca install),
-  never overwrites other skills or follows existing destination links; idempotent;
-  links stay valid after reinstall.
+- `cca install skills [NAME] [--target DIR]` (default `.claude/skills`, must exist)
+  symlinks from the installed package (`importlib.resources`); replaces only links it
+  owns (recorded in `DIR/.cca-skills.json`, or live links to the same skill of a cca
+  install), never overwrites other skills or follows existing destination links;
+  idempotent; links stay valid after reinstall.
 - Phase 1 removes `tmux_cli_python/`, its tests and its dependencies (typer, pyyaml,
   libtmux) together with the root project switch.
 
