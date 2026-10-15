@@ -49,6 +49,10 @@ Run test scripts directly (they are executable), never as `bash tests/...`; new 
   for backlog/ and src/) scans this repo against a denylist the PROJECT supplies via
   `$CCA_DENYLIST` or its cwd. **The project denylist never lives here** — storing it would leak
   the very names it guards; `tests/fixtures/leak-denylist.txt` only exercises the mechanism.
+- ⛔ **developing this tool never uses anything from consumer projects' production** — no servers,
+  APIs, secrets, configs or server names, not even read-only or temporarily (no temp configs in
+  `tmp/`). Live use belongs to the project's own agent. Verify with tests, fixtures and public
+  targets only. The only exception is the release check's `$CCA_DENYLIST` file.
 - naming: new bin scripts and skills use `cca-` prefix; never rename a shipped script or skill without explicit approval (project docs and reports reference them, e.g. `asn-wrap` stays unprefixed)
 - naming: user's explicit choice overrides conventions (e.g., `commit` not `committing`)
 - project tracking: dependent projects are documented only in each project's own
