@@ -14,6 +14,7 @@ def test_short_output_uses_yq_and_filters_asn_jq_noise(tmp_path):
     fake_asn = fake_bin / "asn"
     fake_asn.write_text(
         """#!/bin/bash
+cat >/dev/null  # consume stdin like the real asn, else asn-wrap's printf may hit SIGPIPE
 printf '%s\\n' '{"target":"1.2.3.4","result":"ok","results":[{"ip":"1.2.3.4","org_name":"Example Org","routing":{"as_number":"64500"},"geolocation":{"cc":"CZ"},"type":{"is_dc":false,"is_proxy":true,"is_mobile":false},"reputation":{"status":"bad"},"reverse":"host.example"}]}'
 printf '%s\\n' 'jq: parse error: Invalid numeric literal' >&2
 printf '%s\\n' 'asn warning kept' >&2
