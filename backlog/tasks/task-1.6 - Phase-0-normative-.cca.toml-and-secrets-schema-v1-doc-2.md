@@ -4,10 +4,14 @@ title: 'Phase 0: normative .cca.toml and secrets schema v1 (doc-2)'
 status: To Do
 assignee: []
 created_date: '2026-10-15 07:32'
-updated_date: '2026-10-15 09:07'
+updated_date: '2026-10-15 09:25'
 labels: []
 dependencies:
   - TASK-1.9
+references:
+  - doc-3
+  - doc-4
+  - doc-5
 parent_task_id: TASK-1
 priority: high
 type: docs
