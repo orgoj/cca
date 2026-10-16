@@ -76,6 +76,8 @@ tag; tags never move; subcommands are not released one by one).
 - skills: point to `--help` when possible, minimize doc duplication
 - installation: `cca install skills` links skills, never copies; target dirs must already exist
 - git: concise commit messages, no verbose changelogs
+- reviews: every review finding not fixed in the reviewed change (any severity, incl. INFO)
+  becomes a Backlog.md task, so it is not lost with the gitignored report
 - safety: always ask before filesystem-modifying commands (install, symlink, mkdir)
 - security: use `cca curl` for API auth, never raw env vars
 - cross-platform: solutions must work on Linux/macOS/Windows without extra dependencies
