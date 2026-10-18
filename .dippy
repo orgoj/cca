@@ -2,8 +2,6 @@ allow ./tests/test-shared-clean.sh
 allow backlog *
 allow bash -n *
 allow bash tests/test-shared-clean.sh
-allow cca *
-allow git *
 allow pytest *
 allow python -m pytest *
 allow python3 -m pytest -q tests/* *
@@ -12,4 +10,22 @@ allow ruff *
 allow tests/run-all.sh *
 allow tests/test-*.sh *
 
-allow hcom *
+# cca itself: local subcommands only. run/server reach real hosts, and this
+# repository never touches consumer production (AGENTS.md).
+allow cca *
+ask cca run * "cca run executes on a remote host; development of cca uses fixtures and fakes only"
+ask cca server * "cca server executes on a remote host; development of cca uses fixtures and fakes only"
+
+# Git: local work is free; the repository is public, so every push asks
+# (archive/pre-public and python branches must never reach origin).
+allow git *
+ask git push * "This repository is public: confirm the branch (only master goes to origin)"
+ask git -C * push * "This repository is public: confirm the branch (only master goes to origin)"
+
+# hcom: messaging and lookups; spawn/kill/term stay on ask.
+allow hcom send *
+allow hcom listen *
+allow hcom list *
+allow hcom --name * send *
+allow hcom --name * listen *
+allow hcom --name * list *
