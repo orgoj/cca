@@ -70,7 +70,7 @@ legacy sources. Step 2 replaces each name in the left column.
 | `CCA_NET_IFACE_PREFIXES` (`a\|b` regex) | `cca-server-info` | `server_info.net_iface_prefixes` (split on `\|`) |
 | `CCA_LOGGING` | shown by `cca-tmux-cli --doctor` only | dropped: never controlled logging; presence of `[run.log]` does |
 | log dir `logs/` (hard-coded, logging when it exists) | `cca-tmux-cli`, `cca-run-on-server` | `run.log.dir`; **intentional change**: logging is explicit, not triggered by the directory |
-| `ADMIN_NAME` | `cca-tmux-cli`, `cca-run-on-server`, `cca-doctor` | `run.log.operator` |
+| `ADMIN_NAME` | `cca-tmux-cli`, `cca-run-on-server`, `cca-doctor` | `run.log.operator`, optional: omit it in a shared repo, the OS login name of each admin is used |
 | `CCA_AGENT` | `tmux_cli_python` audit | dropped with `tmux_cli_python` (phase 1) |
 | `CCA_TMUX_TOKF=1` | `cca-tmux-cli` | `run.tokf = true` |
 | `CCA_WATCHLIST`, `watchlist.json` | `cca-watchlist` | dropped: the register is the project's Backlog.md (step 4) |

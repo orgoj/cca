@@ -45,5 +45,6 @@ do not start another command on that server until it finished:
 or 124 while it still runs.
 
 With `[run.log]` every command is appended to `<dir>/<date>-<operator>.log` with likely
-secrets masked. With `run.tokf = true` the output passes through `tokf` when installed.
-`cca doctor` checks transport, tmux, ssh, session and log dir.
+secrets masked; the operator is `run.log.operator` or, when absent, the OS login name.
+With `run.tokf = true` the output passes through `tokf` when installed.
+`cca doctor` checks transport, tmux, ssh, session, log dir and operator.

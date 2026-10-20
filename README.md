@@ -73,7 +73,7 @@ session = "example"
 
 [run.log]                         # optional command log
 dir = "logs"
-operator = "admin1"
+# operator = "admin1"             # default: the OS login name of each admin
 ```
 
 ```

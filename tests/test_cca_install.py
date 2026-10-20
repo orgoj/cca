@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from cca import skilllinks
+from cca import executor, skilllinks
 from cca.cli import main
 
 
@@ -314,6 +314,19 @@ def test_doctor_invalid_config_and_missing_log_dir(ready, capsys):
     (ready / ".cca.toml").write_text("schema_version = 2\n")
     assert main(["doctor"]) == 1
     assert "FAIL config:" in capsys.readouterr().out
+
+
+def test_doctor_log_operator(ready, monkeypatch, capsys):
+    assert main(["doctor"]) == 0
+    assert "OK   run.log.operator: admin1 (configured)" in capsys.readouterr().out
+    (ready / ".cca.toml").write_text(READY_TOML.replace('operator = "admin1"\n', ""))
+    monkeypatch.setattr(executor, "login_name", lambda: "admin2")
+    assert main(["doctor"]) == 0
+    assert "OK   run.log.operator: admin2 (OS login)" in capsys.readouterr().out
+    monkeypatch.setattr(executor, "login_name", lambda: "bad name")
+    assert main(["doctor"]) == 1
+    out = capsys.readouterr().out
+    assert "FAIL run.log.operator: the OS login name 'bad name' is not a valid operator" in out
 
 
 def test_doctor_fix_removes_only_recorded_broken_links(ready, capsys):

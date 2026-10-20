@@ -8,7 +8,7 @@ import shutil
 from importlib.metadata import version
 from pathlib import Path
 
-from cca import config, skilllinks, validate
+from cca import config, executor, skilllinks, validate
 from cca.commands import run as run_command
 from cca.commands import watchlist
 from cca.commands.install import DEFAULT_TARGET
@@ -89,6 +89,11 @@ def run(args: argparse.Namespace) -> int:
             "run.log.dir",
             str(log_dir) + ("" if log_dir.is_dir() else " missing"),
         )
+        try:
+            name, source = executor.operator(cfg)
+            report("OK", "run.log.operator", f"{name} ({source})")
+        except CcaError as e:
+            report("FAIL", "run.log.operator", str(e).partition("run.log.operator: ")[2])
 
     if cfg is not None:
         _check_backlog(report, str(cfg.dir))

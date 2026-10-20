@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from cca import ssh, validate
+from cca import config, ssh, validate
 from cca.config import Config
 from cca.output import CcaError, warn
 
@@ -116,21 +116,56 @@ def sanitize(command: str) -> str:
     return validate.display(command)
 
 
-def _log_dir(cfg: Config) -> Path | None:
-    """The log dir when [run.log] is set; it must exist (cca never creates it)."""
+def login_name() -> str:
+    """The OS login name of this process, from the OS (never from the environment)."""
+    try:
+        import pwd
+    except ImportError:  # Windows
+        import ctypes
+
+        size = ctypes.c_ulong(257)
+        buffer = ctypes.create_unicode_buffer(size.value)
+        if not ctypes.windll.advapi32.GetUserNameW(buffer, ctypes.byref(size)):
+            raise OSError("GetUserNameW failed") from None
+        return buffer.value
+    return pwd.getpwuid(os.getuid()).pw_name
+
+
+def operator(cfg: Config) -> tuple[str, str]:
+    """The log operator and its source: run.log.operator, else the OS login name."""
+    log = cfg.data["run"]["log"]
+    if "operator" in log:
+        return log["operator"], "configured"
+    try:
+        name = login_name()
+    except (KeyError, OSError) as e:  # no passwd entry for the uid, failed API call
+        raise CcaError(
+            f"{cfg.path}: run.log.operator: cannot read the OS login name "
+            f"({validate.display(str(e))}); set operator"
+        ) from None
+    if not config.OPERATOR_RE.fullmatch(name) or len(name) > validate.NAME_MAX:
+        raise CcaError(
+            f"{cfg.path}: run.log.operator: the OS login name '{validate.display(name)}' "
+            "is not a valid operator ([A-Za-z0-9][A-Za-z0-9._-]*, at most 64); set operator"
+        )
+    return name, "OS login"
+
+
+def _log_target(cfg: Config) -> tuple[Path, str] | None:
+    """Log dir and operator when [run.log] is set, checked before anything runs."""
     log = cfg.data["run"].get("log")
     if log is None:
         return None
     path = cfg.resolve(log["dir"])
     if not path.is_dir():
         raise CcaError(f"{cfg.path}: run.log.dir: {path} does not exist (create it)")
-    return path
+    return path, operator(cfg)[0]
 
 
-def _log(cfg: Config, log_dir: Path | None, server: str, text: str, status: str) -> None:
-    if log_dir is None:
+def _log(target: tuple[Path, str] | None, server: str, text: str, status: str) -> None:
+    if target is None:
         return
-    operator = cfg.data["run"]["log"]["operator"]
+    log_dir, operator = target
     now = datetime.now().astimezone()
     path = log_dir / f"{now:%Y-%m-%d}-{operator}.log"
     stamp = now.isoformat(timespec="seconds")
@@ -172,7 +207,7 @@ def execute(
         raise ValueError(f"via must be None or 'ssh', not {via!r}")
     check_command(command)
     target = ssh.target(cfg, server)
-    log_dir = _log_dir(cfg)
+    log_target = _log_target(cfg)
     text = command if log_text is None else log_text
     try:
         if (via or transport(cfg)) == "ssh":
@@ -180,16 +215,16 @@ def execute(
         else:
             result = _tmux_execute(cfg, server, target, command, timeout, stdin)
     except KeyboardInterrupt:
-        _log(cfg, log_dir, server, text, "interrupted")
+        _log(log_target, server, text, "interrupted")
         raise CcaError(f"{server}: interrupted locally; the command may still run", 130) from None
     except _InterruptedError as e:
-        _log(cfg, log_dir, server, text, "interrupted")
+        _log(log_target, server, text, "interrupted")
         raise CcaError(
             f"{server}: interrupted locally; the command may still run "
             f"(check later: cca run --read --marker {e.marker} {server})",
             130,
         ) from None
-    _log(cfg, log_dir, server, text, "timeout" if result.timed_out else str(result.code))
+    _log(log_target, server, text, "timeout" if result.timed_out else str(result.code))
     return result
 
 

@@ -1,0 +1,5 @@
+# run.log without operator: the executor uses the OS login name
+schema_version = 1
+
+[run.log]
+dir = "logs"

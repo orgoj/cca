@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 from pathlib import Path
 
 import pytest
@@ -390,6 +391,89 @@ def test_log_dir_missing_runs_nothing(env, monkeypatch, capsys):
     assert cca(["-t", "server1", "--", "id"], monkeypatch) == 2
     assert "run.log.dir" in capsys.readouterr().err
     assert ssh_calls(env) == []
+
+
+def test_log_operator_defaults_to_os_login(env, monkeypatch, capsys):
+    project(env, extra='[run.log]\ndir = "logs"\n')
+    (env / "work" / "logs").mkdir()
+    monkeypatch.setattr(executor, "login_name", lambda: "admin2")
+    assert cca(["-t", "server1", "--", "id"], monkeypatch) == 0
+    (log,) = (env / "work" / "logs").iterdir()
+    assert log.name.endswith("-admin2.log")
+    assert " admin2 server1 id [exit: 0]" in log.read_text()
+
+
+def test_log_explicit_operator_never_reads_os_login(env, monkeypatch, capsys):
+    project(env, extra='[run.log]\ndir = "logs"\noperator = "admin1"\n')
+    (env / "work" / "logs").mkdir()
+
+    def boom():
+        raise AssertionError("OS login looked up")
+
+    monkeypatch.setattr(executor, "login_name", boom)
+    assert cca(["-t", "server1", "--", "id"], monkeypatch) == 0
+    assert next((env / "work" / "logs").iterdir()).name.endswith("-admin1.log")
+
+
+@pytest.mark.parametrize(
+    ("login", "message"),
+    [
+        (KeyError("getpwuid(): uid not found: 4242"), "cannot read the OS login name"),
+        (OSError("GetUserNameW failed"), "cannot read the OS login name (GetUserNameW failed)"),
+        ("DOMAIN\\user\x1b", "the OS login name 'DOMAIN\\\\user\\x1b' is not a valid operator"),
+        ("a" * 65, "is not a valid operator"),
+    ],
+)
+def test_log_unusable_os_login_runs_nothing(env, monkeypatch, capsys, login, message):
+    project(env, extra='[run.log]\ndir = "logs"\n')
+    (env / "work" / "logs").mkdir()
+
+    def lookup():
+        if isinstance(login, Exception):
+            raise login
+        return login
+
+    monkeypatch.setattr(executor, "login_name", lookup)
+    assert cca(["-t", "server1", "--", "id"], monkeypatch) == 2
+    err = capsys.readouterr().err
+    assert "run.log.operator: " in err and message in err and "set operator" in err
+    assert "\x1b" not in err
+    assert ssh_calls(env) == []
+    assert list((env / "work" / "logs").iterdir()) == []
+
+
+def test_login_name_posix_uses_passwd_not_env(monkeypatch):
+    pwd = pytest.importorskip("pwd")
+    monkeypatch.setenv("USER", "someone-else")
+    monkeypatch.setenv("LOGNAME", "someone-else")
+    assert executor.login_name() == pwd.getpwuid(os.getuid()).pw_name
+
+
+@pytest.mark.parametrize("ok", [True, False])
+def test_login_name_windows(monkeypatch, ok):
+    """Without pwd (Windows) the name comes from GetUserNameW; failure raises OSError."""
+    import builtins
+    import ctypes
+
+    real_import = builtins.__import__
+
+    def no_pwd(name, *args, **kwargs):
+        if name == "pwd":
+            raise ImportError(name)
+        return real_import(name, *args, **kwargs)
+
+    def get_user_name(buffer, size):
+        buffer.value = "winadmin"
+        return 1 if ok else 0
+
+    windll = types.SimpleNamespace(advapi32=types.SimpleNamespace(GetUserNameW=get_user_name))
+    monkeypatch.setattr(builtins, "__import__", no_pwd)
+    monkeypatch.setattr(ctypes, "windll", windll, raising=False)
+    if ok:
+        assert executor.login_name() == "winadmin"
+    else:
+        with pytest.raises(OSError, match="GetUserNameW failed"):
+            executor.login_name()
 
 
 def test_log_symlink_not_followed(env, monkeypatch, capsys):

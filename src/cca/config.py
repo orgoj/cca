@@ -18,7 +18,7 @@ FILENAME = ".cca.toml"
 SCHEMA_VERSION = 1
 
 _SESSION_RE = re.compile(r"[A-Za-z0-9_-]+")
-_OPERATOR_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+OPERATOR_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 _IFACE_RE = re.compile(r"[A-Za-z0-9]+")
 _MARKER_RE = re.compile(r"[A-Za-z0-9._~-]+(/[A-Za-z0-9._~-]+)*")
 
@@ -154,7 +154,8 @@ SCHEMA: dict[str, Any] = {
         # present table = logging on; filled in only when present
         "log": {
             "dir": ("logs", _path),
-            "operator": (REQUIRED, _matching(_OPERATOR_RE, validate.NAME_MAX)),
+            # absent: the OS login name, resolved by the executor before a command runs
+            "operator": (ABSENT, _matching(OPERATOR_RE, validate.NAME_MAX)),
         },
     },
     "secrets": {

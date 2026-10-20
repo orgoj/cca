@@ -126,7 +126,7 @@ Presence of the table enables logging; without it nothing is logged.
 | Key | Type | Default | Rule |
 |---|---|---|---|
 | `dir` | path | `"logs"` | Must exist at use time (cca never creates it); missing → error naming the path. |
-| `operator` | string | required | Name of the operator in the log file name and lines, `^[A-Za-z0-9][A-Za-z0-9._-]*$`. |
+| `operator` | string | the OS login name | Name of the operator in the log file name and lines, `^[A-Za-z0-9][A-Za-z0-9._-]*$`, at most 64. Absent: the OS login name of the cca process, read from the OS (POSIX: the passwd entry of the real uid; Windows: `GetUserNameW`), never from environment variables, so a shared committed `.cca.toml` logs under each admin's name. Resolved before a command runs: an unreadable or non-matching login name is an error naming this key (set `operator`), nothing is executed. `cca config show` prints only a configured value; `cca doctor` shows the effective one and its source. |
 
 Log file `<dir>/<YYYY-MM-DD>-<operator>.log` (created mode 0600, appended, never
 through a symlink; a write failure is a warning). One line per executed command, after
