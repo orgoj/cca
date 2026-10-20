@@ -29,5 +29,8 @@ what.
 Rules:
 
 - Run `cca` from the project directory (or below it); never pass secrets on the command line.
+- Several items = one run with several arguments (`cca asn IP [IP...]`), not a loop around
+  `cca`. This says only how to batch items you already need; it never widens the set: look
+  up only the relevant items (e.g. the top few), not everything you could collect.
 - Exit code 2 means a usage or configuration error; the message names the file and key.
 - `cca --version` prints the installed release.
