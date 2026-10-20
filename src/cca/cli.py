@@ -42,8 +42,17 @@ def _selected(argv: list[str]) -> tuple[str | None, int]:
     return None, -1
 
 
+class Parser(argparse.ArgumentParser):
+    """No abbreviated long options (`--appl` is not `--apply`): command rules match exact
+    option names. Subparsers inherit the class, so every cca parser gets it."""
+
+    def __init__(self, *args, **kwargs):
+        kwargs["allow_abbrev"] = False
+        super().__init__(*args, **kwargs)
+
+
 def build_parser(selected: str | None = None) -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="cca", description="Cyber-CLI Admin toolkit.")
+    parser = Parser(prog="cca", description="Cyber-CLI Admin toolkit.")
     parser.add_argument("--version", action="version", version=f"cca {version('cca')}")
     parser.add_argument(
         "--config", metavar="PATH", help="use this .cca.toml instead of discovering one"

@@ -930,6 +930,26 @@ def test_migrate_duplicate_label_in_backlog(menv, capsys):
     assert "two tasks carry the label watchlist:a" in err
 
 
+@pytest.mark.parametrize("prefix", ["--a", "--ap", "--appl", "--ex=a", "--exclu"])
+def test_migrate_abbreviated_option_rejected(menv, capsys, prefix):
+    path = write_watchlist(menv, legacy(item("a")))
+    with pytest.raises(SystemExit) as exc:
+        main(["watchlist", "migrate", path, prefix])
+    assert exc.value.code == 2
+    assert "unrecognized arguments" in capsys.readouterr().err
+    assert mcalls(menv) == []
+
+
+def test_migrate_option_order_and_terminator(menv, capsys):
+    path = write_watchlist(menv, legacy(item("a")))
+    out, _ = out_err(["migrate", "--apply", path], capsys)  # option before FILE
+    assert out.splitlines()[-1] == "items 1: new 1, exists 0, done 0, excluded 0; warnings 0"
+    assert len(state(menv)["tasks"]) == 1
+    _, err = out_err(["migrate", "--", "--apply"], capsys, code=2)  # a FILE, not the option
+    assert "cannot read --apply" in err
+    assert len(state(menv)["tasks"]) == 1
+
+
 @pytest.mark.parametrize("labels", [["watchlist:a", "watchlist:b"], ["watchlist:"]])
 def test_migrate_task_with_several_legacy_labels(menv, capsys, labels):
     store(menv, [{"id": "TASK-1", "labels": labels, "isReady": True}])
