@@ -37,7 +37,7 @@ External tools are looked up only by the subcommand that needs them: `ssh` (`run
 
 | Subcommand | Description |
 |------------|-------------|
-| `cca asn [--json] IP...` | One line per IP: ASN, country, type flags, RPKI, organization, PTR (RIPEstat, ipapi.is with the optional `curl` sops credential for its origin, DNS); non-global addresses are not looked up |
+| `cca asn [--json] IP...` | One line per IP: ASN, country, type flags, RPKI, organization, PTR, registered range `net:` (RIPEstat, RIR RDAP, ipapi.is with the optional `curl` sops credential for its origin, DNS); non-global addresses are not looked up |
 | `cca check-domain DOMAIN` | Does a domain point to our hosting: A/AAAA/CNAME, RDAP owner of foreign addresses, the `[check_domain]` hosting marker (same-host redirects only), redirect chain |
 | `cca cloudflare GROUP COMMAND` | Cloudflare zones through the official SDK (token from sops): `token`, `zone`, `dns`, `waf`, `ratelimit`, `config`, `access`, `ua`, `uam`, `bots`, `events`, `analytics`, `export`, `diff`; writes plan unless `--apply` |
 | `cca config show` | The `.cca.toml` in use and its values with defaults |

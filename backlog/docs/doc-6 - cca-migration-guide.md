@@ -116,7 +116,7 @@ Options not listed keep their meaning; `--help` of the new command is authoritat
 | `cca-hetrix --outages [--since T] [--until T]` | `cca hetrix outages [--since T] [--until T]` |
 | `cca-hetrix --monitor-outages M`, `--monitor-info M`, `--server-stats M` | `cca hetrix monitor-outages M`, `monitor-info M`, `server-stats M` |
 | `cca-hetrix --blacklist`, `--blacklist-ip IP` | `cca hetrix blacklist`, `cca hetrix blacklist IP` |
-| `asn-wrap -s IP...`, `asn-wrap IP...` | `cca asn IP...`, `cca asn --json IP...` (no reputation field) |
+| `asn-wrap -s IP...`, `asn-wrap IP...` | `cca asn IP...`, `cca asn --json IP...` (no reputation field; the registry range `net_range` is `net:` / `registry.cidrs`) |
 | `cca-watchlist list-today`, `agenda` | `cca watchlist today` (Due, Priority) |
 | `cca-watchlist update ID` | `cca watchlist checked ID` |
 | `cca-watchlist ready`, `next` | `cca watchlist ready`, `cca watchlist next` (same options) |

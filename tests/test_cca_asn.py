@@ -56,8 +56,19 @@ def ipapi_full(**extra) -> dict:
     }
 
 
+RANGE = {
+    "startAddress": "1.1.1.0",
+    "endAddress": "1.1.1.255",
+    "name": "APNIC-LABS",
+    "handle": "1.1.1.0 - 1.1.1.255",
+    "type": "ASSIGNED PORTABLE",
+}
+RIPE_PATH = "/rdap/ripe/ip/"  # the RDAP table points both RIRs at the local server
+ARIN_PATH = "/rdap/arin/registry/ip/"
+
+
 class Api:
-    """Routes by path to a dict, a (status, body) tuple or "<slow>"; default 404."""
+    """Routes by path to a dict, a (status, body[, location]) tuple or "<slow>"; default 404."""
 
     def __init__(self):
         self.routes: dict = {
@@ -71,8 +82,10 @@ class Api:
             "/data/rpki-validation/data.json": ripe({"status": "valid"}),
             "/data/abuse-contact-finder/data.json": ripe({"abuse_contacts": ["abuse@example.com"]}),
             "/ipapi/": ipapi_full(),
+            RIPE_PATH + IP: RANGE,
         }
         self.requests: list[tuple[str, str, dict, bytes]] = []
+        self.accept: dict[str, str | None] = {}  # path -> Accept header
 
     def respond(self, method: str, path: str, query: dict, body: bytes):
         self.requests.append((method, path, query, body))
@@ -84,6 +97,9 @@ class Api:
         if route == "<slow>":
             time.sleep(2)
             return 200, "{}"
+        if isinstance(route, list):  # ["<sleep>", seconds, route]: answer late
+            time.sleep(route[1])
+            return route[2] if isinstance(route[2], tuple) else (200, json.dumps(route[2]))
         return 200, json.dumps(route)
 
 
@@ -127,9 +143,15 @@ def api(monkeypatch):
             url = urllib.parse.urlsplit(self.path)
             query = dict(urllib.parse.parse_qsl(url.query))
             length = int(self.headers.get("Content-Length") or 0)
-            status, body = state.respond(method, url.path, query, self.rfile.read(length))
+            state.accept[url.path] = self.headers.get("Accept")
+            status, body, *location = state.respond(
+                method, url.path, query, self.rfile.read(length)
+            )
             self.send_response(status)
-            if status == 302:
+            if location:
+                if location[0] is not None:
+                    self.send_header("Location", location[0])
+            elif status == 302:
                 self.send_header("Location", "/ipapi/elsewhere")
             self.end_headers()
             self.wfile.write(body.encode())
@@ -148,6 +170,8 @@ def api(monkeypatch):
     base = f"http://127.0.0.1:{server.server_address[1]}"
     monkeypatch.setattr(asn, "RIPESTAT", base + "/data")
     monkeypatch.setattr(asn, "IPAPI", base + "/ipapi")
+    monkeypatch.setattr(asn, "RDAP", [(base, RIPE_PATH, "ripe"), (base, ARIN_PATH, "arin")])
+    state.base = base
     yield state
     server.shutdown()
     server.server_close()
@@ -202,7 +226,10 @@ def cca(capsys, *argv: str) -> tuple[int, str, str]:
 def test_short_line_with_key(project, api, ptr, capsys):
     code, out, err = cca(capsys, IP)
     assert (code, err) == (0, "")
-    assert out == "1.1.1.1|AS13335|AU|dc,anycast|rpki:valid|Example Org|one.example.net\n"
+    assert (
+        out
+        == "1.1.1.1|AS13335|AU|dc,anycast|rpki:valid|Example Org|one.example.net|net:1.1.1.0/24\n"
+    )
     paths = [path for _m, path, _q, _b in api.requests]
     assert "/data/abuse-contact-finder/data.json" not in paths  # only for --json
 
@@ -238,7 +265,9 @@ def test_keyless_without_project_config(tmp_path, monkeypatch, api, ptr, capsys)
     }
     code, out, err = cca(capsys, IP)
     assert code == 0
-    assert out == "1.1.1.1|AS13335|Australia|?|rpki:valid|Keyless Org|one.example.net\n"
+    assert (
+        out == "1.1.1.1|AS13335|Australia|?|rpki:valid|Keyless Org|one.example.net|net:1.1.1.0/24\n"
+    )
     assert err.count("keyless") == 1
     method, _path, query, body = next(r for r in api.requests if r[1] == "/ipapi/")
     assert (method, query, body) == ("GET", {"q": IP}, b"")
@@ -246,6 +275,10 @@ def test_keyless_without_project_config(tmp_path, monkeypatch, api, ptr, capsys)
 
 def test_keyless_note_once_for_several_addresses(project, api, ptr, capsys):
     credentials(project, {"other": CREDENTIALS["credentials"]["other"]})
+    api.routes[RIPE_PATH + "8.8.8.8"] = RANGE | {
+        "startAddress": "8.8.8.0",
+        "endAddress": "8.8.8.255",
+    }
     code, out, err = cca(capsys, IP, "8.8.8.8")
     assert code == 0 and len(out.splitlines()) == 2
     assert err.count("keyless") == 1
@@ -263,7 +296,7 @@ def test_not_announced(project, api, ptr, capsys):
     )
     code, out, _ = cca(capsys, IP)
     assert code == 0
-    assert out == "1.1.1.1|AS-|AU|dc,anycast|rpki:-|Example Org|one.example.net\n"
+    assert out == "1.1.1.1|AS-|AU|dc,anycast|rpki:-|Example Org|one.example.net|net:1.1.1.0/24\n"
     assert "/data/rpki-validation/data.json" not in [p for _m, p, _q, _b in api.requests]
 
 
@@ -285,7 +318,7 @@ def test_missing_ptr_is_not_a_failure(project, api, ptr, capsys):
     ptr.records.clear()
     code, out, err = cca(capsys, IP)
     assert (code, err) == (0, "")
-    assert out.endswith("|Example Org|-\n")
+    assert out.endswith("|Example Org|-|net:1.1.1.0/24\n")
 
 
 def test_hostile_strings_are_escaped_and_pipes_replaced(project, api, ptr, capsys):
@@ -306,7 +339,9 @@ def test_failed_source_prints_question_mark_and_exits_1(project, api, ptr, capsy
     ptr.fail.add(PTR)
     code, out, err = cca(capsys, IP)
     assert code == 1
-    assert out == "1.1.1.1|AS13335|?|?|rpki:valid|CLOUDFLARENET - Cloudflare, Inc.|?\n"
+    assert (
+        out == "1.1.1.1|AS13335|?|?|rpki:valid|CLOUDFLARENET - Cloudflare, Inc.|?|net:1.1.1.0/24\n"
+    )
     assert "1.1.1.1: ipapi: HTTP 429: quota (ipapi.is daily quota used up)" in err
     assert "1.1.1.1: reverse:" in err
 
@@ -315,7 +350,7 @@ def test_ripestat_failure_skips_rpki(project, api, ptr, capsys):
     api.routes["/data/prefix-overview/data.json"] = (500, "oops")
     code, out, err = cca(capsys, IP)
     assert code == 1
-    assert out == "1.1.1.1|?|AU|dc,anycast|rpki:?|Example Org|one.example.net\n"
+    assert out == "1.1.1.1|?|AU|dc,anycast|rpki:?|Example Org|one.example.net|net:1.1.1.0/24\n"
     assert "ripestat: HTTP 500" in err
 
 
@@ -399,7 +434,195 @@ def test_json_output(project, api, ptr, capsys):
                 "crawler": False,
                 "anycast": True,
             },
+            "registry": {
+                "range": "1.1.1.0 - 1.1.1.255",
+                "cidrs": ["1.1.1.0/24"],
+                "name": "APNIC-LABS",
+                "handle": "1.1.1.0 - 1.1.1.255",
+                "type": "ASSIGNED PORTABLE",
+                "rir": "ripe",
+            },
             "errors": {},
+            "skipped": {},
         },
         {"ip": "10.0.0.1", "bogon": True},
     ]
+
+
+# --- RDAP registry range
+
+
+def registry(capsys) -> tuple[int, dict, str]:
+    code, out, err = cca(capsys, "--json", IP)
+    (result,) = json.loads(out)
+    return code, result, err
+
+
+def test_rdap_redirect_to_an_allowed_rir_is_followed(project, api, ptr, capsys):
+    api.routes[RIPE_PATH + IP] = (301, "", api.base + ARIN_PATH + IP)
+    api.routes[ARIN_PATH + IP] = RANGE
+    code, result, _err = registry(capsys)
+    assert code == 0 and result["registry"]["rir"] == "arin"
+    assert [p for _m, p, _q, _b in api.requests if p.startswith("/rdap/")] == [
+        RIPE_PATH + IP,
+        ARIN_PATH + IP,
+    ]
+
+
+def test_rdap_ipv6_path_in_another_spelling(project, api, ptr, capsys):
+    ip6 = "2606:4700:4700::1111"  # global; the local server answers, nothing leaves the host
+    six = {
+        "startAddress": "2606:4700:4700::",
+        "endAddress": "2606:4700:4700:ffff:ffff:ffff:ffff:ffff",
+    }
+    spelled = "2606:4700:4700:0:0:0:0:1111".upper()
+    api.routes[RIPE_PATH + ip6] = (303, "", api.base + ARIN_PATH + spelled)
+    api.routes[ARIN_PATH + ip6] = six
+    code, out, _err = cca(capsys, ip6)
+    assert out.rstrip().endswith("|net:2606:4700:4700::/48")
+    assert ARIN_PATH + ip6 in [p for _m, p, _q, _b in api.requests]  # rebuilt canonical
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        "https://rdap.example.com/ip/1.1.1.1",  # other host
+        "{base}/rdap/other/ip/1.1.1.1",  # wrong path prefix
+        "{base}" + ARIN_PATH + "8.8.8.8",  # other address
+        "{base}" + ARIN_PATH + "1.1.1.1?x=1",  # query
+        "{base}" + ARIN_PATH + "1.1.1.1#f",  # fragment
+        "{userinfo}" + ARIN_PATH + "1.1.1.1",  # userinfo
+        "{otherport}" + ARIN_PATH + "1.1.1.1",  # other port
+        "{https}" + ARIN_PATH + "1.1.1.1",  # other scheme
+        ARIN_PATH + "1.1.1.1",  # relative
+    ],
+)
+def test_rdap_redirect_refused(project, api, ptr, capsys, location):
+    scheme, hostport = api.base.split("://")
+    host, port = hostport.split(":")
+    target = location.format(
+        base=api.base,
+        userinfo=f"{scheme}://u:p@{hostport}",
+        otherport=f"{scheme}://{host}:{int(port) + 1}",
+        https=f"https://{hostport}",
+    )
+    api.routes[RIPE_PATH + IP] = (301, "", target)
+    api.routes[ARIN_PATH + IP] = RANGE
+    code, result, err = registry(capsys)
+    assert code == 1 and result["registry"] is None
+    assert "rdap: redirect to '" in err and "not allowed" in err
+    assert ARIN_PATH + IP not in [p for _m, p, _q, _b in api.requests]
+
+
+def test_rdap_redirect_without_location(project, api, ptr, capsys):
+    api.routes[RIPE_PATH + IP] = (307, "", None)
+    code, _result, err = registry(capsys)
+    assert code == 1 and "rdap: redirect without location" in err
+
+
+def test_rdap_too_many_redirects(project, api, ptr, capsys):
+    api.routes[RIPE_PATH + IP] = (301, "", api.base + ARIN_PATH + IP)
+    api.routes[ARIN_PATH + IP] = (301, "", api.base + RIPE_PATH + IP)
+    code, _result, err = registry(capsys)
+    assert code == 1 and "rdap: too many redirects" in err
+    assert len([p for _m, p, _q, _b in api.requests if p.startswith("/rdap/")]) == 3
+
+
+def test_rdap_one_deadline_for_the_chain(project, api, ptr, capsys, monkeypatch):
+    monkeypatch.setattr(asn, "TIMEOUT", 2)
+    monkeypatch.setattr(asn, "SLACK", 0.5)  # 2.5 s for the whole chain
+    # each hop alone fits 2.5 s, both together do not: a per-hop deadline would succeed
+    api.routes[RIPE_PATH + IP] = ["<sleep>", 1.5, (301, "", api.base + ARIN_PATH + IP)]
+    api.routes[ARIN_PATH + IP] = ["<sleep>", 1.5, RANGE]
+    code, result, err = registry(capsys)
+    assert code == 1 and result["registry"] is None and "rdap: timed out" in err
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"name": "no range"},
+        {"startAddress": "1.1.1.0", "endAddress": "garbage"},
+        {"startAddress": 16843008, "endAddress": 16843263},
+        {"startAddress": "2001:db8::", "endAddress": "2001:db8::ff"},
+        {"startAddress": "1.1.2.0", "endAddress": "1.1.2.255"},
+    ],
+)
+def test_rdap_invalid_range(project, api, ptr, capsys, body):
+    api.routes[RIPE_PATH + IP] = body
+    code, result, err = registry(capsys)
+    assert code == 1 and result["registry"] is None and "rdap: invalid range" in err
+    _code, out, _err = cca(capsys, IP)
+    assert out.rstrip().endswith("|net:?")
+
+
+def test_rdap_range_summarized_into_cidrs(project, api, ptr, capsys):
+    api.routes[RIPE_PATH + IP] = {"startAddress": "1.1.0.0", "endAddress": "1.1.2.255"}
+    code, result, _err = registry(capsys)
+    assert code == 0 and result["registry"]["cidrs"] == ["1.1.0.0/23", "1.1.2.0/24"]
+    _code, out, _err = cca(capsys, IP)
+    assert out.rstrip().endswith("|net:1.1.0.0/23+1.1.2.0/24")
+
+
+def test_rdap_asks_for_rdap_json(project, api, ptr, capsys):
+    cca(capsys, IP)
+    assert api.accept[RIPE_PATH + IP] == "application/rdap+json, application/json;q=0.9"
+    assert api.accept["/data/prefix-overview/data.json"] == "application/json"
+
+
+def test_rdap_http_error(project, api, ptr, capsys):
+    api.routes[RIPE_PATH + IP] = (404, json.dumps({"title": "not found"}))
+    code, result, err = registry(capsys)
+    assert code == 1 and "rdap: HTTP 404" in err
+
+
+# --- keyless ipapi.is quota
+
+
+def test_keyless_quota_degrades_without_failing(tmp_path, monkeypatch, api, ptr, capsys):
+    monkeypatch.chdir(tmp_path)  # no project: keyless
+    api.routes["/ipapi/"] = (429, json.dumps({"error": "quota"}))
+    others = ("8.8.8.8", "9.9.9.9")
+    for other in others:
+        api.routes[RIPE_PATH + other] = RANGE | {
+            "startAddress": "0.0.0.1",
+            "endAddress": "223.255.255.255",
+        }
+    code, out, err = cca(capsys, IP, *others)
+    assert code == 0
+    assert err.count("ipapi.is keyless daily quota used up: country and city unavailable") == 1
+    assert "1.1.1.1: ipapi" not in err
+    assert [p for _m, p, _q, _b in api.requests].count("/ipapi/") == 1
+    first = out.splitlines()[0]
+    assert first == (
+        "1.1.1.1|AS13335|?|?|rpki:valid|CLOUDFLARENET - Cloudflare, Inc.|one.example.net"
+        "|net:1.1.1.0/24"
+    )
+    code, out, _err = cca(capsys, "--json", IP, *others)
+    assert [r["skipped"] for r in json.loads(out)] == [{"ipapi": "keyless daily quota used up"}] * 3
+    assert all(r["errors"] == {} for r in json.loads(out))
+
+
+def test_keyless_quota_without_holder_prints_dash(tmp_path, monkeypatch, api, ptr, capsys):
+    monkeypatch.chdir(tmp_path)
+    api.routes["/ipapi/"] = (429, "{}")
+    api.routes["/data/prefix-overview/data.json"] = ripe(
+        {"announced": False, "resource": IP, "asns": []}
+    )
+    code, out, _err = cca(capsys, IP)
+    assert code == 0
+    assert out == "1.1.1.1|AS-|?|?|rpki:-|-|one.example.net|net:1.1.1.0/24\n"
+
+
+def test_keyed_429_still_fails(project, api, ptr, capsys):
+    api.routes["/ipapi/"] = (429, json.dumps({"error": "quota"}))
+    code, out, err = cca(capsys, IP)
+    assert code == 1 and "1.1.1.1: ipapi: HTTP 429" in err
+    assert "keyless daily quota" not in err
+
+
+def test_keyless_other_error_still_fails(tmp_path, monkeypatch, api, ptr, capsys):
+    monkeypatch.chdir(tmp_path)
+    api.routes["/ipapi/"] = (500, "{}")
+    code, _out, err = cca(capsys, IP)
+    assert code == 1 and "1.1.1.1: ipapi: HTTP 500" in err
