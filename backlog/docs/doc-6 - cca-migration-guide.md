@@ -30,12 +30,14 @@ Schema of the new config: doc-2. Design and command behavior: doc-1 and
    is now selected by the request origin, not by an id derived from the hostname).
    Move the Cloudflare token into the sops file `secrets.cloudflare`, key `api_token`.
    No secret stays in an env file.
-4. **Watchlist → Backlog.md** (doc-1 "Watchlist on Backlog.md"): add the status `Note`
-   to the project's `backlog/config.yml`; convert each open `watchlist.json` item into a
-   Backlog task: a routine check gets the label `every:Nd` and its next check as due
-   date, a note gets status `Note` with optional `from:`/`until:` labels, a task or an
-   incident becomes a plain task (with a due date when it is scheduled). Finished items
-   are not converted.
+4. **Watchlist → Backlog.md** (doc-1 "Watchlist on Backlog.md"): without `backlog/`,
+   `backlog init "<name>" --defaults --integration-mode none --default-editor ""` (no
+   `AGENTS.md`/`CLAUDE.md` change); statuses `["Idea", "To Do", "In Progress", "Note",
+   "Done"]`. Stop writing the legacy watchlist, then `cca watchlist migrate
+   <path>/watchlist.json` (dry run): review every line and warning, move machine-only
+   items to the agent bundle `TODO.md` and pass them as `--exclude ID`. Run it again with
+   `--apply` and commit `backlog/`. Verify with a third dry run: every open,
+   non-excluded item reports `exists`, none `new`. Finished items are not converted.
 5. **Skills**: remove every link into the old CCA `skills/` from the project's agent
    skill dirs, then `cca install skills` (default `.claude/skills`; `--target DIR` for
    other agents). Old skills without a successor: see "Skills".
@@ -115,9 +117,12 @@ Options not listed keep their meaning; `--help` of the new command is authoritat
 | `cca-hetrix --monitor-outages M`, `--monitor-info M`, `--server-stats M` | `cca hetrix monitor-outages M`, `monitor-info M`, `server-stats M` |
 | `cca-hetrix --blacklist`, `--blacklist-ip IP` | `cca hetrix blacklist`, `cca hetrix blacklist IP` |
 | `asn-wrap -s IP...`, `asn-wrap IP...` | `cca asn IP...`, `cca asn --json IP...` (no reputation field) |
-| `cca-watchlist list-today`, `agenda` | `cca watchlist today` |
+| `cca-watchlist list-today`, `agenda` | `cca watchlist today` (Due, Priority) |
 | `cca-watchlist update ID` | `cca watchlist checked ID` |
-| other `cca-watchlist` subcommands | the `backlog` CLI (`task list`, `task view`, `search`, `task create`, `task edit`); `cca watchlist notes --on DATE` for notes |
+| `cca-watchlist ready`, `next` | `cca watchlist ready`, `cca watchlist next` (same options) |
+| `cca-watchlist list --current`, `--expired` | `cca watchlist notes`, `cca watchlist notes --expired` |
+| `cca-watchlist migrate` (v1 → v2) | not ported; convert a v1 file with it before `cca watchlist migrate` |
+| other `cca-watchlist` subcommands | the `backlog` CLI (`task list`, `task view`, `search`, `task create`, `task edit --plan`, `task archive`) with the doc-1 labels |
 | `cca-doctor [--fix]` | `cca doctor [--fix]` |
 | `cca-install skills` | `cca install skills` |
 | `cca-install bin DIR` | `uv tool install` (step 1) |

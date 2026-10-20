@@ -48,7 +48,7 @@ External tools are looked up only by the subcommand that needs them: `ssh` (`run
 | `cca open-ports [-d SERVER] [-k] [-m nmap\|nc\|curl] [-n] HOST [PORT...]` | Probe TCP ports of a host, locally or from a `[servers]` entry over ssh |
 | `cca run [--timeout SEC] -t SERVER [-- CMD...]` | Run a command (or a stdin script) on a `[servers]` entry over tmux (visible window per server) or ssh; `--all`, `--create-file PATH`, `--list`, `--read`, `--session`; optional `[run.log]` command log and `tokf` |
 | `cca server hostname\|status\|info` | Hostname, quick status (time, load, memory, ext/xfs, ZFS) or inventory (OS, CPU, disks, ZFS, interfaces, loopback aliases, Docker/Swarm/LXC/QEMU) of a `[servers]` entry or `--all`, always over ssh, one tag per section |
-| `cca watchlist today\|notes\|checked` | Daily check over the project's Backlog.md (`backlog` CLI): due and `every:Nd` recurring tasks, notes (status `Note`, `from:`/`until:` labels) valid on a date, `checked ID` moves the next check |
+| `cca watchlist today\|notes\|checked\|ready\|next\|migrate` | Daily check over the project's Backlog.md (`backlog` CLI): due and `every:Nd` recurring tasks, high-priority actionable work, notes (status `Note`, `from:`/`until:` labels) valid on a date or expired, `checked ID` moves the next check; `ready`/`next` select work by `effort:`/`window:`/`change-risk:` labels; `migrate FILE` converts a legacy `watchlist.json` once |
 
 ## Project configuration
 

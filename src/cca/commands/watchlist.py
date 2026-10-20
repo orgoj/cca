@@ -29,16 +29,31 @@ EVERY_MAX = 366
 ID_RE = re.compile(r"[A-Za-z]+-[0-9]+(\.[0-9]+)*")
 PRIORITY_RANK = {"high": 0, "medium": 1, "low": 2}
 DATE_LABELS = ("from", "until")
+NOT_WORK = ("Idea",)  # open statuses that never count as work (ready, next, Priority)
+OUTSIDE_DAILY = ("idle", "standby")  # labels: never in Due; a due date only defers next
+EFFORTS = ("e15", "e1h", "e4h", "exl")
+CHANGE_RISKS = ("r0", "r1", "r2", "r3")
+WINDOWS = ("wany", "woff", "wnight", "wfreeze")
+TAG_LABELS = {"effort": EFFORTS, "change-risk": CHANGE_RISKS, "window": WINDOWS}
+TIME_EFFORT = {"15m": "e15", "1h": "e1h", "4h": "e4h"}
+MINIMUM_WINDOW = {"r0": "wany", "r1": "wany", "r2": "woff", "r3": "wnight"}
+SHOWN = 20  # rows of ready and the Priority section
 
 EPILOG = """\
 Conventions (plain Backlog.md, see the cca skill reference):
   recurring check  open task with label every:Nd; its due date is the next check;
                    optional until:YYYY-MM-DD ends the checking
-  scheduled task   any open task with a due date
+  scheduled task   any open task with a due date, except idle/standby ones
+  outside daily    label idle (backlog work) or standby (waiting for an event): never
+                   due in today; a due date only means "not before" for next/Priority
   note             task in status Note with optional from:/until:YYYY-MM-DD labels
                    (inclusive local dates)
+  work tags        labels effort:e15|e1h|e4h|exl, change-risk:r0-r3,
+                   window:wany|woff|wnight|wfreeze, area:NAME;
+                   blocked:* or an unfinished dependency = blocked
+  next action      the task's Implementation Plan (backlog task edit ID --plan TEXT)
 
-Exit status: 0 OK; 1 a task has a malformed every:/from:/until: label (today, notes);
+Exit status: 0 OK; 1 a task has a malformed watchlist label, or migrate warned;
 2 configuration, backlog or usage error.
 """
 
@@ -72,12 +87,34 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 
     p = sub.add_parser("notes", help="notes valid on a date (default today)")
     p.add_argument("--on", type=iso_date, metavar="YYYY-MM-DD", help="date (local)")
+    p.add_argument("--expired", action="store_true", help="notes whose until: is before the date")
     p.add_argument("--search", metavar="TEXT", help="passed to backlog task list --search")
     p.add_argument("--json", action="store_true", help="the backlog task objects as JSON")
 
     p = sub.add_parser("checked", help="a recurring check is done: move its due date")
     p.add_argument("id", type=task_id, metavar="ID", help="task id, e.g. TASK-12")
     p.add_argument("--json", action="store_true", help="the result as JSON")
+
+    for name, help_text in (
+        ("ready", "open work fitting the available time, window and change risk"),
+        ("next", "the first ready task with a next action and no future due date"),
+    ):
+        p = sub.add_parser(name, help=help_text)
+        p.add_argument("--time", choices=tuple(TIME_EFFORT), default="1h", help="(default 1h)")
+        p.add_argument("--window", choices=WINDOWS, default="wany", help="(default wany)")
+        p.add_argument("--max-change-risk", choices=CHANGE_RISKS, metavar="r0..r3")
+        p.add_argument("--area", metavar="NAME", help="only tasks labelled area:NAME")
+        if name == "ready":
+            p.add_argument("--include-blocked", action="store_true", help="keep blocked tasks")
+            p.add_argument("--verbose", action="store_true", help="show each next action")
+        p.add_argument("--json", action="store_true", help="the backlog task objects as JSON")
+
+    p = sub.add_parser("migrate", help="one-shot conversion of a legacy watchlist.json")
+    p.add_argument("file", metavar="FILE", help="watchlist.json (schema v2), relative to the CWD")
+    p.add_argument("--apply", action="store_true", help="create the tasks (default: dry run)")
+    p.add_argument(
+        "--exclude", action="append", default=[], metavar="ID", help="skip this item (repeatable)"
+    )
 
 
 # --- backlog CLI
@@ -155,20 +192,29 @@ class Labels:
     def __init__(self, task: dict[str, Any]):
         self.every: int | None = None
         self.dates: dict[str, date] = {}
+        self.tags: dict[str, str] = {}
         self.problems: list[str] = []
         labels = task.get("labels")
-        labels = labels if isinstance(labels, list) else []
+        self.names = [x for x in labels if isinstance(x, str)] if isinstance(labels, list) else []
         seen: set[str] = set()
-        for label in labels:
-            if not isinstance(label, str):
-                continue
+        for label in self.names:
             prefix, shown_label = label.partition(":")[0], validate.display(label)
-            if prefix not in ("every", *DATE_LABELS) or ":" not in label:
+            if prefix not in ("every", *DATE_LABELS, *TAG_LABELS) or ":" not in label:
                 continue
             if prefix in seen:
                 self.problems.append(f"duplicate {prefix}: label")
                 continue
             seen.add(prefix)
+            if prefix in TAG_LABELS:
+                value = label.partition(":")[2]
+                if value in TAG_LABELS[prefix]:
+                    self.tags[prefix] = value
+                else:
+                    allowed = "|".join(TAG_LABELS[prefix])
+                    self.problems.append(
+                        f"malformed label {shown_label} (expected {prefix}:{allowed})"
+                    )
+                continue
             if prefix == "every":
                 m = EVERY_RE.fullmatch(label)
                 if m and int(m.group(1)) <= EVERY_MAX:
@@ -195,6 +241,23 @@ class Labels:
         start, end = self.dates.get("from"), self.dates.get("until")
         return (start is None or start <= day) and (end is None or day <= end)
 
+    def window(self) -> str | None:
+        """The stricter of window: and the minimum for change-risk: (legacy effective window)."""
+        window = self.tags.get("window")
+        minimum = MINIMUM_WINDOW.get(self.tags.get("change-risk", ""))
+        if window is None or minimum is None:
+            return window or minimum
+        return max(window, minimum, key=WINDOWS.index)
+
+    def blocked(self, task: dict[str, Any]) -> bool:
+        """A blocked:* label or an unfinished Backlog dependency (isReady false)."""
+        ready = task.get("isReady")
+        if not isinstance(ready, bool):
+            raise CcaError(
+                f"unsupported backlog JSON from task list ({text(task, 'id')}: no isReady)"
+            )
+        return not ready or any(x.startswith("blocked:") for x in self.names)
+
 
 def text(task: dict[str, Any], key: str) -> str:
     value = task.get(key)
@@ -220,28 +283,139 @@ def report_problems(tasks: list[dict[str, Any]], labels: dict[int, Labels]) -> b
     return found
 
 
+# --- work selection (legacy ready / next / agenda)
+
+
+def id_key(task: dict[str, Any]) -> tuple:
+    """TASK-9 before TASK-10."""
+    return tuple(int(p) if p.isdigit() else p for p in re.split(r"([0-9]+)", text(task, "id")))
+
+
+def priority_rank(task: dict[str, Any]) -> int:
+    return PRIORITY_RANK.get(str(task.get("priority")).lower(), len(PRIORITY_RANK))
+
+
+def select_ready(
+    tasks: list[dict[str, Any]], labels: dict[int, Labels], args: argparse.Namespace
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Open work fitting --time/--window/--max-change-risk, and the tasks without effort:."""
+    limit = EFFORTS.index(TIME_EFFORT[args.time])
+    ready, untagged = [], []
+    for task in tasks:
+        lab = labels[id(task)]
+        if (
+            task.get("status") in NOT_WORK
+            or "standby" in lab.names
+            or (args.area is not None and f"area:{args.area}" not in lab.names)
+            or (lab.blocked(task) and not getattr(args, "include_blocked", False))
+        ):
+            continue
+        effort = lab.tags.get("effort")
+        if effort is None:
+            untagged.append(task)
+            continue
+        window, risk = lab.window(), lab.tags.get("change-risk")
+        if (
+            effort == "exl"
+            or EFFORTS.index(effort) > limit
+            or window is None
+            or WINDOWS.index(window) > WINDOWS.index(args.window)
+            or (
+                args.max_change_risk is not None
+                and (
+                    risk is None
+                    or CHANGE_RISKS.index(risk) > CHANGE_RISKS.index(args.max_change_risk)
+                )
+            )
+        ):
+            continue
+        ready.append(task)
+    ready.sort(
+        key=lambda t: (priority_rank(t), EFFORTS.index(labels[id(t)].tags["effort"]), id_key(t))
+    )
+    untagged.sort(key=id_key)
+    return ready, untagged
+
+
+def view(cwd: str, task: dict[str, Any]) -> dict[str, Any]:
+    """The full task (task list JSON has no Implementation Plan)."""
+    ident = task.get("id")
+    if not isinstance(ident, str) or not ID_RE.fullmatch(ident):
+        raise CcaError(f"unsupported backlog JSON from task list (task id {text(task, 'id')})")
+    full = backlog_json(cwd, ["task", "view", ident], "task-view").get("task")
+    if not isinstance(full, dict):
+        raise CcaError("unsupported backlog JSON from task view (no task)")
+    return full
+
+
+def plan(task: dict[str, Any]) -> str:
+    value = task.get("implementationPlan")
+    return value.strip() if isinstance(value, str) else ""
+
+
+def actionable(cwd: str, ready: list[dict[str, Any]]):
+    """(task, full task) of ready tasks with a next action and no future due date, in order."""
+    day = today()
+    for task in ready:
+        due = due_date(task)
+        if due is not None and due > day:
+            continue
+        full = view(cwd, task)
+        if plan(full):
+            yield task, full
+
+
+def work_line(task: dict[str, Any], lab: Labels) -> str:
+    fields = [text(task, "id"), text(task, "priority").lower(), lab.tags.get("effort", "-")]
+    return " | ".join([*fields, lab.window() or "-", text(task, "title")])
+
+
+def print_rows(rows: list[str], more: str) -> None:
+    for row in rows[:SHOWN]:
+        print(row)
+    if len(rows) > SHOWN:
+        print(f"... {len(rows) - SHOWN} more ({more})")
+    if not rows:
+        print("none")
+
+
+def open_work(cwd: str) -> tuple[list[dict[str, Any]], dict[int, Labels], bool]:
+    tasks = list_tasks(cwd, ["--exclude-status", OPEN_EXCLUDED])
+    labels = {id(t): Labels(t) for t in tasks}
+    return tasks, labels, report_problems(tasks, labels)
+
+
+def agenda_args() -> argparse.Namespace:
+    """The legacy agenda defaults: 1h, wany, any change risk, every area."""
+    return argparse.Namespace(time="1h", window="wany", max_change_risk=None, area=None)
+
+
 # --- subcommands
 
 
 def cmd_today(cwd: str, as_json: bool) -> int:
     day = today()
-    open_tasks = list_tasks(cwd, ["--exclude-status", OPEN_EXCLUDED])
+    open_tasks, labels, bad = open_work(cwd)
     notes = list_tasks(cwd, ["--status", "Note"])
-    labels = {id(t): Labels(t) for t in (*open_tasks, *notes)}
-    bad = report_problems(open_tasks, labels) | report_problems(notes, labels)
-    due = [t for t in open_tasks if (d := due_date(t)) is not None and d <= day]
-    due.sort(
-        key=lambda t: (
-            due_date(t),
-            PRIORITY_RANK.get(str(t.get("priority")).lower(), len(PRIORITY_RANK)),
-            text(t, "id"),
-        )
-    )
+    labels.update({id(t): Labels(t) for t in notes})
+    bad |= report_problems(notes, labels)
+    due = [
+        t
+        for t in open_tasks
+        if (d := due_date(t)) is not None
+        and d <= day
+        and t.get("status") not in NOT_WORK
+        and not set(OUTSIDE_DAILY) & set(labels[id(t)].names)
+    ]
+    due.sort(key=lambda t: (due_date(t), priority_rank(t), id_key(t)))
+    due_ids = {id(t) for t in due}
+    ready, _ = select_ready(open_tasks, labels, agenda_args())
+    high = [t for t in ready if priority_rank(t) == 0 and id(t) not in due_ids]
+    priority = list(actionable(cwd, high))
     valid = sort_notes([t for t in notes if labels[id(t)].valid_on(day)], labels)
     if as_json:
-        print(
-            json.dumps(validate.clean({"due": due, "notes": valid}), indent=2, ensure_ascii=False)
-        )
+        body = {"due": due, "priority": [full for _, full in priority], "notes": valid}
+        print(json.dumps(validate.clean(body), indent=2, ensure_ascii=False))
         return 1 if bad else 0
     print("Due:")
     for task in due:
@@ -256,15 +430,14 @@ def cmd_today(cwd: str, as_json: bool) -> int:
         print(line)
     if not due:
         print("none")
+    print("Priority:")
+    print_rows([work_line(t, labels[id(t)]) for t, _ in priority], "cca watchlist ready")
     print_notes(valid, labels)
     return 1 if bad else 0
 
 
 def sort_notes(notes: list[dict[str, Any]], labels: dict[int, Labels]) -> list[dict[str, Any]]:
-    return sorted(
-        notes,
-        key=lambda t: (labels[id(t)].dates.get("from") or date.min, text(t, "id")),
-    )
+    return sorted(notes, key=lambda t: (labels[id(t)].dates.get("from") or date.min, id_key(t)))
 
 
 def print_notes(notes: list[dict[str, Any]], labels: dict[int, Labels]) -> None:
@@ -277,7 +450,7 @@ def print_notes(notes: list[dict[str, Any]], labels: dict[int, Labels]) -> None:
         print("none")
 
 
-def cmd_notes(cwd: str, on: date | None, search: str | None, as_json: bool) -> int:
+def cmd_notes(cwd: str, on: date | None, expired: bool, search: str | None, as_json: bool) -> int:
     day = on or today()
     args = ["--status", "Note"]
     if search is not None:
@@ -287,7 +460,11 @@ def cmd_notes(cwd: str, on: date | None, search: str | None, as_json: bool) -> i
     notes = list_tasks(cwd, args)
     labels = {id(t): Labels(t) for t in notes}
     bad = report_problems(notes, labels)
-    valid = sort_notes([t for t in notes if labels[id(t)].valid_on(day)], labels)
+    if expired:
+        valid = [t for t in notes if labels[id(t)].dates.get("until", date.max) < day]
+        valid.sort(key=lambda t: (labels[id(t)].dates["until"], id_key(t)))
+    else:
+        valid = sort_notes([t for t in notes if labels[id(t)].valid_on(day)], labels)
     if as_json:
         print(json.dumps(validate.clean(valid), indent=2, ensure_ascii=False))
     else:
@@ -350,10 +527,54 @@ def cmd_checked(cwd: str, ident: str, as_json: bool) -> int:
     return 0
 
 
+def cmd_ready(cwd: str, args: argparse.Namespace) -> int:
+    tasks, labels, bad = open_work(cwd)
+    ready, untagged = select_ready(tasks, labels, args)
+    if args.json:
+        body = {
+            "ready": [view(cwd, t) for t in ready],
+            "untagged": [view(cwd, t) for t in untagged],
+        }
+        print(json.dumps(validate.clean(body), indent=2, ensure_ascii=False))
+        return 1 if bad else 0
+    rows = []
+    for task in ready:
+        row = work_line(task, labels[id(task)])
+        if args.verbose and len(rows) < SHOWN:
+            action = plan(view(cwd, task))
+            row += f"\n  next: {validate.display(' '.join(action.split())) if action else '-'}"
+        rows.append(row)
+    print_rows(rows, "--json lists all")
+    print(f"untagged (no effort:): {len(untagged)}")
+    return 1 if bad else 0
+
+
+def cmd_next(cwd: str, args: argparse.Namespace) -> int:
+    tasks, labels, bad = open_work(cwd)
+    ready, _ = select_ready(tasks, labels, args)
+    found = next(actionable(cwd, ready), None)
+    if args.json:
+        print(json.dumps(validate.clean(found and found[1]), indent=2, ensure_ascii=False))
+    elif found is None:
+        print("none")
+    else:
+        print(work_line(found[0], labels[id(found[0])]))
+        print(f"  next: {validate.display(' '.join(plan(found[1]).split()))}")
+    return 1 if bad else 0
+
+
 def run(args: argparse.Namespace) -> int:
     cwd = str(config.require(args.config).dir)
     if args.action == "today":
         return cmd_today(cwd, args.json)
     if args.action == "notes":
-        return cmd_notes(cwd, args.on, args.search, args.json)
+        return cmd_notes(cwd, args.on, args.expired, args.search, args.json)
+    if args.action == "ready":
+        return cmd_ready(cwd, args)
+    if args.action == "next":
+        return cmd_next(cwd, args)
+    if args.action == "migrate":
+        from cca import watchlist_migrate
+
+        return watchlist_migrate.run(cwd, args.file, args.apply, args.exclude)
     return cmd_checked(cwd, args.id, args.json)

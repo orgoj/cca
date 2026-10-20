@@ -251,18 +251,46 @@ dependencies, search, Done):
 
 - **Recurring check**: a task with label `every:Nd` (N days, 1–366); its due date is the
   next check. Optional `until:YYYY-MM-DD` ends the checking.
-- **Scheduled task**: any open task with a due date.
+- **Scheduled task**: any open task with a due date, except `idle`/`standby` ones.
+- **Outside the daily check**: label `idle` (backlog work) or `standby` (waiting for the
+  event in the description); never due in `today`; a due date on them only means "not
+  before" for `next` and the Priority section.
 - **Note**: information, never work: a task in status `Note` (a project status) with
   optional `from:YYYY-MM-DD` / `until:YYYY-MM-DD` labels, inclusive local dates;
   missing boundaries are unlimited.
+- **Work tags** (labels): `effort:e15|e1h|e4h|exl`, `change-risk:r0..r3`,
+  `window:wany|woff|wnight|wfreeze`, `area:NAME`; the effective window is the stricter
+  of `window:` and the change-risk minimum (r0/r1 wany, r2 woff, r3 wnight). Blocked =
+  a `blocked:*` label (external blockers: `blocked:external` + `--ref`) or an
+  unfinished dependency (Backlog's `isReady`).
+- **Next action**: the task's Implementation Plan (`backlog task edit ID --plan`).
+- Status `Idea` never counts as work. A task holds the complete work (description,
+  plan, acceptance criteria); there is no length limit.
 
-Subcommands: `today` (open tasks due today or earlier, then notes valid today),
-`notes --on DATE` (notes valid on a date, e.g. to find a note about an outage),
-`checked ID` (recurring task: due date = today + N days, comment with the check time;
-past `until:` it is set Done instead). Malformed `every:`/`from:`/`until:` labels are
-reported, never skipped silently. `cca doctor` checks that `backlog` is installed and
-the project's statuses include `Note`. TASK-4 converts `watchlist.json` items into
-Backlog tasks; `cca` has no importer.
+Subcommands: `today` (open tasks due today or earlier, then **Priority**: actionable
+high-priority work fitting 1h/wany, then notes valid today), `notes --on DATE
+[--expired]` (notes valid on a date, e.g. to find a note about an outage, or expired
+before it), `checked ID` (recurring task: due date = today + N days, comment with the
+check time; past `until:` it is set Done instead), `ready` (open, unblocked, not
+standby work fitting `--time`/`--window`/`--max-change-risk`, by priority, effort, id;
+tasks without `effort:` counted as untagged), `next` (the first ready task with a
+plan and no future due date). Malformed watchlist labels are reported, never skipped
+silently. `cca doctor` checks that `backlog` is installed and the project's statuses
+include `Note`.
+
+`migrate FILE [--apply] [--exclude ID]...` converts a legacy `watchlist.json` (schema
+v2) once (TASK-4, doc-6 step 4): every item is validated before the first write; done
+items are skipped; each task carries `watchlist:<legacy id>`, so a rerun creates only
+what is missing. Mapping: a note → status `Note` with `from:`/`until:`; active
+routine/task and monitoring incident → `every:1d` (`once` → none), due = the later of
+the local date of `check_after` and the local date of `last_check` + 1 day (today when
+neither), `until:` = the local date of the instant before `monitor_until`; everything
+else → label `idle` or `standby`, due = local date of `check_after`; `prio` →
+priority, `next_action` → plan, `status`/`blocked_on`/`guide_keywords`/`check_after`
+→ description lines, `area`/incident `risk` → slugged labels, `effort`/`change_risk`/
+`window` → tags, incident → label `incident`, `blocked_on` → `blocked:external`, refs
+resolved by the legacy lookup and written relative to the config dir. Backlog dates
+carry no zone, so instants become dates in the local zone and lose the time of day.
 
 ## Release check and install
 
