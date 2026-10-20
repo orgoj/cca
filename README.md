@@ -29,7 +29,8 @@ cca doctor             # check config, sops, servers, transport, tools, skill li
 External tools are looked up only by the subcommand that needs them: `ssh` (`run`,
 `server`, `netdata`, `open-ports -d`), `tmux` (`run` with the tmux transport), `sops`
 (secrets), `curl` (`curl`), `nmap`/`nc` (`open-ports`), `backlog`
-([Backlog.md](https://github.com/MrLesk/Backlog.md), `watchlist`), `tokf` (optional,
+([Backlog.md](https://github.com/MrLesk/Backlog.md) 1.53.0 or later, the tested version;
+`watchlist`, `doctor`), `tokf` (optional,
 `run.tokf`).
 
 ## Subcommands
