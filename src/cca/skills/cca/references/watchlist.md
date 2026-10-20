@@ -48,6 +48,19 @@ due: `ID | priority | effort | window | title`), then the notes valid today
 (`ID | from..until | title`, `*` = open). Do the checks, then `checked ID` for each
 recurring one; finish a one-off scheduled task with `backlog task edit ID -s Done`.
 
+Daily check:
+
+1. `cca watchlist today` from the project directory (an error means a wrong directory or
+   config, never "nothing to do"). Only Due items are the daily check; Priority is a
+   reminder, idle work is not pulled in unless the user asks.
+2. One session task per Due item. For each: `backlog task view ID --plain`; load the
+   server context (server guide, see [operations](operations.md)); for an incident follow-up
+   read the server guide before the referenced incident; run the check the task names
+   (command, guide or `cca` subcommand).
+3. Record the result: `checked ID` for a recurring check, a comment
+   (`backlog task edit ID --comment "..."`) for findings, an incident for a new problem.
+4. Summary: each item with its result and next due date; open issues.
+
 `notes --on DATE`: notes valid on a date, e.g. what was planned when an outage
 happened; `--expired` the notes whose `until:` is before it; `--search` narrows by text.
 
@@ -68,6 +81,10 @@ tasks; a dry run unless `--apply`. Every item is validated first (all problems l
 nothing written). Review each line and warning (unresolved ref, ended monitoring,
 unknown key) before `--apply`; `--exclude ID` skips machine-only items. Done items are
 skipped. A rerun reports converted items as `exists` and creates only the missing ones.
+
+Setup, once per project: `backlog init "<name>" --defaults --integration-mode none --default-editor ""`
+(it must not change `AGENTS.md`/`CLAUDE.md`), then statuses
+`["Idea", "To Do", "In Progress", "Note", "Done"]` in `backlog/config.yml`.
 
 `backlog` runs in the `.cca.toml` directory. Exit 0 OK; 1 a task has a malformed
 watchlist label (named on stderr, the rest is still listed) or `migrate` warned; 2

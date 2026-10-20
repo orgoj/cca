@@ -14,7 +14,7 @@ cca run --session [SERVER...]
 - The server goes after `-t`, options only before `--`, the command after `--` or on
   stdin; command validators rely on this exact shape. Several words after `--` are
   joined with spaces, as ssh does: quote a pipeline as one argument
-  (`cca run -t server1 -- 'ps aux | grep nginx'`).
+  (`cca run -t server1 -- 'ps -C nginx -o pid=,comm= | wc -l'`).
 - Multiline scripts: a quoted heredoc on stdin, nothing after the options:
 
   ```

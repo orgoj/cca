@@ -1,6 +1,6 @@
 ---
 name: cca
-description: The `cca` command (Cyber-CLI Admin) for server administration in a project with a .cca.toml. Use before running any `cca` subcommand, when setting up or checking a project's .cca.toml, or when installing skills with `cca install skills`.
+description: The `cca` command (Cyber-CLI Admin) and the server administration workflow of a project with a .cca.toml. Use before running any `cca` subcommand or any command on a server; when solving a server problem, investigating an unknown server, analysing logs or monitoring outages; when searching, writing or maintaining the project's guides and incidents or recording lessons; for the daily check; and when setting up a project's .cca.toml or installing skills.
 ---
 
 # cca
@@ -26,8 +26,22 @@ what.
 | `cca server` | check a server: hostname, quick status (load, memory, disks), inventory (OS, hardware, network, containers) | [server](references/server.md) |
 | `cca watchlist` | run the daily check over Backlog.md: due and recurring tasks, priority work, notes valid on a date; pick work by time and window; convert a legacy watchlist.json | [watchlist](references/watchlist.md) |
 
+Workflows:
+
+| Task | Reference |
+|---|---|
+| solve a server problem, discover an unknown server, analyse logs; safety and secret rules for every server command | [operations](references/operations.md) |
+| investigate monitoring outages | [hetrix](references/hetrix.md) "Outage investigation" |
+| search guides and incidents; the writing rules for every record and report | [knowledge](references/knowledge.md) |
+| write an incident or a guide, record lessons from a session | [records](references/records.md) |
+| monthly upkeep: gaps, duplicates, consolidate incidents, clean the register | [maintenance](references/maintenance.md) |
+| daily check | [watchlist](references/watchlist.md) "Daily check" |
+
 Rules:
 
+- Before any command on a server read [operations](references/operations.md) "Safety";
+  before writing a guide, incident, task or report read [knowledge](references/knowledge.md)
+  "Written knowledge". Project specifics are in the project guides: search them first.
 - Run `cca` from the project directory (or below it); never pass secrets on the command line.
 - Several items = one run with several arguments (`cca asn IP [IP...]`), not a loop around
   `cca`. This says only how to batch items you already need; it never widens the set: look

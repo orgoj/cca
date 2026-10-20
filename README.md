@@ -117,9 +117,11 @@ Subcommands are not released one by one. Tags are `v<version>` and are never mov
 ## Migration from the old scripts
 
 Each project is converted once by hand following `backlog/docs/doc-6`: legacy config
-inputs → `.cca.toml` keys, old commands → `cca` subcommands, old skills, removal of the
-legacy config files, and `cca doctor` without old CCA links. The old scripts and skills
-below are deleted only after every project is converted.
+inputs → `.cca.toml` keys, old commands → `cca` subcommands, every old skill replaced by
+the packaged skill `cca` (doc-6 "Skills": its references cover the knowledge workflow,
+problem solving, discovery, logs and maintenance), removal of the legacy config files,
+and `cca doctor` without old CCA links. The old scripts and skills below are deleted
+only after every project is converted.
 
 ## Legacy: `bin/`, `lib/`, `skills/`
 

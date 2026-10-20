@@ -135,7 +135,19 @@ Options not listed keep their meaning; `--help` of the new command is authoritat
 The package ships one skill, `cca` (`cca install skills`), with a reference file per
 subcommand.
 
-| Old skill | Successor |
+User decision: the packaged `cca` skill alone replaces every old skill; all old `cca-*`
+skill links are removed from every project (`cca doctor` flags them). Project specifics
+stay in the project's guides, not in project copies of old skills.
+
+| Old skill | Successor in skill `cca` |
 |---|---|
-| `cca-tmux-cli`, `cca-hetrix-monitoring`, `cca-managing-watchlist` | `cca` |
-| `cca-core`, `cca-solving-problems`, `cca-asking`, `cca-diagnosing`, `cca-server-discovery`, `cca-server-logs`, `cca-watching`, `cca-creating-incidents`, `cca-saving-guides`, `cca-optimizing-guides`, `cca-learning`, `cca-searching`, `cca-researching-web`, `cca-setting-up`, `cca-migrating`, `cca-creating-skills` | none in the package; decided in TASK-4 (user decision): kept as a project skill converted to `cca <subcommand>`, ported into the package by a new task, or dropped. Decided for every one of them before TASK-2 deletes the root `skills/`. |
+| `cca-core` | `SKILL.md` rules, `references/knowledge.md`, `references/operations.md` |
+| `cca-tmux-cli` | `references/run.md`, `references/operations.md` "Safety" |
+| `cca-solving-problems`, `cca-diagnosing`, `cca-server-discovery`, `cca-server-logs` | `references/operations.md` (the `cca-diagnose-gather` part is dropped, not ported) |
+| `cca-hetrix-monitoring` | `references/hetrix.md` "Outage investigation" |
+| `cca-searching` | `references/knowledge.md` |
+| `cca-creating-incidents`, `cca-saving-guides`, `cca-learning` | `references/records.md` |
+| `cca-optimizing-guides` | `references/maintenance.md` (watchlist cleanup → register cleanup on Backlog.md) |
+| `cca-watching`, `cca-managing-watchlist` | `references/watchlist.md` |
+| `cca-setting-up` | `references/config.md`, `doctor.md`, `install.md`, `watchlist.md` "Setup", `knowledge.md` (index) |
+| `cca-asking`, `cca-researching-web`, `cca-creating-skills`, `cca-migrating` | dropped: agents answer natively, web research goes to the research agent, skills are created with the machine's skill tooling, migration is this guide |

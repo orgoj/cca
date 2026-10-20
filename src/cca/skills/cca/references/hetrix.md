@@ -33,3 +33,24 @@ cca hetrix COMMAND [OPTIONS]
   status), configuration or usage error. Rate limits are not retried.
 
 Example: `cca hetrix monitor-outages web --since 3d`
+
+## Outage investigation
+
+1. `cca hetrix status`, then `cca hetrix outages --since YYYY-MM-DD` (the last check);
+   one session task per problematic monitor.
+2. Before evaluating, find the project's patterns (429/rate limits, known false alarms):
+   `tantivy2agents search "hetrix 429"` or similar in the guides.
+3. **Decide from the overview first:** is the outage already recorded? Match an incident
+   by **date and service** (an incident from Oct 8 does not explain an outage on Oct 15).
+   A match: link the incident, done, no detail calls.
+4. Only for a new, unrecorded outage, and only when it changes the decision:
+   `cca hetrix monitor-outages MONITOR --since YYYY-MM-DD` for the error type (timeout,
+   refused, 5xx, keyword; never assumed: they have different causes) and the affected
+   locations (`--full` rarely); `cca hetrix monitor-info MONITOR` for the exact target.
+   The target URL is **required evidence** for 404/410 results and keyword monitors (it
+   tells a removed or changed page from a random outage); otherwise only when you search
+   it in the logs.
+5. Search that URL in the project's local log data (per its log guide), never by grep on
+   the server.
+6. Summary: current status (all UP or what is not), each investigated monitor with its
+   finding or incident link, new issues that need action.
