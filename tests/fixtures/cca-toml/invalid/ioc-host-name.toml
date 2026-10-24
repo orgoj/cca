@@ -1,0 +1,5 @@
+# expect: ioc.hosts
+schema_version = 1
+
+[ioc]
+hosts = ["server1", "-x"]

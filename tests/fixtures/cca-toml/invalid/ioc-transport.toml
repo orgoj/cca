@@ -1,0 +1,5 @@
+# expect: ioc.transport
+schema_version = 1
+
+[ioc]
+transport = "tmux"

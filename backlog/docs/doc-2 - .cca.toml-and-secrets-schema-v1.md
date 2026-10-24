@@ -175,6 +175,20 @@ secret (doc-1 "Secrets").
 |---|---|---|---|
 | `net_iface_prefixes` | array of strings | `["en", "eth"]` | Non-empty array; each `^[A-Za-z0-9]+$` (the values build a remote filter, so no regex or shell metacharacters). |
 
+## `[ioc]` — `cca ioc`
+
+Reads the state of host-ioc (deployed by the project's role) from `/var/lib/host-ioc/`
+on each host; never writes on a host.
+
+| Key | Type | Default | Rule |
+|---|---|---|---|
+| `hosts` | array of strings | `[]` | Names (see General rules); each must be a `[servers]` entry at use time. Empty → `cca ioc` exits 2. |
+| `transport` | string | `"ssh"` | `"ssh"`, or `"run"` = the `run.transport` of `cca run` (projects reaching hosts only through it). |
+| `sudo` | boolean | `false` | `true`: every remote script runs as `sudo -n bash -c …` (state is root 0700). |
+| `script` | path | – | Local copy of the host-ioc script the role deploys; its SHA-256 is compared with `script_sha256` of each run. Required at use time by `cca ioc status`. |
+| `quick_interval_hours`, `deep_interval_hours` | integer | `24` | 1–8760; a run older than twice its interval is a warning. |
+| `baseline_dir` | path | `"tmp/host-ioc"` | `cca ioc baseline` writes `<lowercased host>+<UTC yyyymmddthhmmssz>.yaml` (see "Generated file names"), never overwrites; created on first write. |
+
 ## Old CCA links — `cca doctor`
 
 `cca doctor` (config required) checks that no old CCA script or skill is still

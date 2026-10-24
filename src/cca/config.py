@@ -177,6 +177,15 @@ SCHEMA: dict[str, Any] = {
     "server_info": {
         "net_iface_prefixes": (["en", "eth"], _string_list(_matching(_IFACE_RE), non_empty=True)),
     },
+    "ioc": {
+        "hosts": ([], _string_list(_matching(validate.NAME_RE, validate.NAME_MAX))),
+        "transport": ("ssh", _choice("ssh", "run")),
+        "sudo": (False, _boolean),
+        "script": (ABSENT, _path),
+        "quick_interval_hours": (24, _integer(1, 8760)),
+        "deep_interval_hours": (24, _integer(1, 8760)),
+        "baseline_dir": ("tmp/host-ioc", _path),
+    },
 }
 OPTIONAL_TABLES = {"run.log"}
 

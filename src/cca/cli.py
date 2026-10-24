@@ -21,6 +21,7 @@ COMMANDS: dict[str, tuple[str, str]] = {
     "doctor": ("doctor", "check that the current project is ready for cca"),
     "hetrix": ("hetrix", "HetrixTools monitors: status, outages, server stats, blacklists"),
     "install": ("install", "install cca skills into an agent skill directory"),
+    "ioc": ("ioc", "host-ioc compromise check: state, findings, baseline of the hosts"),
     "netdata": ("netdata", "query Netdata metrics of a server, over ssh or directly"),
     "open-ports": ("open_ports", "probe TCP ports of a host with nmap, nc or curl"),
     "run": ("run", "run a command on a configured server over tmux or ssh"),

@@ -42,3 +42,12 @@ hosting_marker = "/.example.hosting.info.txt"
 
 [server_info]
 net_iface_prefixes = ["en", "eth", "wg"]
+
+[ioc]
+hosts = ["server1", "server2"]
+transport = "run"
+sudo = true
+script = "ansible/roles/host-ioc/files/host-ioc"
+quick_interval_hours = 6
+deep_interval_hours = 24
+baseline_dir = "tmp/host-ioc"
