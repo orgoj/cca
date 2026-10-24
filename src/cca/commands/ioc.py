@@ -47,7 +47,8 @@ run.transport of `cca run`), ioc.sudo = true reads through `sudo -n`.
 
 status warns when a run is missing, unreadable, older than 2x its interval
 (ioc.quick_interval_hours, ioc.deep_interval_hours), has uncovered modules or another
-script_sha256 than ioc.script.
+script_sha256 than ioc.script, and when last-error.txt is newer than a run's start.
+A container file path /proc/<init>/root/... is reported unavailable after a restart.
 
 exit status: 0 nothing to report; 1 findings (status, show); 2 a warning, an error on
 a host, usage or config error (2 wins).
@@ -99,12 +100,17 @@ def _failed(host: str, result) -> CcaError:
 
 
 def read_states(cfg: config.Config, host: str, timeout: int) -> dict[str, Any]:
-    """{run: parsed state document | error text} for both runs of host."""
+    """{run: parsed state document | error text} for both runs of host, and "error":
+    (mtime, last line) of last-error.txt or None."""
+    error = f"{STATE_DIR}/last-error.txt"
     script = "".join(
         f'echo "{MARK} {run}"; head -c {STATE_MAX + 1} -- {STATE_DIR}/last-{run}.json 2>&1; '
         "rc=$?; echo; "
         f'echo "{MARK}-end {run} $rc"; '
         for run in RUNS
+    ) + (
+        f'if [ -f {error} ]; then echo "{MARK}-error $(stat -c %Y -- {error}) '
+        f'$(tail -n 1 -- {error} | cut -c1-{DETAIL_MAX})"; fi'
     )
     result = _remote(cfg, host, script, timeout, "status")
     if result.timed_out or result.code:
@@ -114,9 +120,14 @@ def read_states(cfg: config.Config, host: str, timeout: int) -> dict[str, Any]:
 
 def parse_states(output: str) -> dict[str, Any]:
     states: dict[str, Any] = {run: "no state in the output" for run in RUNS}
+    states["error"] = None
     current: str | None = None
     body: list[str] = []
     for line in output.splitlines():
+        error = re.fullmatch(rf"{MARK}-error (\d+) ?(.*)", line)
+        if current is None and error:
+            states["error"] = (int(error.group(1)), error.group(2))
+            continue
         if current is None:
             if line.startswith(MARK + " ") and line[len(MARK) + 1 :] in RUNS:
                 current, body = line[len(MARK) + 1 :], []
@@ -125,10 +136,11 @@ def parse_states(output: str) -> dict[str, Any]:
         if not end:
             body.append(line)
             continue
-        text = "\n".join(body).strip()
+        raw = "\n".join(body)  # the file's bytes: the separator echo ends its last line
+        text = raw.strip()
         if end.group(1) != "0":
             states[current] = "cannot read: " + (text.splitlines() or ["no output"])[0][:CUT]
-        elif len(text.encode()) > STATE_MAX:
+        elif len(raw.encode()) > STATE_MAX:
             states[current] = f"state file over {STATE_MAX} bytes"
         else:
             states[current] = _document(text)
@@ -265,7 +277,22 @@ def status(cfg: config.Config, hosts: list[str], timeout: int) -> int:
             line, run_code = run_status(cfg, run, states[run], expected, now)
             print(f"{host} {line}")
             code = max(code, run_code)
+        if _error_is_recent(states):
+            mtime, text = states["error"]
+            when = datetime.fromtimestamp(mtime, UTC).isoformat()
+            print(f"{host} error: WARN last-error.txt {when} after a last run: {_text(text)}")
+            code = 2
     return code
+
+
+def _error_is_recent(states: dict[str, Any]) -> bool:
+    """last-error.txt (an aborted run, its last-*.json not rewritten) is newer than a
+    run's start; host-ioc never removes it, so an older one is history."""
+    if states["error"] is None:
+        return False
+    starts = [_started(states[run]) for run in RUNS if isinstance(states[run], dict)]
+    known = [s.timestamp() for s in starts if s is not None]
+    return not known or states["error"][0] > min(known)
 
 
 # --- show
@@ -287,8 +314,13 @@ def _listing(run: str, state: dict[str, Any]) -> list[str]:
             f"  container={_text(f.get('container') or '-', 64)}  {_target(f)}"
             f"  {'new  ' if f.get('new') is True else ''}{_text(f.get('detail', ''))}"
         )
+    modules = state.get("modules")
+    for name, m in modules.items() if isinstance(modules, dict) else ():
+        reasons = m.get("uncovered") if isinstance(m, dict) else None
+        if isinstance(reasons, list) and reasons:
+            lines.append(f"  uncovered {_text(name, 40)}: " + "; ".join(_text(r) for r in reasons))
     started = _text(state.get("started", "?"), 40)
-    return [f"{run} {started}: {len(lines)} findings", *lines]
+    return [f"{run} {started}: {len(_findings(state))} findings", *lines]
 
 
 def raw_script(finding: dict[str, Any]) -> str | None:
@@ -325,11 +357,29 @@ def raw_script(finding: dict[str, Any]) -> str | None:
     if isinstance(line, int) and not isinstance(line, bool) and line >= 1:
         window = f"sed -n '{max(1, line - CONTEXT)},{line + CONTEXT}p' -- {p}"
         what = f"lines {max(1, line - CONTEXT)}-{line + CONTEXT}"
+    elif (
+        finding.get("module") == "php_logs"
+    ):  # hit in a finished rotation or a log read from its end
+        window = f"tail -n {2 * CONTEXT + 1} -- {p}"
+        what = f"last {2 * CONTEXT + 1} lines"
     else:
         window = f"head -n {2 * CONTEXT + 1} -- {p}"
         what = f"first {2 * CONTEXT + 1} lines"
+    # a container file is /proc/<init>/root/...: valid only while that init runs, and a
+    # reused PID of a host process would show the host's file instead
+    init = re.fullmatch(r"/proc/([0-9]+)/root(/.*)?", path)
+    check = ""
+    if init:
+        d, inside = f"/proc/{init.group(1)}", shlex.quote(init.group(2) or "/")
+        check = (
+            f'if [ ! -d {d} ] || [ "$(stat -L -c %d:%i {d}/root)" = "$(stat -c %d:%i /)" ]; '
+            f"then echo 'unavailable: container init {init.group(1)} no longer runs (container "
+            f"restarted?); path inside the container:' {inside}; exit 0; fi; "
+            f'echo "container init {init.group(1)} cgroup: '
+            f'$(head -n 1 {d}/cgroup | cut -c1-{CUT})"; '
+        )
     # sed -n reads to EOF (head would SIGPIPE ls under pipefail)
-    return (
+    return check + (
         f"ls -ld -- {p} || exit 0; "
         f"if [ -d {p} ]; then ls -la -- {p} | cut -c1-{CUT} | sed -n '1,50p'; "
         f"elif [ ! -f {p} ]; then echo 'not a regular file'; "
@@ -352,7 +402,7 @@ def show(cfg: config.Config, host: str, finding_id: str | None, timeout: int) ->
                 continue
             lines = _listing(run, state)
             print("\n".join(lines))
-            if len(lines) > 1:
+            if _findings(state):
                 code = max(code, 1)
         return code
     for run in RUNS:

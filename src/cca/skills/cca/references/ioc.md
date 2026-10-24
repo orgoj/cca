@@ -13,12 +13,18 @@ cca ioc [--timeout SEC] baseline HOST
 - `status`: per host and run (`quick`, `deep`): start time and age, duration, version,
   findings (new). WARN when a run is missing or unreadable, older than 2x its interval,
   has modules not `ok`/`finding` (uncovered), or its `script_sha256` differs from the
-  local `ioc.script` (the version the role deploys).
+  local `ioc.script` (the version the role deploys). A `last-error.txt` newer than a
+  run's start (host-ioc aborted, its state was not rewritten) is a WARN line with the
+  last traceback line; read the file with `cca run`.
 - `show HOST`: the findings of both last runs. `show HOST ID`: every field of that
   finding, then raw data to verify it, read-only: for `pid` the process from `/proc`
   (exe, cwd, cmdline, status, cgroup, children), for `path` `ls -ld` and the lines around
-  `line` (or the first lines; binary files only their sha256). Verify a finding here
-  before you act on it; act only through the normal change process.
+  `line` (without `line`: the last lines of a `php_logs` log, else the first lines; binary
+  files only their sha256). A container file is `/proc/<init PID>/root/...`: after a
+  container restart it is reported `unavailable` with the path inside the container
+  (read it there with `cca run`, or wait for the next run). The listing also shows the
+  reasons of uncovered modules. Verify a finding here before you act on it; act only
+  through the normal change process.
 - `baseline HOST`: runs `host-ioc baseline` on HOST and saves its proposal to
   `ioc.baseline_dir/<host>+<UTC time>.yaml`. Review it and put the accepted parts into
   the host's Ansible vars; the baseline is never changed on the host.

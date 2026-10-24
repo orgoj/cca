@@ -16,7 +16,7 @@ from cca.commands import ioc
 
 REMOTE_REAL = (
     "bash", "sh", "base64", "cat", "sed", "grep", "head", "cut", "tr", "ls", "readlink",
-    "sha256sum", "ps",
+    "sha256sum", "ps", "stat", "tail",
 )  # fmt: skip
 SCRIPT = b"#!/usr/bin/env python3\nprint('host-ioc')\n"
 SHA = hashlib.sha256(SCRIPT).hexdigest()
@@ -62,12 +62,19 @@ def project(env: Path, ioc_extra: str = "") -> None:
 
 
 def state(hours_ago: float = 1, **changes) -> dict:
+    """The shape host-ioc writes, extra fields (host, mode, started_epoch, counts) included."""
+    started = datetime.now(UTC).replace(microsecond=0) - timedelta(hours=hours_ago)
     doc = {
         "version": "1.0",
         "script_sha256": SHA,
-        "started": (datetime.now(UTC) - timedelta(hours=hours_ago)).isoformat(),
+        "host": "host1",
+        "mode": "quick",
+        "started": started.isoformat(timespec="seconds"),
+        "started_epoch": started.timestamp(),
         "duration_s": 12.5,
-        "modules": {"process": {"status": "ok", "duration_s": 1.0}},
+        "modules": {
+            "process": {"status": "ok", "duration_s": 1.0, "uncovered": [], "counts": {"p": 3}}
+        },
         "findings": [],
     }
     doc.update(changes)
@@ -224,6 +231,7 @@ def test_parse_states_ignores_noise():
     assert ioc.parse_states(output) == {
         "quick": {"findings": []},
         "deep": "cannot read: head: x: Permission denied",
+        "error": None,
     }
 
 
@@ -313,13 +321,16 @@ def test_show_finding_process(env, capsys):
 
 
 def test_status_state_size_limit(env, capsys, monkeypatch):
-    monkeypatch.setattr(ioc, "STATE_MAX", 300)
+    """A file of exactly STATE_MAX bytes is read; one byte more (here trailing whitespace,
+    which the JSON parse would ignore) is rejected."""
     project(env)
-    put(env, "host1", "quick", state())
-    put(env, "host1", "deep", state(findings=[FINDING] * 5))
+    text = json.dumps(state()) + "\n"
+    monkeypatch.setattr(ioc, "STATE_MAX", len(text))
+    put(env, "host1", "quick", text)
+    put(env, "host1", "deep", text + " ")
     assert main(["ioc", "status", "server1"]) == 2
     out = capsys.readouterr().out.splitlines()
-    assert "WARN" not in out[0] and "state file over 300 bytes" in out[1]
+    assert "WARN" not in out[0] and f"state file over {len(text)} bytes" in out[1]
 
 
 def test_show_id_with_unreadable_run(env, capsys):
@@ -341,6 +352,60 @@ def test_show_large_directory_no_sigpipe(env, capsys):
     assert main(["ioc", "show", "server1", "d1"]) == 1
     raw = capsys.readouterr().out.partition("raw data:\n")[2]
     assert len(raw.splitlines()) == 51  # ls -ld + 50 listing lines
+
+
+def test_show_log_without_line_shows_tail(env, capsys):
+    project(env)
+    log = env / "error.log.1"
+    log.write_text("".join(f"line {i}\n" for i in range(1, 21)))
+    finding = {"id": "l1", "module": "php_logs", "path": str(log)}
+    put(env, "host1", "quick", state(findings=[finding]))
+    put(env, "host1", "deep", state())
+    assert main(["ioc", "show", "server1", "l1"]) == 1
+    out = capsys.readouterr().out
+    assert "last 11 lines:\nline 10\n" in out and "line 20\n" in out
+
+
+@pytest.mark.parametrize("pid", [4194303, os.getpid()])
+def test_show_container_path_after_restart(env, capsys, pid):
+    """A gone init, or a PID now used by a host process: unavailable, never the host file."""
+    project(env)
+    path = f"/proc/{pid}/root/etc/hostname"
+    put(env, "host1", "quick", state(findings=[{"id": "c1", "module": "tmp", "path": path}]))
+    put(env, "host1", "deep", state())
+    assert main(["ioc", "show", "server1", "c1"]) == 1
+    raw = capsys.readouterr().out.partition("raw data:\n")[2]
+    assert raw == (
+        f"unavailable: container init {pid} no longer runs (container restarted?); "
+        "path inside the container: /etc/hostname\n"
+    )
+
+
+def test_show_lists_uncovered_reasons(env, capsys):
+    project(env)
+    modules = {"files": {"status": "uncovered", "uncovered": ["web1: chybi index"]}}
+    put(env, "host1", "quick", state())
+    put(env, "host1", "deep", state(modules=modules))
+    assert main(["ioc", "show", "server1"]) == 0
+    assert "deep " in (out := capsys.readouterr().out)
+    assert "\n  uncovered files: web1: chybi index\n" in out
+
+
+@pytest.mark.parametrize(("age_h", "warned"), [(0, True), (5, False)])
+def test_status_last_error(env, capsys, age_h, warned):
+    project(env)
+    put(env, "host1", "quick", state(hours_ago=2))
+    put(env, "host1", "deep", state(hours_ago=3))
+    error = env / "state" / "host1" / "last-error.txt"
+    error.write_text("Traceback (most recent call last):\nKeyError: 'x'\n")
+    mtime = (datetime.now(UTC) - timedelta(hours=age_h)).timestamp()
+    os.utime(error, (mtime, mtime))
+    assert main(["ioc", "status", "server1"]) == (2 if warned else 0)
+    out = capsys.readouterr().out.splitlines()
+    assert len(out) == (3 if warned else 2)
+    if warned:
+        assert out[2].startswith("server1 error: WARN last-error.txt ")
+        assert out[2].endswith("after a last run: KeyError: 'x'")
 
 
 def test_show_unknown_and_invalid_id(env, capsys):
