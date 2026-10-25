@@ -4,11 +4,14 @@ allow bash -n *
 allow bash tests/test-shared-clean.sh
 allow pytest *
 allow python -m pytest *
-allow python3 -m pytest -q tests/* *
+allow python3 -m pytest *
 allow rm tmp/*+
 allow ruff *
 allow tests/run-all.sh *
 allow tests/test-*.sh *
+allow tests/release-check.sh pre-tag|
+allow tests/release-check.sh post-tag|
+allow uv tool list|
 
 # cca itself: local subcommands only. run/server reach real hosts, and this
 # repository never touches consumer production (AGENTS.md).
