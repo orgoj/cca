@@ -16,11 +16,9 @@ allow cca *
 ask cca run * "cca run executes on a remote host; development of cca uses fixtures and fakes only"
 ask cca server * "cca server executes on a remote host; development of cca uses fixtures and fakes only"
 
-# Git: local work is free; the repository is public, so every push asks
-# (archive/pre-public and python branches must never reach origin).
-allow git *
+# Git: local work is free (~/.dippy/config); the repository is public, so every
+# push asks (archive/pre-public and python branches must never reach origin).
 ask git push * "This repository is public: confirm the branch (only master goes to origin)"
-ask git -C * push * "This repository is public: confirm the branch (only master goes to origin)"
 
 # hcom: messaging and lookups; spawn/kill/term stay on ask.
 allow hcom send *
