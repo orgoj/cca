@@ -15,6 +15,7 @@ from cca.output import CcaError, error
 COMMANDS: dict[str, tuple[str, str]] = {
     "asn": ("asn", "routing, owner, country, type and PTR of IP addresses"),
     "check-domain": ("check_domain", "check whether a domain points to our hosting"),
+    "clean": ("clean", "delete old entries of the project's tmp/ (plan by default)"),
     "cloudflare": ("cloudflare", "Cloudflare zones: DNS records, WAF rules, audit, exports"),
     "config": ("config", "show the project .cca.toml"),
     "curl": ("curl", "curl with a project credential hidden from argv and output"),

@@ -33,7 +33,7 @@ Config (`.cca.toml`, doc-2 `[ioc]`):
 
 ```toml
 [ioc]
-hosts = ["server1", "server2"]   # [servers] entries running host-ioc
+hosts = ["server1", "server2"]   # [servers] entries or aliases running host-ioc
 script = "ansible/roles/host-ioc/files/host-ioc"   # local copy the role deploys
 transport = "ssh"                # or "run": the run.transport of `cca run`
 sudo = false                     # true: read through `sudo -n`

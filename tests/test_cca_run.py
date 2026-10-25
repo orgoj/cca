@@ -288,6 +288,27 @@ def test_list_ssh(env, monkeypatch, capsys):
     assert capsys.readouterr().out == "server1\tadmin@host1\nserver2\thost2\nserver3\tfail\n"
 
 
+def test_alias_resolves_to_its_entry_and_never_repeats_in_all(env, monkeypatch, capsys):
+    (env / "work" / ".cca.toml").write_text(
+        'schema_version = 1\n[servers.web-gen2]\nssh = "host2"\naliases = ["web"]\n'
+        '[servers.web-gen1]\nssh = "host1"\n[run]\ntransport = "ssh"\n[run.log]\n'
+        'operator = "admin1"\n'
+    )
+    (env / "work" / "logs").mkdir()
+    assert cca(["-t", "web", "--", "echo $CCA_TARGET"], monkeypatch) == 0
+    captured = capsys.readouterr()
+    assert captured.out == "host2\n" and "note: web is an alias of web-gen2" in captured.err
+    (log,) = (env / "work" / "logs").iterdir()
+    assert " admin1 web-gen2 echo $CCA_TARGET" in log.read_text()  # the real entry
+    assert cca(["--all", "--", "true"], monkeypatch) == 0
+    out = capsys.readouterr().out
+    assert out.count("<server-result") == 2 and 'name="web"' not in out
+    assert cca(["--list"], monkeypatch) == 0
+    assert capsys.readouterr().out == "web-gen2\thost2\taliases=web\nweb-gen1\thost1\n"
+    assert cca(["-t", "nope", "--", "true"], monkeypatch) == 2
+    assert "servers: web-gen2 (web), web-gen1" in capsys.readouterr().err
+
+
 def test_all_order_and_stop_on_failure(env, monkeypatch, capsys):
     project(env)
     command = 'echo "on $CCA_TARGET"; [ "$CCA_TARGET" != host2 ]'

@@ -39,6 +39,7 @@ External tools are looked up only by the subcommand that needs them: `ssh` (`run
 |------------|-------------|
 | `cca asn [--json] IP...` | One line per IP: ASN, country, type flags, RPKI, organization, PTR, registered range `net:` (RIPEstat, RIR RDAP, ipapi.is with the optional `curl` sops credential for its origin, DNS); non-global addresses are not looked up |
 | `cca check-domain DOMAIN` | Does a domain point to our hosting: A/AAAA/CNAME, RDAP owner of foreign addresses, the `[check_domain]` hosting marker (same-host redirects only), redirect chain |
+| `cca clean [--days N] [--apply]` | Delete top-level entries of the project's `tmp/` older than N days (default 30; a directory by its newest file), plan by default; `[clean] keep` and `cloudflare.export_dir` are kept, links never followed |
 | `cca cloudflare GROUP COMMAND` | Cloudflare zones through the official SDK (token from sops): `token`, `zone`, `dns`, `waf`, `ratelimit`, `config`, `access`, `ua`, `uam`, `bots`, `events`, `analytics`, `export`, `diff`; writes plan unless `--apply` |
 | `cca config show` | The `.cca.toml` in use and its values with defaults |
 | `cca curl [--cred-id ID] [CURL-OPTION...] URL` | curl with a credential from the sops file, selected by the URL's origin (HTTPS only); kept out of argv and redacted from output and trace files |
@@ -63,6 +64,7 @@ schema_version = 1
 
 [servers.server1]                 # --all and listings use this order
 ssh = "admin@server1.example.com" # default: the server name
+aliases = ["web"]                 # optional other names; resolve to server1 everywhere
 
 [servers.server2]
 

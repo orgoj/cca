@@ -102,6 +102,14 @@ def test_hostname(env, capsys):
     assert ssh_calls(env) == ["admin@host1"]
 
 
+def test_hostname_by_alias(env, capsys):
+    servers = SERVERS.replace("[servers.server3]\n", '[servers.server3]\naliases = ["web"]\n')
+    (env / "work" / ".cca.toml").write_text("schema_version = 1\n" + servers)
+    assert main(["server", "hostname", "web"]) == 0
+    assert capsys.readouterr().out == '<hostname server="server3">h1</hostname>\n'
+    assert ssh_calls(env) == ["host3"]
+
+
 def test_status(env, capsys):
     project(env)
     assert main(["server", "status", "server1"]) == 0

@@ -11,6 +11,10 @@ cca run --read [--lines N | --marker M | --scrollback] SERVER
 cca run --session [SERVER...]
 ```
 
+- SERVER is a `[servers]` name or one of its `aliases` (e.g. a generic name for the current
+  generation): the alias resolves to its entry (stderr note `X is an alias of Y`), and the
+  tmux window, the command log and the output use the entry name. `--all` runs every
+  entry once; `--list` shows `aliases=...` as the last column.
 - The server goes after `-t`, options only before `--`, the command after `--` or on
   stdin; command validators rely on this exact shape. Several words after `--` are
   joined with spaces, as ssh does: quote a pipeline as one argument

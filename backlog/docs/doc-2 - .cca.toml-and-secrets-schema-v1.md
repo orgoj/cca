@@ -107,6 +107,7 @@ a server fail at use time.
 | `netdata_host` | string | – | Hostname, IPv4 or IPv6 literal (without brackets). Required at use time by `cca netdata` for this server. |
 | `netdata_port` | integer | `19999` | 1–65535. |
 | `netdata_transport` | string | `"ssh"` | `"ssh"` (curl on the server through `ssh`) or `"direct"` (HTTP from the local machine). |
+| `aliases` | array of strings | `[]` | Other names for this entry (name rule). Server names and aliases share one case-insensitive namespace: an alias equal to any server name or other alias, or to its own entry's name, is a load-time error. Every command that takes a server (`run -t`, `server`, `netdata --server`, `open-ports -d`, `ioc.hosts` and `ioc` HOST) resolves a name or alias case-insensitively to its entry (a note on stderr for an alias) and then uses the entry name only: ssh target, tmux window, `[run.log]` line, fping cache, ioc state. `--all` and listings iterate entries only; `cca run --list` appends `aliases=a,b`. |
 
 ## `[run]` — `cca run` and the executor
 
@@ -176,6 +177,17 @@ secret (doc-1 "Secrets").
 | Key | Type | Default | Rule |
 |---|---|---|---|
 | `net_iface_prefixes` | array of strings | `["en", "eth"]` | Non-empty array; each `^[A-Za-z0-9]+$` (the values build a remote filter, so no regex or shell metacharacters). |
+
+## `[clean]` — `cca clean`
+
+Cleans only `<config dir>/tmp`; each top-level entry is one unit (a directory by the
+newest mtime inside it). The directory of `cloudflare.export_dir` inside `tmp/` is
+always kept; `export_dir` equal to `tmp` itself is an error for `cca clean`.
+
+| Key | Type | Default | Rule |
+|---|---|---|---|
+| `days` | integer | `30` | 1–3650; default of `--days`. |
+| `keep` | array of strings | `[]` | Top-level entry names of `tmp/` that are never deleted (exact names, no `/`, no globs). |
 
 ## `[ioc]` — `cca ioc`
 

@@ -1064,6 +1064,7 @@ def run(args: argparse.Namespace) -> int:
     if fping_all_mode:
         return fping_all(args, cfg)
     if server is not None:
+        server = cfg.canonical(server)  # an alias shares the entry's cache file
         nd = _client(cfg, server, cfg.server(server), transport)
         via = f"ssh {nd.destination} -> " if nd.destination else ""
         print(f"Using server {server} -> {via}{nd.address()}", file=sys.stderr)

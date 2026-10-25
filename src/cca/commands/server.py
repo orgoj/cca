@@ -189,8 +189,7 @@ def run(args: argparse.Namespace) -> int:
         if not servers:
             raise CcaError(f"{cfg.path}: no [servers] configured")
     else:
-        cfg.server(args.server)  # unknown server -> error before anything runs
-        servers = [args.server]
+        servers = [cfg.canonical(args.server)]  # alias -> entry; unknown -> error now
     for server in servers:
         code = _report(cfg, server, args.section, args.timeout)
         if code:

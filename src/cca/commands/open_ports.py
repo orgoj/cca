@@ -92,7 +92,9 @@ def run(args: argparse.Namespace) -> int:
     method, host, ports = args.method, args.host, _ports(args)
     destination = None
     if args.delegate is not None:
-        destination = ssh.target(config.require(args.config), args.delegate)
+        cfg = config.require(args.config)
+        args.delegate = cfg.canonical(args.delegate)  # an alias: messages name the entry
+        destination = ssh.target(cfg, args.delegate)
     commands = [
         (port, ssh.argv(destination, shlex.join(tool)) if destination else tool)
         for port, tool in _probes(method, host, ports)

@@ -241,17 +241,18 @@ def run_status(
 
 
 def _hosts(cfg: config.Config, names: list[str]) -> list[str]:
-    configured = cfg.data["ioc"]["hosts"]
-    if not configured:
+    if not cfg.data["ioc"]["hosts"]:
         raise CcaError(f"{cfg.path}: ioc.hosts: required by this command but not set")
-    for name in configured:
-        cfg.server(name)  # every ioc host must be a [servers] entry
-    for name in names:
+    # names or aliases, used as their [servers] entry (an alias moved to a new entry
+    # then reads that host's state)
+    configured = list(dict.fromkeys(cfg.canonical(n) for n in cfg.data["ioc"]["hosts"]))
+    selected = [cfg.canonical(n) for n in names]
+    for name in selected:
         if name not in configured:
             raise CcaError(
                 f"'{validate.display(name)}' is not in ioc.hosts ({', '.join(configured)})"
             )
-    return names or list(configured)
+    return selected or configured
 
 
 def _expected_sha(cfg: config.Config) -> str:

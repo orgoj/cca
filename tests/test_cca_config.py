@@ -63,7 +63,12 @@ def test_lower_schema_version_fails(tmp_path):
 def test_defaults_filled(tmp_path):
     cfg = config.load(str(write(tmp_path / ".cca.toml", "schema_version = 1\n[servers.server1]\n")))
     assert cfg.data["servers"] == {
-        "server1": {"ssh": "server1", "netdata_port": 19999, "netdata_transport": "ssh"}
+        "server1": {
+            "ssh": "server1",
+            "netdata_port": 19999,
+            "netdata_transport": "ssh",
+            "aliases": [],
+        }
     }
     assert cfg.data["run"] == {"transport": "tmux", "tokf": False, "tmux": {}}
     assert cfg.data["secrets"]["curl"] == "secrets/curl.secret.yaml"
@@ -81,6 +86,34 @@ def test_full_fixture_values():
     assert list(cfg.data["servers"]) == ["server1", "server2", "server3"]
     assert cfg.data["servers"]["server3"]["ssh"] == "server3"
     assert cfg.data["run"]["log"] == {"dir": "logs", "operator": "admin1"}
+
+
+@pytest.mark.parametrize(
+    ("servers", "message"),
+    [
+        ('[servers.a]\naliases = ["b"]\n[servers.b]\n', "'b' clashes with server or alias 'b'"),
+        ('[servers.a]\naliases = ["A"]\n', "'A' clashes with its own name"),
+        ('[servers.a]\naliases = ["w"]\n[servers.b]\naliases = ["W"]\n', "'W' clashes with server"),
+        ('[servers.a]\naliases = ["-x"]\n', r"servers\.a\.aliases: item 0"),
+    ],
+)
+def test_server_alias_clashes(tmp_path, servers, message):
+    with pytest.raises(CcaError, match=message):
+        config.load(str(write(tmp_path / ".cca.toml", f"schema_version = 1\n{servers}")))
+
+
+def test_server_alias_resolution(tmp_path, capsys):
+    text = 'schema_version = 1\n[servers.web-gen2]\nssh = "h2"\naliases = ["web", "www"]\n'
+    cfg = config.load(str(write(tmp_path / ".cca.toml", text)))
+    assert cfg.canonical("web-gen2") == "web-gen2" and capsys.readouterr().err == ""
+    assert cfg.canonical("www") == "web-gen2"
+    assert "note: www is an alias of web-gen2" in capsys.readouterr().err
+    assert cfg.server("web")["ssh"] == "h2"
+    capsys.readouterr()
+    assert cfg.canonical("WEB-Gen2") == "web-gen2" and capsys.readouterr().err == ""
+    assert cfg.canonical("WWW") == "web-gen2"  # one case-insensitive namespace
+    with pytest.raises(CcaError, match=r"servers: web-gen2 \(web, www\)"):
+        cfg.canonical("nope")
 
 
 def test_use_time_errors(tmp_path):

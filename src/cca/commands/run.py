@@ -264,8 +264,9 @@ def run(args: argparse.Namespace) -> int:
         return 0
     req = parse(argv)
     cfg = config.require(args.config)
-    for server in req.servers:
-        cfg.server(server)  # unknown server -> error before anything runs
+    # an alias becomes its [servers] entry here: window, log and output use that name;
+    # an unknown server is an error before anything runs
+    req.servers = [cfg.canonical(server) for server in req.servers]
     if req.surface == "--list":
         return _list(cfg)
     if req.surface in ("--read", "--session"):
@@ -319,6 +320,8 @@ def _list(cfg: config.Config) -> int:
         line = f"{name}\t{server['ssh']}"
         if open_windows is not None:
             line += "\twindow" if name in open_windows else "\t-"
+        if server["aliases"]:
+            line += "\taliases=" + ",".join(server["aliases"])
         print(line)
     return 0
 

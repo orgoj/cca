@@ -5,6 +5,7 @@ from __future__ import annotations
 import ipaddress
 import os
 import re
+import sys
 import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -20,6 +21,7 @@ SCHEMA_VERSION = 1
 _SESSION_RE = re.compile(r"[A-Za-z0-9_-]+")
 OPERATOR_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 _IFACE_RE = re.compile(r"[A-Za-z0-9]+")
+_KEEP_RE = re.compile(r"[^/\\\x00-\x1f\x7f]+")  # one tmp/ entry name, no path
 _MARKER_RE = re.compile(r"[A-Za-z0-9._~-]+(/[A-Za-z0-9._~-]+)*")
 
 REQUIRED = object()  # key must be present
@@ -142,6 +144,7 @@ SERVER: dict[str, tuple[Any, Callable[[Any], Any]]] = {
     "netdata_host": (ABSENT, _host),
     "netdata_port": (19999, _integer(1, 65535)),
     "netdata_transport": ("ssh", _choice("ssh", "direct")),
+    "aliases": ([], _string_list(_matching(validate.NAME_RE, validate.NAME_MAX))),
 }
 
 SCHEMA: dict[str, Any] = {
@@ -176,6 +179,10 @@ SCHEMA: dict[str, Any] = {
     },
     "server_info": {
         "net_iface_prefixes": (["en", "eth"], _string_list(_matching(_IFACE_RE), non_empty=True)),
+    },
+    "clean": {
+        "days": (30, _integer(1, 3650)),
+        "keep": ([], _string_list(_matching(_KEEP_RE, 255))),
     },
     "ioc": {
         "hosts": ([], _string_list(_matching(validate.NAME_RE, validate.NAME_MAX))),
@@ -218,14 +225,31 @@ class Config:
             raise CcaError(f"{self.path}: {dotted}: required by this command but not set")
         return value
 
-    def server(self, name: str) -> dict[str, Any]:
+    def canonical(self, name: str) -> str:
+        """The [servers] entry name for a name or alias, matched case-insensitively like
+        the namespace is validated; a note on stderr for an alias."""
         servers = self.data["servers"]
-        if name not in servers:
-            known = ", ".join(servers) or "none"
-            raise CcaError(
-                f"{self.path}: unknown server '{validate.display(name)}' (servers: {known})"
+        if name in servers:
+            return name
+        wanted = name.lower()
+        for entry, server in servers.items():
+            if entry.lower() == wanted:
+                return entry
+            if wanted in (a.lower() for a in server["aliases"]):
+                print(f"cca: note: {name} is an alias of {entry}", file=sys.stderr)
+                return entry
+        known = (
+            ", ".join(
+                n + (f" ({', '.join(s['aliases'])})" if s["aliases"] else "")
+                for n, s in servers.items()
             )
-        return servers[name]
+            or "none"
+        )
+        raise CcaError(f"{self.path}: unknown server '{validate.display(name)}' (servers: {known})")
+
+    def server(self, name: str) -> dict[str, Any]:
+        """The entry of a server name; an alias resolves like canonical()."""
+        return self.data["servers"][self.canonical(name)]
 
 
 def find(start: str | None = None) -> Path | None:
@@ -314,6 +338,15 @@ def _servers(raw: Any, path: Path) -> dict[str, Any]:
             raise _fail(path, key, "must be a table")
         server = _table(table, SERVER, key + ".", path)
         servers[name] = {"ssh": server.pop("ssh", name), **server}
+    # names and aliases share one case-insensitive namespace: a name resolves to one entry
+    owner = {name.lower(): name for name in servers}
+    for name, server in servers.items():
+        for alias in server["aliases"]:
+            other = owner.get(alias.lower())
+            if other is not None:
+                what = "its own name" if other == name else f"server or alias '{other}'"
+                raise _fail(path, f"servers.{name}.aliases", f"'{alias}' clashes with {what}")
+            owner[alias.lower()] = name
     return servers
 
 

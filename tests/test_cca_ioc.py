@@ -162,6 +162,21 @@ def test_status_interval_from_config(env, capsys):
     assert main(["ioc", "status", "server1"]) == 0
 
 
+def test_status_hosts_by_alias(env, capsys):
+    project(env)
+    text = (env / "work" / ".cca.toml").read_text()
+    text = text.replace(
+        '[servers.server2]\nssh = "host2"\n',
+        '[servers.server2]\nssh = "host2"\naliases = ["web"]\n',
+    )
+    (env / "work" / ".cca.toml").write_text(text.replace('"server1", "server2"]', '"web"]'))
+    put_ok(env, "host2")
+    assert main(["ioc", "status"]) == 0
+    assert capsys.readouterr().out.startswith("server2 quick: ")
+    assert main(["ioc", "status", "server2"]) == 0  # the entry name selects the alias host
+    assert main(["ioc", "status", "server1"]) == 2
+
+
 def test_status_host_error_continues(env, capsys):
     project(env)
     text = (env / "work" / ".cca.toml").read_text()
