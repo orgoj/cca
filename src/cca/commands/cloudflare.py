@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import difflib
 import hashlib
+import ipaddress
 import json
 import logging
 import re
@@ -156,10 +157,11 @@ examples:
   cca cloudflare events example.com --since 2h
   cca cloudflare export example.com && cca cloudflare diff example.com
 
-Write commands (dns ensure-*, dns restore-zone, waf add/edit/move) only plan; --apply
-first saves a snapshot to cloudflare.export_dir, then writes and reads the change back
-(exit 1 on a mismatch or a rejected write). The token comes from the sops file
-secrets.cloudflare (.cca.toml); the API endpoint is always api.cloudflare.com.
+Write commands (zone add, dns ensure-*, dns import, dns restore-zone, waf add/edit/move)
+only plan; --apply writes and reads the change back (exit 1 on a mismatch or a rejected
+write); DNS and WAF writes first save a snapshot to cloudflare.export_dir. The token
+comes from the sops file secrets.cloudflare (.cca.toml); the API endpoint is always
+api.cloudflare.com.
 """
 
 
@@ -379,6 +381,12 @@ def _rtype(value: str) -> str:
     return value.upper()
 
 
+def _api_id_arg(value: str) -> str:
+    if not API_ID_RE.fullmatch(value.lower()):
+        raise argparse.ArgumentTypeError("must be 32 hex digits")
+    return value.lower()
+
+
 def _positive(value: str) -> int:
     try:
         number = int(value)
@@ -449,6 +457,10 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     p.add_argument("--name", type=_text, help="only zones whose name contains this substring")
     p = command(sub, "info", "plan, audit settings, rule counts with quotas")
     p.add_argument("domain", type=_zone)
+    p = command(sub, "add", "create a zone (type full) and print its nameservers")
+    p.add_argument("domain", type=_zone)
+    p.add_argument("--account", type=_api_id_arg, help="account id (default: the only one)")
+    apply(p)
     p = command(sub, "settings", "zone settings")
     p.add_argument("domain", type=_zone)
     p.add_argument("--setting", action="append", type=_text, help="only this key (repeatable)")
@@ -482,6 +494,10 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     p.add_argument("domain", type=_zone)
     p.add_argument("-o", "--output",
                    help="write to this file, parent dirs created (default: stdout)")  # fmt: skip
+    p = command(sub, "import", "create records from a BIND zone file (A, AAAA, CNAME, MX, TXT)")
+    p.add_argument("domain", type=_zone)
+    p.add_argument("input", help="BIND zone file")
+    apply(p)
     p = command(sub, "restore-zone", "restore DNS records from a dump-zone file")
     p.add_argument("input", help="dump-zone JSON file")
     p.add_argument("--domain", type=_zone, help="zone (default: from the file)")
@@ -892,6 +908,60 @@ def cmd_zone_info(s: Session, args: argparse.Namespace) -> int:
         print(f"{label}: {len(s.phase_rules(zone_id, phase))}/{quota}")
     print(f"IP Access Rules: {len(s.access_rules(zone_id))}")
     print(f"User Agent Rules: {len(s.ua_rules(zone_id))}")
+    return 0
+
+
+def _nameservers(zone: dict) -> str:
+    return _d(", ".join(str(n) for n in zone.get("name_servers") or [])) or "?"
+
+
+def _account(s: Session, account_id: str | None) -> dict:
+    """The account for a new zone: --account as given (Cloudflare checks it on create),
+    else the only one the token sees (accounts, or the accounts of its zones when it may
+    not list accounts)."""
+    import cloudflare
+
+    if account_id is not None:
+        return {"id": account_id, "name": "from --account"}
+    try:
+        accounts = pages(s.client.accounts.list, per_page=50)
+    except cloudflare.APIStatusError:
+        accounts = []
+    if not accounts:
+        accounts = [z["account"] for z in s.zones() if isinstance(z.get("account"), dict)]
+    unique = {str(a.get("id")): a for a in accounts if a.get("id")}
+    if len(unique) != 1:
+        found = ", ".join(f"{i} ({_d(a.get('name'))})" for i, a in unique.items()) or "none"
+        raise RunError(f"cannot pick the account (seen: {found}); use --account ID")
+    return next(iter(unique.values()))
+
+
+def cmd_zone_add(s: Session, args: argparse.Namespace) -> int:
+    print("MODE:", "apply" if args.apply else "plan")
+    existing = [z for z in s.zones(args.domain) if str(z.get("name", "")).lower() == args.domain]
+    if existing:
+        zone = existing[0]
+        print(f"OK zone {args.domain} exists (status {_d(zone.get('status'))})")
+        print(f"nameservers: {_nameservers(zone)}")
+        if not args.apply:
+            print(PLAN_END)
+        return 0
+    account = _account(s, args.account)
+    account_id = api_id(account.get("id"), "account")
+    print(
+        f"CREATE zone {args.domain} (type full) in account {account_id} ({_d(account.get('name'))})"
+    )
+    if not args.apply:
+        print(PLAN_END)
+        return 0
+    try:
+        s.client.zones.create(account={"id": account_id}, name=args.domain, type="full")
+    except Exception as exc:  # noqa: BLE001
+        raise RunError(f"Cloudflare rejected the zone: {api_error(exc)}") from None
+    zone = s.zone(args.domain)  # read-back
+    print(f"read-back OK: zone {zone['id']} status {_d(zone.get('status'))}")
+    print(f"nameservers: {_nameservers(zone)}")
+    print("next: set these nameservers at the registrar (and remove a DS record first)")
     return 0
 
 
@@ -1462,11 +1532,27 @@ def cmd_ensure_cname(s: Session, args: argparse.Namespace) -> int:
     return 0 if result is not False else 1
 
 
+_TXT_PART_RE = re.compile(r'"((?:[^"\\]|\\.)*)"')
+
+
+def txt_value(content: str) -> str:
+    """TXT content without the zone-file quoting: `"a" "b"` and `ab` are the same value
+    (Cloudflare may return either form, and splits long values itself)."""
+    text = content.strip()
+    if text.startswith('"'):
+        parts = _TXT_PART_RE.findall(text)
+        if parts and _TXT_PART_RE.sub("", text).strip() == "":
+            return "".join(re.sub(r"\\(.)", r"\1", p) for p in parts)
+    return text
+
+
 def record_match_key(record: dict) -> tuple:
+    content = str(record.get("content", ""))
+    rtype = record.get("type", "")
     return (
         record.get("name", ""),
-        record.get("type", ""),
-        normalize_content(record.get("content", "")),
+        rtype,
+        txt_value(content) if rtype == "TXT" else normalize_content(content),
     )
 
 
@@ -1569,6 +1655,234 @@ def cmd_restore_zone(s: Session, args: argparse.Namespace) -> int:
         f"--- create={len(creates)} update={sum(w.kind == 'update' for w in writes)} "
         f"ok={ok_n} replace={replace_n} delete={delete_n} extras_kept={kept_n} ---"
     )
+    if args.apply:
+        apply_dns(s, zone, writes)
+    else:
+        print(PLAN_END)
+    return 0
+
+
+# ---------------------------------------------------------------- zone file import
+
+IMPORT_TYPES = ("A", "AAAA", "CNAME", "MX", "TXT")
+_TTL_RE = re.compile(r"(?:\d+[smhdw]?)+", re.I)
+_TTL_UNITS = {"": 1, "s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
+TTL_MIN, TTL_MAX = 60, 86400  # Cloudflare's range for a non-auto TTL
+
+
+def _ttl_seconds(token: str) -> int:
+    return sum(
+        int(n) * _TTL_UNITS[u.lower()] for n, u in re.findall(r"(\d+)([smhdw]?)", token, re.I)
+    )
+
+
+def _zone_tokens(text: str) -> list[tuple[int, bool, list[str]]]:
+    """(line number, starts with whitespace, tokens) per logical line: comments removed,
+    ( ) continuation joined, quoted strings kept as one token with their quotes."""
+    out: list[tuple[int, bool, list[str]]] = []
+    tokens: list[str] = []
+    depth, start, indented = 0, 0, False
+    for number, line in enumerate(text.splitlines(), start=1):
+        if depth == 0:
+            tokens, start, indented = [], number, line[:1] in (" ", "\t")
+        i = 0
+        while i < len(line):
+            c = line[i]
+            if c == ";":
+                break
+            if c.isspace():
+                i += 1
+            elif c == '"':
+                end = i + 1
+                while end < len(line) and line[end] != '"':
+                    end += 2 if line[end] == "\\" else 1
+                if end >= len(line):
+                    raise RunError(f"zone file line {number}: unterminated quoted string")
+                tokens.append(line[i : end + 1])
+                i = end + 1
+            elif c in "()":
+                depth += 1 if c == "(" else -1
+                if depth < 0:
+                    raise RunError(f"zone file line {number}: unbalanced )")
+                i += 1
+            else:
+                end = i
+                while end < len(line) and not line[end].isspace() and line[end] not in '();"':
+                    end += 1
+                tokens.append(line[i:end])
+                i = end
+        if depth == 0 and tokens:
+            out.append((start, indented, tokens))
+    if depth:
+        raise RunError(f"zone file line {start}: unbalanced (")
+    return out
+
+
+def _absolute(name: str, origin: str, number: int) -> str:
+    if name == "@":
+        return origin
+    if name.endswith("."):
+        result = name[:-1]
+    else:
+        result = f"{name}.{origin}"
+    if len(result) > 253 or not _RECORD_NAME_RE.fullmatch(result):
+        raise RunError(f"zone file line {number}: invalid name '{_d(name)}'")
+    return result.lower()
+
+
+def parse_zone_file(text: str, zone_name: str) -> tuple[list[dict], list[str], list[str]]:
+    """BIND zone file → (records as dump fields, skipped lines, unsupported lines).
+
+    Supports $ORIGIN, $TTL, omitted owner (previous one), optional TTL and class IN, and
+    A, AAAA, CNAME, MX, TXT. SOA and NS at the apex are skipped (Cloudflare serves them);
+    any other type is unsupported. Every record is DNS-only."""
+    origin, default_ttl, owner = zone_name, None, None
+    records: list[dict] = []
+    skipped: list[str] = []
+    unsupported: list[str] = []
+    for number, indented, tokens in _zone_tokens(text):
+        head = tokens[0].upper()
+        if head in ("$ORIGIN", "$TTL"):
+            if len(tokens) != 2:
+                raise RunError(f"zone file line {number}: {head} takes one value")
+            if head == "$ORIGIN":  # a relative origin is relative to the current one
+                origin = _absolute(tokens[1], origin, number)
+            elif not _TTL_RE.fullmatch(tokens[1]):
+                raise RunError(f"zone file line {number}: invalid TTL '{_d(tokens[1])}'")
+            else:
+                default_ttl = _ttl_seconds(tokens[1])
+            continue
+        if head.startswith("$"):
+            raise RunError(f"zone file line {number}: unsupported directive {_d(tokens[0])}")
+        rest = tokens
+        if not indented:
+            owner, rest = _absolute(tokens[0], origin, number), tokens[1:]
+        if owner is None:
+            raise RunError(f"zone file line {number}: record without an owner name")
+        ttl = default_ttl
+        while rest and (rest[0].upper() in ("IN", "CH", "HS") or _TTL_RE.fullmatch(rest[0])):
+            if rest[0].upper() in ("CH", "HS"):
+                raise RunError(f"zone file line {number}: only class IN is supported")
+            if _TTL_RE.fullmatch(rest[0]):
+                ttl = _ttl_seconds(rest[0])
+            rest = rest[1:]
+        if not rest:
+            raise RunError(f"zone file line {number}: no record type")
+        rtype, data = rest[0].upper(), rest[1:]
+        if owner != zone_name.lower() and not owner.endswith("." + zone_name.lower()):
+            raise RunError(f"zone file line {number}: {owner} is outside the zone {zone_name}")
+        shown = f"line {number}: {owner} {rtype}"
+        if rtype == "SOA" or (rtype == "NS" and owner == zone_name.lower()):
+            skipped.append(shown)
+            continue
+        if rtype not in IMPORT_TYPES:
+            unsupported.append(shown)
+            continue
+        record: dict[str, Any] = {"name": owner, "type": rtype, "proxied": False}
+        if rtype == "MX":
+            if len(data) != 2 or not data[0].isdigit() or int(data[0]) > 65535:
+                raise RunError(f"zone file {shown}: expected PRIORITY (0-65535) HOST")
+            record["priority"] = int(data[0])
+            record["content"] = _absolute(data[1], origin, number)
+        elif rtype == "TXT":
+            if not data or not all(d.startswith('"') for d in data):
+                raise RunError(f"zone file {shown}: expected quoted strings")
+            record["content"] = txt_value(" ".join(data))
+        elif len(data) != 1:
+            raise RunError(f"zone file {shown}: expected exactly one value")
+        elif rtype == "CNAME":
+            record["content"] = _absolute(data[0], origin, number)
+        else:
+            try:
+                ip = ipaddress.ip_address(data[0])
+            except ValueError:
+                ip = None
+            if ip is None or ip.version != (4 if rtype == "A" else 6):
+                raise RunError(f"zone file {shown}: invalid address '{_d(data[0])}'")
+            record["content"] = ip.compressed
+        record["ttl"] = 1 if ttl is None else min(max(ttl, TTL_MIN), TTL_MAX)
+        records.append(record)
+    return records, skipped, unsupported
+
+
+def cmd_dns_import(s: Session, args: argparse.Namespace) -> int:
+    path = Path(args.input)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise RunError(f"zone file {_d(path)} not found") from None
+    except (OSError, UnicodeDecodeError) as e:
+        raise RunError(f"cannot read {_d(path)}: {_d(e)}") from None
+    zone = s.zone(args.domain)
+    zone_name = str(zone.get("name")).lower()
+    desired_records, skipped, unsupported = parse_zone_file(text, zone_name)
+    live = [
+        record_to_dict(r) | {"_id": api_id(r.get("id"), "record")} for r in s.records(zone["id"])
+    ]
+
+    print("MODE:", "apply" if args.apply else "plan")
+    print(f"=== {_d(zone_name)} import ({len(desired_records)} records from {_d(path)}) ===")
+    for line in skipped:
+        print(f"SKIP {line} (served by Cloudflare)")
+    for line in unsupported:
+        print(f"UNSUPPORTED {line}")
+    writes: list[DnsWrite] = []
+    matched: set[str] = set()
+    conflicts = ok_n = 0
+    # a CNAME excludes every other record of its name, also within the file itself
+    per_name = Counter(r["name"] for r in desired_records)
+    exclusive = {r["name"] for r in desired_records if r["type"] == "CNAME"}
+    in_file = {name for name in exclusive if per_name[name] > 1}
+    for desired in desired_records:
+        label = format_record(desired)
+        if desired["name"] in in_file:
+            print(f"CONFLICT {label}")
+            print("  the file has a CNAME and other records at this name")
+            conflicts += 1
+            continue
+        same = [
+            r for r in live
+            if r["_id"] not in matched and record_match_key(r) == record_match_key(desired)
+        ]  # fmt: skip
+        if same:
+            current = same[0]
+            matched.add(current["_id"])
+            keep = dict(desired, proxied=bool(current.get("proxied", False)))  # proxy as it is
+            if record_payload_equal(current, keep):
+                print(f"OK {label}")
+                ok_n += 1
+            else:
+                print(f"UPDATE {_d(desired['name'])} {desired['type']}")
+                print(f"  from: {format_record(current)}")
+                print(f"  to:   {format_record(keep)}")
+                writes.append(DnsWrite("update", f"UPDATE {label}", keep, current["_id"]))
+            continue
+        blocking = [
+            r for r in live
+            if r.get("name") == desired["name"] and "CNAME" in (desired["type"], r.get("type"))
+            and r["_id"] not in matched
+        ]  # fmt: skip
+        if blocking:
+            print(f"CONFLICT {label}")
+            for record in blocking:
+                print(f"  existing: {format_record(record)}")
+            conflicts += 1
+            continue
+        print(f"CREATE {label}")
+        writes.append(DnsWrite("create", f"CREATE {label}", desired))
+    extras = [r for r in live if r["_id"] not in matched]
+    for record in extras:
+        print(f"KEEP {format_record(record)} (not in the file)")
+    print(
+        f"--- create={sum(w.kind == 'create' for w in writes)} "
+        f"update={sum(w.kind == 'update' for w in writes)} ok={ok_n} conflict={conflicts} "
+        f"unsupported={len(unsupported)} skipped={len(skipped)} kept={len(extras)} ---"
+    )
+    if conflicts or unsupported:
+        print(
+            "not applied: resolve the CONFLICT/UNSUPPORTED lines first" if args.apply else PLAN_END
+        )
+        return 1
     if args.apply:
         apply_dns(s, zone, writes)
     else:
@@ -1882,6 +2196,8 @@ HANDLERS = {
     ("token", "verify"): cmd_token_verify,
     ("zone", "list"): cmd_zone_list,
     ("zone", "info"): cmd_zone_info,
+    ("zone", "add"): cmd_zone_add,
+    ("dns", "import"): cmd_dns_import,
     ("zone", "settings"): cmd_zone_settings,
     ("dns", "show-domain"): cmd_show_domain,
     ("dns", "show-dkim"): cmd_show_dkim,

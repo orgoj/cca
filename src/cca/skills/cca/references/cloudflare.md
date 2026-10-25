@@ -35,8 +35,30 @@ DNS writes:
   kept, or deleted with `--delete-extras` (also verification records added since: use it
   only when the plan lists exactly those). Apply order: deletes, updates, creates.
   `comment`/`tags` are restored on create/update but not compared.
-- Only these write DNS; A/AAAA/MX/TXT values can be written only by restoring a dump.
-  Never edit a dump to make a change.
+- `dns import D FILE`: BIND zone file with `$ORIGIN`, `$TTL`, `( )` continuation,
+  comments, omitted owner (= previous), optional TTL (`3600`, `1h`) and class `IN` (only
+  IN). Names without a trailing dot are relative to the current `$ORIGIN` (default: the
+  zone; a relative `$ORIGIN` is relative to the previous one). Types A, AAAA (one valid
+  address), CNAME (one name), MX (priority + host), TXT (quoted strings, joined, as in a
+  split DKIM key); SOA and apex NS are `SKIP`ped (Cloudflare serves them); any other type
+  is `UNSUPPORTED`. A record outside the zone, extra or invalid data or another syntax
+  error is exit 1 naming the line, before anything is written. A CNAME together with other
+  records of its name in the file is a `CONFLICT` for all of them. Per record: equal name,
+  type and content live → `OK`, or `UPDATE` when ttl/priority differ (the live proxy
+  state is kept); missing → `CREATE` DNS-only with the file's TTL clamped to 60–86400
+  (no TTL anywhere → auto); a live record blocking it by the CNAME rule → `CONFLICT`.
+  Live records not in the file are listed as `KEEP` and never deleted. Any `CONFLICT` or
+  `UNSUPPORTED` → exit 1 and nothing is written, also with `--apply`. Summary
+  `--- create= update= ok= conflict= unsupported= skipped= kept= ---`. A re-run is all
+  `OK`.
+- `zone add D [--account ID]`: plan `CREATE zone D (type full) in account ID (name)`;
+  `--apply` creates it, reads it back and prints `nameservers: a, b`; set those at the
+  registrar (remove an old DS record first). An existing zone prints `OK zone D exists`
+  and its nameservers (exit 0). The account is `--account ID` as given (Cloudflare
+  checks it), else the only account the token sees (account list, or the accounts of its
+  zones); none or more than one → exit 1 asking for `--account`.
+- Only these write DNS; other A/AAAA/MX/TXT changes need a dump restore or an import
+  file. Never edit a dump to make a change.
 
 Token permissions (custom token, zone resources = the project's zones; each command
 needs its row, a missing one is an HTTP 403, exit 1):
@@ -44,6 +66,7 @@ needs its row, a missing one is an HTTP 403, exit 1):
 | Permission | Needed by |
 |---|---|
 | Zone > Zone > Read | every command (zone names resolve through `GET /zones`) |
+| Zone > Zone > Edit (account-wide zone resources) | `zone add --apply` |
 | Zone > DNS > Read / Edit | `dns` reads / `dns ensure-*`, `restore-zone --apply` |
 | Zone > Zone WAF > Read / Edit | `waf list`, `ratelimit list`, `export`, `diff` / `waf add\|edit\|move --apply` |
 | Zone > Zone Settings > Read | `zone info`, `zone settings`, `uam status`, `export`, `diff` |
@@ -59,6 +82,8 @@ needs its row, a missing one is an HTTP 403, exit 1):
 |---|---|
 | `token verify` | check the token and its policies |
 | `zone list [--name S]`, `zone info D`, `zone settings D [--setting K]...` | see zones, plan, audit settings, rule counts with free-plan quotas |
+| `zone add D [--account ID]` | create a zone (type full, the account's default plan) and print its Cloudflare nameservers |
+| `dns import D FILE` | create A/AAAA/CNAME/MX/TXT records from a BIND zone file (migration) |
 | `dns list D [--name N] [--type T]` | see every record of the zone, or of one name or type |
 | `dns show-domain D...`, `dns show-dkim D...` | see `@`/`www`/`_dmarc` or `_domainkey` records |
 | `dns ensure-cname D --name L --target FQDN [--proxied\|--dns-only]` | create or fix one CNAME (`@` = apex) |

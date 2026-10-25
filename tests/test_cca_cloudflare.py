@@ -83,6 +83,7 @@ class Api:
         self.errors: dict[tuple[str, str], tuple[int, dict]] = {}  # (method, path) -> reply
         self.misplace = False  # rule writes land at the end regardless of position
         self.ignore_dns_writes = False  # DNS POST/PATCH answer OK but change nothing
+        self.accounts: list[dict] | int = [dict(ACCOUNT)]  # an int: that HTTP error
         self.requests: list[httpx.Request] = []
         self.serial = 100
 
@@ -130,6 +131,18 @@ class Api:
         if (request.method, path) in self.errors:
             status, payload = self.errors[(request.method, path)]
             return httpx.Response(status, json=payload)
+        if path == "/accounts":
+            if isinstance(self.accounts, int):
+                return self.fail(self.accounts, "forbidden")
+            return self.page(self.accounts, params)
+        if path == "/zones" and request.method == "POST":
+            new = zone(self.serial + 1, body["name"])
+            self.next_id()
+            new.update(status="pending", account={"id": body["account"]["id"], "name": "x"})
+            new["name_servers"] = ["ada.ns.cloudflare.com", "bob.ns.cloudflare.com"]
+            self.zones.append(new)
+            self.records[new["id"]] = []
+            return self.ok(new)
         if path == "/zones":
             zones = self.zones
             if "name" in params:
@@ -1155,6 +1168,164 @@ def test_dns_list(api, capsys):
 def test_dns_dump_zone_creates_parent_dir(api, tmp_path, capsys):
     code, out, _ = cca(capsys, "dns", "dump-zone", "example.com", "-o", "tmp/cf/new/d.json")
     assert code == 0 and (tmp_path / "tmp" / "cf" / "new" / "d.json").exists()
+
+
+# ---------------------------------------------------------------- zone add, dns import
+
+
+def test_zone_add_plan_apply_and_existing(api, capsys):
+    code, out, _ = cca(capsys, "zone", "add", "new.example")
+    assert code == 0 and f"CREATE zone new.example (type full) in account {hexid(900)}" in out
+    assert api.writes() == [] and out.rstrip().endswith("(add --apply to write).")
+    code, out, _ = cca(capsys, "zone", "add", "new.example", "--apply")
+    assert code == 0
+    assert json.loads(api.writes()[0].content) == {
+        "account": {"id": hexid(900)},
+        "name": "new.example",
+        "type": "full",
+    }
+    assert "read-back OK: zone" in out and "status pending" in out
+    assert "nameservers: ada.ns.cloudflare.com, bob.ns.cloudflare.com" in out
+    code, out, _ = cca(capsys, "zone", "add", "new.example", "--apply")
+    assert code == 0 and "OK zone new.example exists (status pending)" in out
+    assert len(api.writes()) == 1
+
+
+def test_zone_add_account_selection(api, capsys):
+    api.accounts = 403  # token may not list accounts: the zones' account is used
+    assert cca(capsys, "zone", "add", "new.example")[0] == 0
+    api.accounts = [dict(ACCOUNT), {"id": hexid(901), "name": "Second"}]
+    code, _, err = cca(capsys, "zone", "add", "new.example")
+    assert code == 1 and "cannot pick the account" in err and "use --account ID" in err
+    # an explicit id is used as given, without discovery (Cloudflare checks it on create)
+    api.accounts, api.zones = 403, []
+    code, out, _ = cca(capsys, "zone", "add", "new.example", "--account", hexid(902), "--apply")
+    assert code == 0 and f"in account {hexid(902)} (from --account)" in out
+    assert json.loads(api.writes()[0].content)["account"] == {"id": hexid(902)}
+
+
+ZONE_FILE = """\
+$ORIGIN example.com.
+$TTL 1h
+@   IN SOA ns1.example.net. hostmaster.example.com. (
+        2026102501 ; serial
+        3600 900 604800 300 )
+    IN NS  ns1.example.net.
+    IN NS  ns2.example.net.
+@        3600 IN A     192.0.2.10
+         IN AAAA  2001:db8::10
+www      IN CNAME @
+blog     300 CNAME blog.pages.example.net.
+@        IN MX    10 mx1.example.net.
+@        IN MX    20 mx2
+@        IN TXT   "v=spf1 mx -all" ; spf
+s1._domainkey IN TXT ( "v=DKIM1; k=rsa; p=AAAA"
+                       "BBBB" )
+"""
+
+
+def zone_file(tmp_path: Path, text: str) -> str:
+    path = tmp_path / "example.com.zone"
+    path.write_text(text)
+    return str(path)
+
+
+def test_parse_zone_file():
+    records, skipped, unsupported = cf.parse_zone_file(
+        ZONE_FILE + "_sip._tcp SRV 0 5 5060 sip\n", "example.com"
+    )
+    assert [(r["name"], r["type"], r["content"], r["ttl"]) for r in records] == [
+        ("example.com", "A", "192.0.2.10", 3600),
+        ("example.com", "AAAA", "2001:db8::10", 3600),
+        ("www.example.com", "CNAME", "example.com", 3600),
+        ("blog.example.com", "CNAME", "blog.pages.example.net", 300),
+        ("example.com", "MX", "mx1.example.net", 3600),
+        ("example.com", "MX", "mx2.example.com", 3600),
+        ("example.com", "TXT", "v=spf1 mx -all", 3600),
+        ("s1._domainkey.example.com", "TXT", "v=DKIM1; k=rsa; p=AAAABBBB", 3600),
+    ]
+    assert [r.get("priority") for r in records if r["type"] == "MX"] == [10, 20]
+    assert all(r["proxied"] is False for r in records)
+    assert skipped == [
+        "line 3: example.com SOA",
+        "line 6: example.com NS",
+        "line 7: example.com NS",
+    ]
+    assert unsupported == ["line 17: _sip._tcp.example.com SRV"]
+
+
+@pytest.mark.parametrize(
+    ("text", "message"),
+    [
+        ("other.example. A 192.0.2.1\n", "outside the zone"),
+        ('@ TXT "open\n', "unterminated quoted string"),
+        ("@ SOA ( a b\n", r"unbalanced \("),
+        ("$INCLUDE x\n", "unsupported directive"),
+        ("@ MX mx1\n", r"expected PRIORITY \(0-65535\) HOST"),
+        ("  A 192.0.2.1\n", "record without an owner"),
+        ("www CH A 192.0.2.1\n", "only class IN"),
+        ("www A 192.0.2.1 garbage\n", "expected exactly one value"),
+        ("www A 192.0.2.300\n", "invalid address"),
+        ("www AAAA 192.0.2.1\n", "invalid address"),
+        ("www CNAME bad..name.\n", "invalid name"),
+        ("www TXT unquoted\n", "expected quoted strings"),
+        ("$TTL bad\n", "invalid TTL"),
+    ],
+)
+def test_parse_zone_file_errors(text, message):
+    with pytest.raises(CcaError, match=message):
+        cf.parse_zone_file(text, "example.com")
+
+
+def test_parse_zone_file_relative_origin_chain():
+    text = "$ORIGIN sub.example.com.\na A 192.0.2.1\n$ORIGIN deep\nb A 192.0.2.2\n"
+    records, _, _ = cf.parse_zone_file(text, "example.com")
+    assert [r["name"] for r in records] == ["a.sub.example.com", "b.deep.sub.example.com"]
+
+
+def test_dns_import_cname_conflict_inside_the_file_writes_nothing(api, tmp_path, capsys):
+    path = zone_file(tmp_path, "www A 192.0.2.1\nwww CNAME target.example.net.\nok A 192.0.2.2\n")
+    code, out, _ = cca(capsys, "dns", "import", "example.com", path, "--apply")
+    assert code == 1 and out.count("the file has a CNAME and other records at this name") == 2
+    assert "conflict=2" in out and api.writes() == []
+
+
+def test_dns_import_plan_apply_and_rerun(api, tmp_path, capsys):
+    api.records[Z1] = [
+        record(10, "example.com", "TXT", '"v=spf1 mx -all"', ttl=3600),  # quoted form: same
+        record(11, "blog.example.com", "CNAME", "blog.pages.example.net", proxied=True, ttl=1),
+        record(12, "old.example.com", "A", "192.0.2.99"),
+    ]
+    path = zone_file(tmp_path, ZONE_FILE)
+    code, out, _ = cca(capsys, "dns", "import", "example.com", path)
+    assert code == 0 and api.writes() == []
+    assert "OK example.com TXT v=spf1 mx -all ttl=3600" in out
+    assert "UPDATE blog.example.com CNAME\n  from: blog.example.com CNAME blog.pages" in out
+    assert "  from: blog.example.com CNAME blog.pages.example.net ttl=1 proxied=true" in out
+    assert "  to:   blog.example.com CNAME blog.pages.example.net ttl=300 proxied=true" in out
+    assert "CREATE s1._domainkey.example.com TXT v=DKIM1; k=rsa; p=AAAABBBB ttl=3600" in out
+    assert "KEEP old.example.com A 192.0.2.99" in out
+    assert "--- create=6 update=1 ok=1 conflict=0 unsupported=0 skipped=3 kept=1 ---" in out
+    code, out, _ = cca(capsys, "dns", "import", "example.com", path, "--apply")
+    assert code == 0 and "read-back OK: 7 change(s)" in out
+    assert len(snapshots(tmp_path)) == 1
+    code, out, _ = cca(capsys, "dns", "import", "example.com", path, "--apply")
+    assert code == 0 and "create=0 update=0 ok=8" in out and len(snapshots(tmp_path)) == 1
+
+
+def test_dns_import_conflict_or_unsupported_writes_nothing(api, tmp_path, capsys):
+    api.records[Z1] = [record(10, "www.example.com", "A", "192.0.2.5")]
+    code, out, _ = cca(
+        capsys, "dns", "import", "example.com", zone_file(tmp_path, ZONE_FILE), "--apply"
+    )
+    assert code == 1 and "CONFLICT www.example.com CNAME example.com" in out
+    assert "  existing: www.example.com A 192.0.2.5" in out
+    assert "not applied: resolve the CONFLICT/UNSUPPORTED lines first" in out
+    api.records[Z1] = []
+    path = zone_file(tmp_path, '@ CAA 0 issue "letsencrypt.org"\n@ A 192.0.2.1\n')
+    code, out, _ = cca(capsys, "dns", "import", "example.com", path, "--apply")
+    assert code == 1 and "UNSUPPORTED line 1: example.com CAA" in out
+    assert api.writes() == []
 
 
 def test_restore_zone_domain_override_and_bad_input(api, tmp_path, capsys):
