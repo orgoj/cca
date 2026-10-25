@@ -63,7 +63,8 @@ ends with "PLAN — nothing changed in Cloudflare".
   for each zone and selector ensure CNAME `S._domainkey.ZONE` → `S._domainkey.T`,
   ttl 1 (auto), not proxied.
 - `dns ensure-cname DOMAIN --name LABEL --target FQDN [--apply]`: one CNAME
-  (`@` = apex), ttl 1, not proxied, trailing dot of target stripped.
+  (`@` = apex), ttl 1, not proxied, trailing dot of target stripped (cca: proxy state
+  see "Intentional changes").
   Both ensure commands print `OK`, `CREATE` or `UPDATE` (from/to); a record of another
   type with that name, or more than one record of the type, prints `CONFLICT` and the
   command exits 1 after processing all records.
@@ -179,8 +180,12 @@ behind an `httpx.MockTransport`).
 | `-o`/`-i` paths | from the CWD | – |
 | `diff`: no change `OK`, exit 0; change → unified diff, exit 1; missing export exit 1 | same | – |
 | write commands plan by default, `--apply` writes | same; plan ends with `PLAN - nothing changed in Cloudflare` | – |
-| `ensure-cname`/`ensure-dkim`: `OK`/`CREATE`/`UPDATE`, `CONFLICT` → exit 1 after all records | same | – |
-| `restore-zone`: match, `--delete-extras`, summary line | same | – |
+| `ensure-cname`/`ensure-dkim`: `OK`/`CREATE`/`UPDATE`, `CONFLICT` → exit 1 after all records | same; plan lines show `proxied=`; `ensure-cname` keeps the existing record's proxy state unless `--proxied`/`--dns-only` (legacy forced DNS-only), a new record is DNS-only; `ensure-dkim` stays DNS-only | intentional |
+| `restore-zone`: match, `--delete-extras`, summary line | same; a live record blocking a create by the CNAME rule (same name, either is a CNAME) is `REPLACE`d (deleted first) without `--delete-extras`; summary adds `replace=` | intentional |
+| DNS writes (`ensure-*`, `restore-zone`) with `--apply`: API calls in plan order, no snapshot, no read-back, an API error mid-run leaves a partial change unreported | per zone: DNS dump `<zone>+<stamp>[-N].dns.json` to `export_dir` first (failure aborts), deletes → updates → creates, read-back of every write (mismatch exit 1); a rejected write exits 1 listing what was applied and the restore command | intentional |
+| no full record listing (only `show-domain`, `show-dkim`, `dump-zone`) | `dns list D [--name N] [--type T]`; record lines show `priority=` when set | intentional |
+| `dump-zone -o FILE`: parent directory must exist | parent directories created | intentional |
+| `cloudflare.api_base` any HTTPS URL; `secrets.cloudflare` any path | `api_base` pinned to `https://api.cloudflare.com/client/v4`; the secret's real path must lie inside the project (doc-2) | intentional |
 | WAF selectors: id, unique description, position rejected with `--apply` | same | – |
 | `waf add` quota (disabled rules count), missing entrypoint created only for the recognized 404 | same; the recognized message also covers "could not find entrypoint ruleset" | intentional |
 | `waf edit` keeps writable fields, refuses an action change with `action_parameters` | same | – |

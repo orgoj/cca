@@ -13,7 +13,7 @@ import re
 import shutil
 import subprocess
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Any
 
 from cca import validate
@@ -142,6 +142,19 @@ def curl_credentials(cfg: Config) -> dict[str, Credential]:
     return validate_curl(decrypt(path), path)
 
 
+def inside(root: str, path: str, pure: type[PurePath] = Path) -> bool:
+    """path lies in root; another Windows drive is simply outside (commonpath would raise)."""
+    return pure(path).is_relative_to(pure(root))
+
+
 def cloudflare_token(cfg: Config) -> str:
+    """The token, only from a file inside the project (the config dir): a config must not
+    make cca decrypt another project's secret with the admin's keys."""
     path = cfg.resolve(cfg.data["secrets"]["cloudflare"])
-    return validate_cloudflare(decrypt(path), path)
+    root = os.path.realpath(cfg.dir)
+    real = os.path.realpath(path)
+    if not inside(root, real):
+        raise CcaError(
+            f"{cfg.path}: secrets.cloudflare: {path} resolves outside the project {root}"
+        )
+    return validate_cloudflare(decrypt(Path(real)), path)  # the checked file, not a new link

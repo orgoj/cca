@@ -82,6 +82,7 @@ class Api:
         self.graphql: list = []  # responses in order (dict or callable(body))
         self.errors: dict[tuple[str, str], tuple[int, dict]] = {}  # (method, path) -> reply
         self.misplace = False  # rule writes land at the end regardless of position
+        self.ignore_dns_writes = False  # DNS POST/PATCH answer OK but change nothing
         self.requests: list[httpx.Request] = []
         self.serial = 100
 
@@ -192,9 +193,12 @@ class Api:
             return self.page(items, params)
         if method == "POST":
             new = dict(body, id=self.next_id())
-            records.append(new)
+            if not self.ignore_dns_writes:
+                records.append(new)
             return self.ok(new)
         current = next(r for r in records if r["id"] == rid)
+        if self.ignore_dns_writes and method == "PATCH":
+            return self.ok(current)
         if method == "DELETE":
             records.remove(current)
             return self.ok({"id": rid})
@@ -224,9 +228,8 @@ class Api:
 @pytest.fixture
 def api(tmp_path, monkeypatch):
     """A project with .cca.toml, sops file, fake sops and the fake API."""
-    (tmp_path / ".cca.toml").write_text(
-        f'schema_version = 1\n[cloudflare]\napi_base = "https://{API_HOST}/client/v4"\n'
-    )
+    (tmp_path / ".cca.toml").write_text("schema_version = 1\n")
+    monkeypatch.setattr(cf, "API_BASE", f"https://{API_HOST}/client/v4")  # the pinned seam
     (tmp_path / "secrets").mkdir()
     (tmp_path / "secrets" / "cloudflare.secret.yaml").write_text("api_token: ENC[...]\n")
     bindir = tmp_path / "bin"
@@ -296,6 +299,38 @@ def test_token_only_from_sops_ambient_sdk_config_ignored(api, monkeypatch, capsy
     assert HOSTILE not in sent and "x-auth" not in sent.lower()
     assert request.headers["accept-encoding"] == "identity"
     assert TOKEN not in out + err and HOSTILE not in out + err
+
+
+def test_api_base_is_pinned(api, tmp_path, capsys):
+    (tmp_path / ".cca.toml").write_text(
+        'schema_version = 1\n[cloudflare]\napi_base = "https://evil.example.net/client/v4"\n'
+    )
+    code, _, err = cca(capsys, "zone", "list")
+    assert code == 2 and "cloudflare.api_base: must be" in err and "pinned" in err
+    assert api.requests == []
+    (tmp_path / ".cca.toml").write_text(
+        'schema_version = 1\n[cloudflare]\napi_base = "https://api.cloudflare.com/client/v4"\n'
+    )
+    assert cca(capsys, "zone", "list")[0] == 0  # the pinned value stays valid
+
+
+@pytest.mark.parametrize("kind", ["absolute", "dotdot", "symlink"])
+def test_cloudflare_secret_must_stay_in_the_project(api, tmp_path, capsys, kind):
+    project = tmp_path / "project"
+    project.mkdir()
+    outside = tmp_path / "outside.secret.yaml"
+    outside.write_text("api_token: ENC[...]\n")
+    secret = {"absolute": str(outside), "dotdot": "../outside.secret.yaml"}.get(
+        kind, "secrets/cf.yaml"
+    )
+    if kind == "symlink":
+        (project / "secrets").mkdir()
+        (project / "secrets" / "cf.yaml").symlink_to(outside)
+    (project / ".cca.toml").write_text(f'schema_version = 1\n[secrets]\ncloudflare = "{secret}"\n')
+    os.chdir(project)
+    code, _, err = cca(capsys, "zone", "list")
+    assert code == 2 and "secrets.cloudflare:" in err and "outside the project" in err
+    assert api.requests == []
 
 
 def test_client_ignores_environment():
@@ -813,8 +848,7 @@ def test_export_default_path_and_diff(api, tmp_path, capsys):
 
 def test_export_dir_from_config_and_cli_paths(api, tmp_path, capsys):
     (tmp_path / ".cca.toml").write_text(
-        f'schema_version = 1\n[cloudflare]\napi_base = "https://{API_HOST}/client/v4"\n'
-        'export_dir = "state/cf"\n'
+        'schema_version = 1\n[cloudflare]\nexport_dir = "state/cf"\n'
     )
     (tmp_path / "sub").mkdir()
     os.chdir(tmp_path / "sub")
@@ -905,10 +939,57 @@ def test_ensure_cname_apply_create_ok_update(api, capsys):
     }
     code, out, _ = cca(capsys, *argv, "--apply")
     assert code == 0 and "OK example.com -> t.example.net" in out and len(api.writes()) == 1
-    api.records[Z1][0]["proxied"] = True
+    api.records[Z1][0]["proxied"] = True  # e.g. a Pages domain attached in the dashboard
     code, out, _ = cca(capsys, *argv, "--apply")
+    assert code == 0 and "OK example.com -> t.example.net proxied=true" in out
+    assert len(api.writes()) == 1  # the proxy state is kept by default
+    code, out, _ = cca(capsys, *argv, "--dns-only", "--apply")
     assert "UPDATE example.com\n  from: example.com CNAME t.example.net ttl=1 proxied=true" in out
     assert api.writes()[-1].method == "PATCH" and api.records[Z1][0]["proxied"] is False
+    assert "read-back OK: 1 change(s)" in out
+
+
+def test_ensure_cname_proxied_flags(api, capsys):
+    argv = ("dns", "ensure-cname", "example.com", "--name", "www", "--target", "p.example.net")
+    code, out, _ = cca(capsys, *argv)
+    assert code == 0 and "CREATE www.example.com -> p.example.net proxied=false" in out
+    code, out, _ = cca(capsys, *argv, "--proxied", "--apply")
+    assert code == 0 and json.loads(api.writes()[0].content)["proxied"] is True
+    with pytest.raises(SystemExit) as e:
+        main(["cloudflare", *argv, "--proxied", "--dns-only"])
+    assert e.value.code == 2 and "not allowed with argument" in capsys.readouterr().err
+
+
+def test_dns_apply_dumps_before_and_skips_dump_without_change(api, tmp_path, capsys):
+    api.records[Z1] = [record(10, "mail.example.com", "MX", "mx.example.net", priority=10)]
+    argv = ("dns", "ensure-cname", "example.com", "--name", "www", "--target", "t.example.net")
+    code, out, _ = cca(capsys, *argv, "--apply")
+    assert code == 0
+    [name] = snapshots(tmp_path)
+    assert re.fullmatch(r"example\.com\+\d{8}t\d{6}z\.dns\.json", name)
+    dump = json.loads((tmp_path / "tmp" / "cloudflare" / name).read_text())
+    assert dump["schema"] == "cloudflare-dns-dump/1"
+    assert [r["name"] for r in dump["records"]] == ["mail.example.com"]  # state before the write
+    assert f"pre-write dump: {tmp_path / 'tmp' / 'cloudflare' / name}" in out
+    assert cca(capsys, *argv, "--apply")[0] == 0  # OK: nothing written, no new dump
+    assert len(snapshots(tmp_path)) == 1
+
+
+def test_dns_snapshot_failure_aborts_before_write(api, tmp_path, capsys):
+    (tmp_path / "tmp").mkdir()
+    (tmp_path / "tmp" / "cloudflare").write_text("not a directory")
+    argv = ("dns", "ensure-cname", "example.com", "--name", "www", "--target", "t.example.net")
+    code, _, err = cca(capsys, *argv, "--apply")
+    assert code == 1 and "pre-write DNS dump failed, nothing changed in Cloudflare" in err
+    assert api.writes() == []
+
+
+def test_dns_read_back_mismatch_exit_1(api, capsys):
+    api.ignore_dns_writes = True
+    argv = ("dns", "ensure-cname", "example.com", "--name", "www", "--target", "t.example.net")
+    code, _, err = cca(capsys, *argv, "--apply")
+    assert code == 1 and "read-back does not match the write" in err
+    assert "CREATE www.example.com -> t.example.net proxied=false: not in the zone" in err
 
 
 def test_ensure_dkim_conflicts_processed_then_exit_1(api, capsys):
@@ -992,17 +1073,88 @@ def test_restore_zone_plan_and_apply(api, tmp_path, capsys):
     assert code == 0 and "MODE: plan" in out and "=== example.com restore (3 records) ===" in out
     assert "CREATE c.example.com CNAME -> x.example.net." in out
     assert "UPDATE b.example.com A\n  from ttl=300 proxied=False\n  to   ttl=1" in out
-    assert "--- create=1 update=1 ok=1 delete=0 extras_kept=1 ---" in out
+    assert "--- create=1 update=1 ok=1 replace=0 delete=0 extras_kept=1 ---" in out
     assert api.writes() == []
     code, out, _ = cca(capsys, "dns", "restore-zone", dump, "--delete-extras", "--apply")
     assert code == 0 and "DELETE extra.example.com A -> 192.0.2.9" in out
-    assert [w.method for w in api.writes()] == ["PATCH", "POST", "DELETE"]
-    assert "id" not in json.loads(api.writes()[0].content)
+    assert [w.method for w in api.writes()] == ["DELETE", "PATCH", "POST"]  # deletes first
+    assert "id" not in json.loads(api.writes()[1].content)
+    assert "read-back OK: 3 change(s)" in out
     assert sorted(r["name"] for r in api.records[Z1]) == [
         "a.example.com",
         "b.example.com",
         "c.example.com",
     ]
+
+
+def test_restore_zone_replaces_a_changed_cname(api, tmp_path, capsys):
+    """Rollback of an ensure-cname UPDATE: the live CNAME blocks the create, so it is
+    deleted first; unrelated extras stay without --delete-extras."""
+    api.records[Z1] = [
+        record(10, "www.example.com", "CNAME", "new.example.net"),
+        record(11, "other.example.com", "A", "192.0.2.5"),
+    ]
+    old = {"name": "www.example.com", "type": "CNAME", "content": "old.example.net", "ttl": 1,
+           "proxied": False}  # fmt: skip
+    dump = dump_file(tmp_path, [old])
+    code, out, _ = cca(capsys, "dns", "restore-zone", dump)
+    assert code == 0
+    assert "REPLACE www.example.com: delete www.example.com CNAME new.example.net" in out
+    assert "--- create=1 update=0 ok=0 replace=1 delete=0 extras_kept=1 ---" in out
+    code, out, _ = cca(capsys, "dns", "restore-zone", dump, "--apply")
+    assert code == 0 and [w.method for w in api.writes()] == ["DELETE", "POST"]
+    assert sorted((r["name"], r["content"]) for r in api.records[Z1]) == [
+        ("other.example.com", "192.0.2.5"),
+        ("www.example.com", "old.example.net"),
+    ]
+
+
+def test_restore_zone_api_error_lists_applied(api, tmp_path, capsys):
+    api.records[Z1] = [record(10, "www.example.com", "CNAME", "new.example.net")]
+    old = {"name": "www.example.com", "type": "CNAME", "content": "old.example.net", "ttl": 1}
+    dump = dump_file(tmp_path, [old])
+    api.errors[("POST", f"/zones/{Z1}/dns_records")] = (
+        400,
+        {"success": False, "errors": [{"code": 81053, "message": "record exists"}]},
+    )
+    code, _, err = cca(capsys, "dns", "restore-zone", dump, "--apply")
+    assert code == 1
+    assert "Cloudflare rejected CREATE www.example.com CNAME -> old.example.net" in err
+    assert "applied before the error:\n  DELETE www.example.com CNAME new.example.net" in err
+    [name] = snapshots(tmp_path)
+    assert (
+        f"roll back with: cca cloudflare dns restore-zone {tmp_path}/tmp/cloudflare/{name}" in err
+    )
+
+
+def test_dns_list(api, capsys):
+    api.records[Z1] = [
+        record(10, "example.com", "MX", "mx.example.net", priority=10),
+        record(11, "_dmarc.example.com", "TXT", "v=DMARC1; p=none"),
+        record(12, "www.example.com", "CNAME", "t.example.net", proxied=True),
+    ]
+    code, out, _ = cca(capsys, "dns", "list", "example.com")
+    assert code == 0 and out.splitlines() == [
+        "=== example.com ===",
+        "_dmarc.example.com TXT v=DMARC1; p=none ttl=1 proxied=false",
+        "example.com MX mx.example.net ttl=1 proxied=false priority=10",
+        "www.example.com CNAME t.example.net ttl=1 proxied=true",
+    ]
+    code, out, _ = cca(capsys, "dns", "list", "example.com", "--name", "_DMARC")
+    assert out.splitlines()[1:] == ["_dmarc.example.com TXT v=DMARC1; p=none ttl=1 proxied=false"]
+    code, out, _ = cca(capsys, "dns", "list", "example.com", "--name", "@", "--type", "mx")
+    assert out.splitlines()[1:] == ["example.com MX mx.example.net ttl=1 proxied=false priority=10"]
+    code, out, _ = cca(capsys, "dns", "list", "example.com", "--type", "AAAA")
+    assert out.splitlines()[1:] == ["no records"]
+    with pytest.raises(SystemExit) as e:
+        main(["cloudflare", "dns", "list", "example.com", "--name", "a b"])
+    assert e.value.code == 2
+    assert api.writes() == []
+
+
+def test_dns_dump_zone_creates_parent_dir(api, tmp_path, capsys):
+    code, out, _ = cca(capsys, "dns", "dump-zone", "example.com", "-o", "tmp/cf/new/d.json")
+    assert code == 0 and (tmp_path / "tmp" / "cf" / "new" / "d.json").exists()
 
 
 def test_restore_zone_domain_override_and_bad_input(api, tmp_path, capsys):

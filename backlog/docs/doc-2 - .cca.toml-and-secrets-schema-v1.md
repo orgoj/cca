@@ -38,7 +38,7 @@ silent reinterpretation. Fixtures: `tests/fixtures/cca-toml/` and
 
 ### HTTPS URLs
 
-Applies to `cloudflare.api_base`, curl `origins` and every `cca curl` request URL, so
+Applies to curl `origins` and every `cca curl` request URL, so
 configured and requested origins compare by the same rules:
 
 - Scheme `https` (case-insensitive) only. No userinfo (`@` before the host), no
@@ -72,6 +72,8 @@ final path is resolved and must lie under the configured directory, otherwise ex
   grammar) of at most 150 characters, lowercased; `<zone>.json` (legacy name kept) and
   snapshots `<zone>+<UTC yyyymmddthhmmssz>[-N].json` (lowercase timestamp; `+` cannot
   occur in a zone, so a snapshot never aliases another zone's export; legacy used `-`).
+  DNS writes save a DNS dump (`cloudflare-dns-dump/1`, `restore-zone` input) as
+  `<zone>+<UTC yyyymmddthhmmssz>[-N].dns.json`, distinct from the WAF snapshot by suffix.
   When the zone's first label is a Windows device name (`con`, `prn`, `aux`, `nul`,
   `com1`–`com9`, `lpt1`–`lpt9`; Windows matches them before the first dot), `<zone>` in
   both names is replaced by `zone+<h>`, `h` = 32 hex digits of SHA-256 over the zone
@@ -143,7 +145,7 @@ line (control characters escaped).
 | Key | Type | Default | Rule |
 |---|---|---|---|
 | `curl` | path | `"secrets/curl.secret.yaml"` | Used by `cca curl` and by every command that calls an HTTP API through it (`hetrix`, `asn`). |
-| `cloudflare` | path | `"secrets/cloudflare.secret.yaml"` | Used by `cca cloudflare`. |
+| `cloudflare` | path | `"secrets/cloudflare.secret.yaml"` | Used by `cca cloudflare`. Its real path (symlinks resolved) must lie inside the config dir, otherwise exit 2 before sops runs; sops decrypts the checked real path. |
 
 Paths resolve from the config dir. The file is opened only by a command that needs the
 secret (doc-1 "Secrets").
@@ -160,7 +162,7 @@ secret (doc-1 "Secrets").
 | Key | Type | Default | Rule |
 |---|---|---|---|
 | `export_dir` | path | `"tmp/cloudflare"` | `export`/`diff` default file and pre-write snapshots, file names in "Generated file names". Created on first write. |
-| `api_base` | string | `"https://api.cloudflare.com/client/v4"` | An HTTPS URL (see "HTTPS URLs") with an optional path and no query or fragment. Passed explicitly to the SDK client. |
+| `api_base` | string | `"https://api.cloudflare.com/client/v4"` | **Pinned**: any other value is a load-time error (a config could otherwise send the token to another host). Passed explicitly to the SDK client. |
 
 ## `[check_domain]`
 

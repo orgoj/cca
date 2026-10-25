@@ -21,6 +21,7 @@ import httpx
 from cca import config, secrets, validate
 from cca.output import CcaError
 
+API_BASE = config.CLOUDFLARE_API_BASE  # pinned; tests point it at the fake API
 MAX_BODY = 64 * 1024 * 1024  # API response cap, decoded
 DEADLINE = 60  # seconds per request: headers and the whole body
 TIMEOUT = httpx.Timeout(30, connect=10)
@@ -147,6 +148,7 @@ examples:
   cca cloudflare zone list --name example
   cca cloudflare zone info example.com
   cca cloudflare dns show-domain example.com
+  cca cloudflare dns list example.com --type MX
   cca cloudflare dns ensure-cname example.com --name www --target target.example.net
   cca cloudflare waf list example.com
   cca cloudflare waf add example.com --description "block admin" --action block \\
@@ -155,7 +157,9 @@ examples:
   cca cloudflare export example.com && cca cloudflare diff example.com
 
 Write commands (dns ensure-*, dns restore-zone, waf add/edit/move) only plan; --apply
-changes Cloudflare. The token comes from the sops file secrets.cloudflare (.cca.toml).
+first saves a snapshot to cloudflare.export_dir, then writes and reads the change back
+(exit 1 on a mismatch or a rejected write). The token comes from the sops file
+secrets.cloudflare (.cca.toml); the API endpoint is always api.cloudflare.com.
 """
 
 
@@ -354,6 +358,27 @@ def _label(value: str) -> str:
     return name
 
 
+_RECORD_NAME_RE = re.compile(
+    r"[A-Za-z0-9_*]([A-Za-z0-9_-]*[A-Za-z0-9_])?(\.[A-Za-z0-9_]([A-Za-z0-9_-]*[A-Za-z0-9_])?)*"
+)
+_RTYPE_RE = re.compile(r"[A-Za-z0-9]{1,10}")
+
+
+def _record_name(value: str) -> str:
+    """A name to read: like --name of ensure-cname, also `_dmarc`, `*` and `_x._y`."""
+    if value in ("", "@"):
+        return "@"
+    if len(value) > 253 or not _RECORD_NAME_RE.fullmatch(value):
+        raise argparse.ArgumentTypeError(f"invalid record name '{validate.display(value)}'")
+    return value.lower()
+
+
+def _rtype(value: str) -> str:
+    if not _RTYPE_RE.fullmatch(value):
+        raise argparse.ArgumentTypeError(f"invalid record type '{validate.display(value)}'")
+    return value.upper()
+
+
 def _positive(value: str) -> int:
     try:
         number = int(value)
@@ -443,10 +468,20 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     p.add_argument("domain", type=_zone)
     p.add_argument("--name", required=True, type=_label, help="label without the zone, @ = apex")
     p.add_argument("--target", required=True, type=_zone, help="CNAME target (FQDN)")
+    proxy = p.add_mutually_exclusive_group()
+    proxy.add_argument("--proxied", action="store_true", help="proxied through Cloudflare")
+    proxy.add_argument("--dns-only", action="store_true",
+                       help="DNS only (default: keep the existing record's proxy state, "
+                            "a new record is DNS only)")  # fmt: skip
     apply(p)
+    p = command(sub, "list", "all DNS records, or those of one name or type")
+    p.add_argument("domain", type=_zone)
+    p.add_argument("--name", type=_record_name, help="name without the zone, @ = apex")
+    p.add_argument("--type", type=_rtype, help="record type, e.g. MX")
     p = command(sub, "dump-zone", "all DNS records as JSON (cloudflare-dns-dump/1)")
     p.add_argument("domain", type=_zone)
-    p.add_argument("-o", "--output", help="write to this file (default: stdout)")
+    p.add_argument("-o", "--output",
+                   help="write to this file, parent dirs created (default: stdout)")  # fmt: skip
     p = command(sub, "restore-zone", "restore DNS records from a dump-zone file")
     p.add_argument("input", help="dump-zone JSON file")
     p.add_argument("--domain", type=_zone, help="zone (default: from the file)")
@@ -550,9 +585,25 @@ def export_name(zone: str) -> str:
     return _basename(f"{zone_key(zone)}.json")
 
 
-def snapshot_name(zone: str, stamp: datetime, serial: int = 1) -> str:
+def snapshot_name(zone: str, stamp: datetime, serial: int = 1, ext: str = ".json") -> str:
+    """WAF pre-write zone export (`.json`) or DNS pre-write dump (`.dns.json`)."""
     suffix = "" if serial == 1 else f"-{serial}"
-    return _basename(f"{zone_key(zone)}+{stamp.strftime('%Y%m%dt%H%M%Sz')}{suffix}.json")
+    return _basename(f"{zone_key(zone)}+{stamp.strftime('%Y%m%dt%H%M%Sz')}{suffix}{ext}")
+
+
+def write_snapshot(directory: Path, zone: str, text: str, ext: str = ".json") -> Path:
+    """Write text to a new snapshot file in directory; a snapshot is never overwritten."""
+    directory.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(UTC)
+    for serial in range(1, 1000):
+        path = _in_dir(directory, snapshot_name(zone, stamp, serial, ext))
+        try:
+            with open(path, "x", encoding="utf-8") as f:
+                f.write(text)
+            return path
+        except FileExistsError:
+            continue
+    raise RunError("no free snapshot name")
 
 
 def _basename(name: str) -> str:
@@ -728,6 +779,8 @@ def format_record(record: dict) -> str:
     )
     if record.get("proxied") is not None:
         text += f" proxied={str(bool(record['proxied'])).lower()}"
+    if record.get("priority") is not None:
+        text += f" priority={record['priority']}"
     return _d(text)
 
 
@@ -890,21 +943,40 @@ def cmd_show_dkim(s: Session, args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_dump_zone(s: Session, args: argparse.Namespace) -> int:
+def cmd_dns_list(s: Session, args: argparse.Namespace) -> int:
     zone = s.zone(args.domain)
+    zone_name = str(zone.get("name")).lower()
+    name = None if args.name is None else fqdn(args.name, zone_name)
+    records = [r for r in s.records(zone["id"], name) if args.type in (None, r.get("type"))]
+    print(f"=== {_d(zone_name)} ===")
+    if not records:
+        print("no records")
+    for record in sorted(records, key=record_sort_key):
+        print(format_record(record))
+    return 0
+
+
+def dns_dump(s: Session, zone: dict) -> dict:
     records = sorted((record_to_dict(r) for r in s.records(zone["id"])), key=record_sort_key)
-    text = json_text(
-        {
-            "schema": "cloudflare-dns-dump/1",
-            "exported_at": datetime.now(UTC).isoformat(),
-            "zone": {"id": zone["id"], "name": zone.get("name")},
-            "records": records,
-        },
-        sort_keys=False,
-    )
+    return {
+        "schema": "cloudflare-dns-dump/1",
+        "exported_at": datetime.now(UTC).isoformat(),
+        "zone": {"id": zone["id"], "name": zone.get("name")},
+        "records": records,
+    }
+
+
+def cmd_dump_zone(s: Session, args: argparse.Namespace) -> int:
+    dump = dns_dump(s, s.zone(args.domain))
+    text = json_text(dump, sort_keys=False)
     if args.output:
-        _write(Path(args.output), text + "\n")
-        print(f"DUMP {len(records)} records -> {_d(args.output)}")
+        path = Path(args.output)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            raise RunError(f"cannot create {_d(path.parent)}: {e.strerror}") from None
+        _write(path, text + "\n")
+        print(f"DUMP {len(dump['records'])} records -> {_d(args.output)}")
     else:
         print(text)
     return 0
@@ -1236,10 +1308,22 @@ class DesiredRecord:
     type: str
     content: str
     ttl: int = 1
-    proxied: bool = False
+    proxied: bool | None = False  # None: keep the existing record's state (new: DNS-only)
 
 
-def ensure_record(s: Session, zone: dict, desired: DesiredRecord, apply: bool) -> bool:
+@dataclass
+class DnsWrite:
+    """One planned DNS write; `fields` is the record as it must be afterwards."""
+
+    kind: str  # "create", "update" or "delete"
+    label: str  # e.g. "CREATE www.example.com CNAME -> t.example.net"
+    fields: dict
+    record_id: str | None = None
+
+
+def ensure_record(s: Session, zone: dict, desired: DesiredRecord) -> DnsWrite | bool:
+    """Print the plan line(s); the write to make, True when the record is OK, False on a
+    conflict."""
     existing = s.records(zone["id"], desired.name)
     same_type = [r for r in existing if r.get("type") == desired.type]
     conflicts = [r for r in existing if r.get("type") != desired.type]
@@ -1250,31 +1334,90 @@ def ensure_record(s: Session, zone: dict, desired: DesiredRecord, apply: bool) -
         for record in conflicts or same_type:
             print(f"  existing: {format_record(record)}")
         return False
-    payload = {"zone_id": zone["id"], "name": desired.name, "type": desired.type,
-               "content": desired.content, "ttl": desired.ttl,
-               "proxied": desired.proxied}  # fmt: skip
-    if not same_type:
-        print(f"CREATE {desired.name} -> {desired.content}")
-        if apply:
-            s.client.dns.records.create(**payload)
-        return True
-    current = same_type[0]
+    current = same_type[0] if same_type else None
+    proxied = desired.proxied
+    if proxied is None:
+        proxied = bool(current.get("proxied", False)) if current else False
+    fields = {"name": desired.name, "type": desired.type, "content": desired.content,
+              "ttl": desired.ttl, "proxied": proxied}  # fmt: skip
+    to = f"{desired.name} -> {desired.content} proxied={str(proxied).lower()}"
+    if current is None:
+        print(f"CREATE {to}")
+        return DnsWrite("create", f"CREATE {to}", fields)
     if (
         normalize_content(current.get("content", "")) == normalize_content(desired.content)
         and _int(current.get("ttl")) == desired.ttl
-        and bool(current.get("proxied", False)) == desired.proxied
+        and bool(current.get("proxied", False)) == proxied
     ):
-        print(f"OK {desired.name} -> {desired.content}")
+        print(f"OK {to}")
         return True
     print(f"UPDATE {desired.name}")
     print(f"  from: {format_record(current)}")
     print(
         f"  to:   {desired.name} {desired.type} {normalize_content(desired.content)} "
-        f"ttl={desired.ttl} proxied={str(desired.proxied).lower()}"
+        f"ttl={desired.ttl} proxied={str(proxied).lower()}"
     )
-    if apply:
-        s.client.dns.records.edit(api_id(current.get("id"), "record"), **payload)
-    return True
+    return DnsWrite("update", f"UPDATE {to}", fields, api_id(current.get("id"), "record"))
+
+
+def dns_snapshot(s: Session, zone: dict) -> Path:
+    """DNS dump of the zone before a write (restore-zone input); when it fails nothing
+    is written."""
+    import cloudflare
+
+    try:
+        text = json_text(dns_dump(s, zone), sort_keys=False) + "\n"
+        path = write_snapshot(s.export_dir, str(zone.get("name")).lower(), text, ".dns.json")
+    except (CcaError, OSError, cloudflare.APIError, LimitExceeded) as exc:
+        detail = str(exc) if isinstance(exc, CcaError | LimitExceeded) else api_error(exc)
+        raise RunError(
+            f"pre-write DNS dump failed, nothing changed in Cloudflare: {detail}"
+        ) from None
+    print(f"pre-write dump: {_d(path)}")
+    return path
+
+
+def apply_dns(s: Session, zone: dict, writes: list[DnsWrite]) -> None:
+    """Dump, write in order (deletes first), read back. An API error stops the run with
+    exit 1 and lists what was already applied; a mismatch after the writes is exit 1."""
+    import cloudflare
+
+    if not writes:
+        return
+    snapshot = dns_snapshot(s, zone)
+    zone_id = zone["id"]
+    order = {"delete": 0, "update": 1, "create": 2}
+    applied: list[str] = []
+    for w in sorted(writes, key=lambda w: order[w.kind]):
+        try:
+            if w.kind == "create":
+                s.client.dns.records.create(zone_id=zone_id, **w.fields)
+            elif w.kind == "update":
+                s.client.dns.records.edit(w.record_id, zone_id=zone_id, **w.fields)
+            else:
+                s.client.dns.records.delete(w.record_id, zone_id=zone_id)
+        except (cloudflare.APIError, LimitExceeded) as exc:
+            detail = str(exc) if isinstance(exc, LimitExceeded) else api_error(exc)
+            done = "".join(f"\n  {line}" for line in applied) or " none"
+            raise RunError(
+                f"Cloudflare rejected {w.label}: {detail}\napplied before the error:{done}\n"
+                f"roll back with: cca cloudflare dns restore-zone {_d(snapshot)}"
+            ) from None
+        applied.append(w.label)
+    live = s.records(zone_id)
+    problems = []
+    for w in writes:
+        if w.kind == "delete":
+            if any(r.get("id") == w.record_id for r in live):
+                problems.append(f"{w.label}: the record still exists")
+        elif not any(
+            record_match_key(r) == record_match_key(w.fields) and record_payload_equal(r, w.fields)
+            for r in live
+        ):
+            problems.append(f"{w.label}: not in the zone after the write")
+    if problems:
+        raise RunError("read-back does not match the write:\n  " + "\n  ".join(problems))
+    print(f"read-back OK: {len(writes)} change(s)")
 
 
 def cmd_ensure_dkim(s: Session, args: argparse.Namespace) -> int:
@@ -1286,12 +1429,18 @@ def cmd_ensure_dkim(s: Session, args: argparse.Namespace) -> int:
         zone = s.zone(domain)
         zone_name = str(zone.get("name")).lower()
         print(f"=== {zone_name} ===")
+        writes = []
         for selector in args.selector:
             desired = DesiredRecord(
                 f"{selector}._domainkey.{zone_name}", "CNAME",
                 f"{selector}._domainkey.{args.target_domain}",
             )  # fmt: skip
-            ok = ensure_record(s, zone, desired, args.apply) and ok
+            result = ensure_record(s, zone, desired)
+            ok = result is not False and ok
+            if isinstance(result, DnsWrite):
+                writes.append(result)
+        if args.apply:
+            apply_dns(s, zone, writes)
     if not args.apply:
         print(PLAN_END)
     return 0 if ok else 1
@@ -1302,12 +1451,15 @@ def cmd_ensure_cname(s: Session, args: argparse.Namespace) -> int:
     zone = s.zone(args.domain)
     zone_name = str(zone.get("name")).lower()
     print(f"=== {zone_name} ===")
-    ok = ensure_record(
-        s, zone, DesiredRecord(fqdn(args.name, zone_name), "CNAME", args.target), args.apply
+    proxied = True if args.proxied else False if args.dns_only else None
+    result = ensure_record(
+        s, zone, DesiredRecord(fqdn(args.name, zone_name), "CNAME", args.target, proxied=proxied)
     )
+    if args.apply and isinstance(result, DnsWrite):
+        apply_dns(s, zone, [result])
     if not args.apply:
         print(PLAN_END)
-    return 0 if ok else 1
+    return 0 if result is not False else 1
 
 
 def record_match_key(record: dict) -> tuple:
@@ -1361,18 +1513,14 @@ def cmd_restore_zone(s: Session, args: argparse.Namespace) -> int:
     print("MODE:", "apply" if args.apply else "plan")
     print(f"=== {_d(zone.get('name'))} restore ({len(desired_records)} records) ===")
     handled: set[str] = set()
-    create_n = update_n = ok_n = delete_n = kept_n = 0
+    writes: list[DnsWrite] = []
+    creates: list[dict] = []
+    ok_n = 0
     for desired in desired_records:
         fields = record_to_dict(desired)  # dump fields without nulls
         candidates = by_key.get(record_match_key(desired), [])
         if not candidates:
-            print(
-                f"CREATE {_d(desired.get('name'))} {_d(desired.get('type'))} "
-                f"-> {_d(desired.get('content'))}"
-            )
-            create_n += 1
-            if args.apply:
-                s.client.dns.records.create(zone_id=zone_id, **fields)
+            creates.append(fields)
             continue
         current = candidates.pop(0)
         handled.add(current["_id"])
@@ -1382,9 +1530,28 @@ def cmd_restore_zone(s: Session, args: argparse.Namespace) -> int:
         print(f"UPDATE {_d(desired.get('name'))} {_d(desired.get('type'))}")
         print(f"  from ttl={_d(current.get('ttl'))} proxied={_d(current.get('proxied'))}")
         print(f"  to   ttl={_d(desired.get('ttl'))} proxied={_d(desired.get('proxied'))}")
-        update_n += 1
-        if args.apply:
-            s.client.dns.records.edit(current["_id"], zone_id=zone_id, **fields)
+        writes.append(DnsWrite("update", f"UPDATE {_d(desired.get('name'))}", fields,
+                               current["_id"]))  # fmt: skip
+    replace_n = 0
+    for fields in creates:
+        name, rtype = fields.get("name"), fields.get("type")
+        label = f"CREATE {_d(name)} {_d(rtype)} -> {_d(fields.get('content'))}"
+        # a CNAME excludes every other record of its name: the live record that blocks
+        # the create is deleted first (rollback of a changed CNAME)
+        for record in existing:
+            if (
+                record["_id"] not in handled
+                and record.get("name") == name
+                and "CNAME" in (rtype, record.get("type"))
+            ):
+                print(f"REPLACE {_d(name)}: delete {format_record(record)}")
+                handled.add(record["_id"])
+                replace_n += 1
+                writes.append(DnsWrite("delete", f"DELETE {format_record(record)}", {},
+                                       record["_id"]))  # fmt: skip
+        print(label)
+        writes.append(DnsWrite("create", label, fields))
+    delete_n = kept_n = 0
     for record in existing:
         if record["_id"] in handled:
             continue
@@ -1394,15 +1561,17 @@ def cmd_restore_zone(s: Session, args: argparse.Namespace) -> int:
                 f"-> {_d(record.get('content'))}"
             )
             delete_n += 1
-            if args.apply:
-                s.client.dns.records.delete(record["_id"], zone_id=zone_id)
+            writes.append(DnsWrite("delete", f"DELETE {format_record(record)}", {},
+                                   record["_id"]))  # fmt: skip
         else:
             kept_n += 1
     print(
-        f"--- create={create_n} update={update_n} ok={ok_n} delete={delete_n} "
-        f"extras_kept={kept_n} ---"
+        f"--- create={len(creates)} update={sum(w.kind == 'update' for w in writes)} "
+        f"ok={ok_n} replace={replace_n} delete={delete_n} extras_kept={kept_n} ---"
     )
-    if not args.apply:
+    if args.apply:
+        apply_dns(s, zone, writes)
+    else:
         print(PLAN_END)
     return 0
 
@@ -1518,21 +1687,8 @@ def pre_write_export(ctx: WafContext) -> Path:
     import cloudflare
 
     try:
-        directory = ctx.session.export_dir
-        state = ctx.session.state(ctx.domain)
-        directory.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now(UTC)
-        text = json_text(state) + "\n"
-        for serial in range(1, 1000):  # a snapshot is never overwritten
-            path = _in_dir(directory, snapshot_name(ctx.domain, stamp, serial))
-            try:
-                with open(path, "x", encoding="utf-8") as f:
-                    f.write(text)
-                break
-            except FileExistsError:
-                continue
-        else:
-            raise RunError("no free snapshot name")
+        text = json_text(ctx.session.state(ctx.domain)) + "\n"
+        path = write_snapshot(ctx.session.export_dir, ctx.domain, text)
     except (CcaError, OSError, cloudflare.APIError, LimitExceeded) as exc:
         detail = str(exc) if isinstance(exc, CcaError | LimitExceeded) else api_error(exc)
         raise RunError(
@@ -1731,6 +1887,7 @@ HANDLERS = {
     ("dns", "show-dkim"): cmd_show_dkim,
     ("dns", "ensure-dkim"): cmd_ensure_dkim,
     ("dns", "ensure-cname"): cmd_ensure_cname,
+    ("dns", "list"): cmd_dns_list,
     ("dns", "dump-zone"): cmd_dump_zone,
     ("dns", "restore-zone"): cmd_restore_zone,
     ("waf", "list"): cmd_rules_list,
@@ -1760,7 +1917,7 @@ def run(args: argparse.Namespace) -> int:
     token = secrets.cloudflare_token(cfg)  # exit 2 when missing; never the environment
     import cloudflare
 
-    session = Session(cfg, make_client(token, cfg.get("cloudflare.api_base")))
+    session = Session(cfg, make_client(token, API_BASE))
     try:
         return HANDLERS[key](session, args)
     except cloudflare.APIError as exc:

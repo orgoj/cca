@@ -3,7 +3,7 @@
 import json
 import os
 import stat
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pytest
 
@@ -187,6 +187,25 @@ def test_secrets_file_missing(project, capfd):
 
 
 # --- ssh helper
+
+
+@pytest.mark.parametrize(
+    ("root", "path", "expected"),
+    [
+        ("C:\\proj", "C:\\proj\\secrets\\cf.yaml", True),
+        ("C:\\proj", "c:\\PROJ\\secrets\\cf.yaml", True),
+        ("C:\\proj", "D:\\secrets\\cf.yaml", False),  # another drive: outside, no ValueError
+        ("C:\\proj", "C:\\project2\\cf.yaml", False),
+        ("C:\\proj", "\\\\server\\share\\cf.yaml", False),
+    ],
+)
+def test_secret_inside_project_on_windows_paths(root, path, expected):
+    assert secrets.inside(root, path, PureWindowsPath) is expected
+
+
+def test_secret_inside_project_posix():
+    assert secrets.inside("/p", "/p/secrets/x", PurePosixPath)
+    assert not secrets.inside("/p", "/p2/x", PurePosixPath)
 
 
 def test_ssh_argv_shape(tmp_path):

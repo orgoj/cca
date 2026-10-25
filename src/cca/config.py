@@ -125,13 +125,13 @@ def _hosting_marker(value: Any) -> str:
     return value
 
 
+CLOUDFLARE_API_BASE = "https://api.cloudflare.com/client/v4"
+
+
 def _api_base(value: Any) -> str:
-    try:
-        _origin, tail = validate.parse_https_url(_string(value))
-    except ValueError as e:
-        raise _InvalidError(f"must be an HTTPS URL: {e}") from None
-    if "?" in tail or "#" in tail:
-        raise _InvalidError("must be an HTTPS URL without query or fragment")
+    """Pinned: a config that could redirect the endpoint would send the token anywhere."""
+    if _string(value) != CLOUDFLARE_API_BASE:
+        raise _InvalidError(f'must be "{CLOUDFLARE_API_BASE}" (the endpoint is pinned)')
     return value
 
 
@@ -168,7 +168,7 @@ SCHEMA: dict[str, Any] = {
     },
     "cloudflare": {
         "export_dir": ("tmp/cloudflare", _path),
-        "api_base": ("https://api.cloudflare.com/client/v4", _api_base),
+        "api_base": (CLOUDFLARE_API_BASE, _api_base),
     },
     "check_domain": {
         "our_ips": ([], _string_list(_ip)),

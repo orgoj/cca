@@ -26,7 +26,7 @@ operator = "admin1"
 
 [secrets]
 curl = "secrets/curl.secret.yaml"
-cloudflare = "/srv/example/secrets/cloudflare.secret.yaml"
+cloudflare = "secrets/cf/cloudflare.secret.yaml"
 
 [netdata]
 fping_cache_dir = "server-logs/fping"

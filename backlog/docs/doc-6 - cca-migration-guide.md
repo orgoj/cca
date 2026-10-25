@@ -84,7 +84,7 @@ legacy sources. Step 2 replaces each name in the left column.
 | consumer-specific default `--target` | `netdata-cli fping` | `netdata.fping_target` |
 | cloudflare export dir `tmp/cloudflare/` (script-relative root) | `cloudflare-cli` (doc-5) | `cloudflare.export_dir` (config dir relative) |
 | `CLOUDFLARE_API_TOKEN` (env, `.cca-env[.local]`, `.env[.local]`) | `cloudflare-cli` | sops `cloudflare` file, key `api_token` |
-| Cloudflare SDK ambient configuration (env base URL and other SDK defaults) | `cloudflare` SDK in `cloudflare-cli` | dropped; `cloudflare.api_base` is the only explicit replacement, all ambient SDK fallbacks disabled |
+| Cloudflare SDK ambient configuration (env base URL and other SDK defaults) | `cloudflare` SDK in `cloudflare-cli` | dropped; the endpoint is pinned (`cloudflare.api_base` accepts only `https://api.cloudflare.com/client/v4`), all ambient SDK fallbacks disabled |
 | `secrets/curl.secret.yaml` (CWD-relative) | `cca-curl-secret`, `cca-hetrix` | `secrets.curl` (config dir relative) |
 | `HETRIX_API_KEY` (comment only, never read) | – | dropped; hetrix uses a `curl` credential |
 
