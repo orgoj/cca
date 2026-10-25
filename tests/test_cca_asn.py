@@ -449,6 +449,61 @@ def test_json_output(project, api, ptr, capsys):
     ]
 
 
+KEYLESS_IPAPI = {  # the keyless answer: flat country name, no type flags used
+    "ip": IP,
+    "company": {"name": "Example Org", "type": "hosting"},
+    "country": "Australia",
+    "city": "Brisbane",
+}
+KEYLESS_ELEMENT = {  # the JSON contract of one keyless public address (references/asn.md)
+    "ip": IP,
+    "bogon": False,
+    "reverse": "one.example.net",
+    "announced": True,
+    "prefix": "1.1.1.0/24",
+    "asns": [{"asn": 13335, "holder": "CLOUDFLARENET - Cloudflare, Inc."}],
+    "rpki": [{"asn": 13335, "status": "valid"}],
+    "abuse_contacts": ["abuse@example.com"],
+    "organization": "Example Org",
+    "country": "Australia",
+    "city": "Brisbane",
+    "flags": None,
+    "registry": {
+        "range": "1.1.1.0 - 1.1.1.255",
+        "cidrs": ["1.1.1.0/24"],
+        "name": "APNIC-LABS",
+        "handle": "1.1.1.0 - 1.1.1.255",
+        "type": "ASSIGNED PORTABLE",
+        "rir": "ripe",
+    },
+    "errors": {},
+    "skipped": {},
+}
+
+
+def test_json_contract_keyless_quota_and_failed_source(tmp_path, monkeypatch, api, ptr, capsys):
+    """The four element shapes documented in references/asn.md, key for key."""
+    monkeypatch.chdir(tmp_path)  # no project: keyless
+    api.routes["/ipapi/"] = KEYLESS_IPAPI
+    code, out, _ = cca(capsys, "--json", IP, "192.168.1.1")
+    assert code == 0
+    assert json.loads(out) == [KEYLESS_ELEMENT, {"ip": "192.168.1.1", "bogon": True}]
+
+    api.routes["/ipapi/"] = (429, json.dumps({"error": "quota"}))
+    code, out, _ = cca(capsys, "--json", IP)
+    assert code == 0  # a skipped keyless ipapi.is is not a failure
+    quota = dict(KEYLESS_ELEMENT, organization=None, country=None, city=None)
+    quota["skipped"] = {"ipapi": "keyless daily quota used up"}
+    assert json.loads(out) == [quota]
+
+    api.routes["/ipapi/"] = KEYLESS_IPAPI
+    api.routes[RIPE_PATH + IP] = (503, "{}")
+    code, out, err = cca(capsys, "--json", IP)
+    assert code == 1 and "cca: 1.1.1.1: rdap: HTTP 503" in err
+    failed = dict(KEYLESS_ELEMENT, registry=None, errors={"rdap": "HTTP 503"})
+    assert json.loads(out) == [failed]
+
+
 # --- RDAP registry range
 
 
