@@ -71,6 +71,7 @@ def run(args: argparse.Namespace) -> int:
     report(
         "OK" if sops else "WARN", "sops", sops or "not on PATH (needed by commands using secrets)"
     )
+    _check_age_key(report, cfg)
 
     missing = [d for d in PROJECT_DIRS if not os.path.isdir(d)]
     report(
@@ -101,6 +102,42 @@ def run(args: argparse.Namespace) -> int:
     if cfg is not None:
         _check_old_cca(report, cfg.dir)
     return 1 if failed else 0
+
+
+def _readable_file(path: str) -> bool:
+    return os.path.isfile(path) and os.access(path, os.R_OK)
+
+
+def _check_age_key(report, cfg: config.Config | None) -> None:
+    """Can sops find an age key: the environment cca hands to sops, diagnostics only (cca
+    itself reads no setting from it). Paths only, never a key; SOPS_AGE_KEY is never shown."""
+    key_file = os.environ.get("SOPS_AGE_KEY_FILE")
+    if key_file:
+        shown = validate.display(key_file)
+        if not _readable_file(key_file):
+            report("FAIL", "age key", f"SOPS_AGE_KEY_FILE={shown}: not a readable file")
+        elif not os.path.isabs(key_file):
+            report("WARN", "age key", f"SOPS_AGE_KEY_FILE={shown} is relative (resolved from the "
+                   "current directory, breaks in subdirectories)")  # fmt: skip
+        else:
+            report("OK", "age key", f"SOPS_AGE_KEY_FILE={shown}")
+        return
+    for name in ("SOPS_AGE_KEY", "SOPS_AGE_KEY_CMD"):
+        if os.environ.get(name):
+            report("OK", "age key", f"{name} is set")
+            return
+    default = Path.home() / ".config" / "sops" / "age" / "keys.txt"
+    if _readable_file(str(default)):
+        report("OK", "age key", f"{default} (sops default)")
+        return
+    secrets = [] if cfg is None else [cfg.resolve(p) for p in cfg.data["secrets"].values()]
+    present = [str(p) for p in secrets if p.exists()]
+    report(
+        "FAIL" if present else "WARN",
+        "age key",
+        "SOPS_AGE_KEY_FILE not set and no sops default key"
+        + (f" (needed for {', '.join(present)})" if present else " (needed by secrets)"),
+    )
 
 
 def _check_run(report, cfg: config.Config) -> None:

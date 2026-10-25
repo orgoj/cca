@@ -211,6 +211,10 @@ def ready(target, tmp_path, monkeypatch):
     fake_backlog(bindir, "To Do, In Progress, Note, Done")
     monkeypatch.setenv("PATH", str(bindir))
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    for name in ("SOPS_AGE_KEY", "SOPS_AGE_KEY_CMD"):
+        monkeypatch.delenv(name, raising=False)
+    (tmp_path / "age-key.txt").write_text("# test key file\n")
+    monkeypatch.setenv("SOPS_AGE_KEY_FILE", str(tmp_path / "age-key.txt"))
     assert main(["install", "skills"]) == 0
     return tmp_path
 
@@ -236,6 +240,59 @@ def test_doctor_ready_project(ready, capsys):
     assert f"OK   config: {ready / '.cca.toml'}" in out
     assert "OK   backlog: 1.53.0" in out
     assert "OK   backlog statuses: Note, Done present" in out
+
+
+def test_doctor_age_key_file(ready, capsys):
+    capsys.readouterr()
+    assert main(["doctor"]) == 0
+    assert f"OK   age key: SOPS_AGE_KEY_FILE={ready / 'age-key.txt'}" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("value", "line", "code"),
+    [
+        ("{ready}/missing.txt", "FAIL age key: SOPS_AGE_KEY_FILE={ready}/missing.txt: not a", 1),
+        ("{ready}", "FAIL age key: SOPS_AGE_KEY_FILE={ready}: not a readable file", 1),
+        ("age-key.txt", "WARN age key: SOPS_AGE_KEY_FILE=age-key.txt is relative", 0),
+    ],
+)
+def test_doctor_age_key_file_problems(ready, monkeypatch, capsys, value, line, code):
+    monkeypatch.setenv("SOPS_AGE_KEY_FILE", value.format(ready=ready))
+    capsys.readouterr()
+    assert main(["doctor"]) == code
+    assert line.format(ready=ready) in capsys.readouterr().out
+
+
+def test_doctor_age_key_alternatives_never_show_the_key(ready, monkeypatch, capsys):
+    monkeypatch.delenv("SOPS_AGE_KEY_FILE")
+    monkeypatch.setenv("SOPS_AGE_KEY", "AGE-SECRET-KEY-SENTINEL")
+    capsys.readouterr()
+    assert main(["doctor"]) == 0
+    out = capsys.readouterr().out
+    assert "OK   age key: SOPS_AGE_KEY is set" in out and "SENTINEL" not in out
+    monkeypatch.delenv("SOPS_AGE_KEY")
+    default = ready / "home" / ".config" / "sops" / "age" / "keys.txt"
+    default.parent.mkdir(parents=True)
+    default.write_text("# key\n")
+    assert main(["doctor"]) == 0
+    assert f"OK   age key: {default} (sops default)" in capsys.readouterr().out
+
+
+def test_doctor_age_key_missing_warns_or_fails_with_secrets(ready, monkeypatch, capsys):
+    monkeypatch.delenv("SOPS_AGE_KEY_FILE")
+    capsys.readouterr()
+    assert main(["doctor"]) == 0
+    assert "WARN age key: SOPS_AGE_KEY_FILE not set and no sops default key (needed by" in (
+        capsys.readouterr().out
+    )
+    (ready / "secrets").mkdir()
+    (ready / "secrets" / "cloudflare.secret.yaml").write_text("api_token: ENC[...]\n")
+    assert main(["doctor"]) == 1
+    out = capsys.readouterr().out
+    assert (
+        f"FAIL age key: SOPS_AGE_KEY_FILE not set and no sops default key (needed for {ready}"
+        in out
+    )
 
 
 def test_doctor_backlog_missing(ready, capsys):
