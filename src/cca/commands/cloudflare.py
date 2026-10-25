@@ -157,9 +157,9 @@ examples:
   cca cloudflare events example.com --since 2h
   cca cloudflare export example.com && cca cloudflare diff example.com
 
-Write commands (zone add, dns ensure-*, dns import, dns restore-zone, waf add/edit/move)
-only plan; --apply writes and reads the change back (exit 1 on a mismatch or a rejected
-write); DNS and WAF writes first save a snapshot to cloudflare.export_dir. The token
+Write commands (zone add, dns ensure-*, dns import, dns delete, dns restore-zone, waf
+add/edit/move) only plan; --apply writes and reads the change back (exit 1 on a mismatch
+or a rejected write); DNS and WAF writes first save a snapshot to cloudflare.export_dir. The token
 comes from the sops file secrets.cloudflare (.cca.toml); the API endpoint is always
 api.cloudflare.com.
 """
@@ -494,6 +494,15 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     p.add_argument("domain", type=_zone)
     p.add_argument("-o", "--output",
                    help="write to this file, parent dirs created (default: stdout)")  # fmt: skip
+    p = command(sub, "delete", "delete the records of one name and type")
+    p.add_argument("domain", type=_zone)
+    p.add_argument(
+        "--name", required=True, type=_record_name, help="name without the zone, @ = apex"
+    )
+    p.add_argument("--type", required=True, type=_rtype, help="record type, e.g. A")
+    p.add_argument("--content", type=_text, help="only the record with this content")
+    p.add_argument("--all", action="store_true", help="delete every match (default: exactly one)")
+    apply(p)
     p = command(sub, "import", "create records from a BIND zone file (A, AAAA, CNAME, MX, TXT)")
     p.add_argument("domain", type=_zone)
     p.add_argument("input", help="BIND zone file")
@@ -1447,13 +1456,14 @@ def dns_snapshot(s: Session, zone: dict) -> Path:
     return path
 
 
-def apply_dns(s: Session, zone: dict, writes: list[DnsWrite]) -> None:
-    """Dump, write in order (deletes first), read back. An API error stops the run with
-    exit 1 and lists what was already applied; a mismatch after the writes is exit 1."""
+def apply_dns(s: Session, zone: dict, writes: list[DnsWrite]) -> Path | None:
+    """Dump, write in order (deletes first), read back; the snapshot path. An API error
+    stops the run with exit 1 and lists what was already applied; a mismatch after the
+    writes is exit 1."""
     import cloudflare
 
     if not writes:
-        return
+        return None
     snapshot = dns_snapshot(s, zone)
     zone_id = zone["id"]
     order = {"delete": 0, "update": 1, "create": 2}
@@ -1486,8 +1496,47 @@ def apply_dns(s: Session, zone: dict, writes: list[DnsWrite]) -> None:
         ):
             problems.append(f"{w.label}: not in the zone after the write")
     if problems:
-        raise RunError("read-back does not match the write:\n  " + "\n  ".join(problems))
+        raise RunError(
+            "read-back does not match the write:\n  " + "\n  ".join(problems)
+            + f"\nroll back with: cca cloudflare dns restore-zone {_d(snapshot)}"
+        )  # fmt: skip
     print(f"read-back OK: {len(writes)} change(s)")
+    return snapshot
+
+
+def cmd_dns_delete(s: Session, args: argparse.Namespace) -> int:
+    print("MODE:", "apply" if args.apply else "plan")
+    zone = s.zone(args.domain)
+    zone_name = str(zone.get("name")).lower()
+    name = fqdn(args.name, zone_name)
+    if args.type in ("SOA", "NS") and name == zone_name:
+        raise RunError(f"{args.type} records at the apex are served by Cloudflare: not deletable")
+    print(f"=== {_d(zone_name)} ===")
+    records = [r for r in s.records(zone["id"], name) if r.get("type") == args.type]
+    if args.content is not None:
+        wanted = record_match_key({"name": name, "type": args.type, "content": args.content})
+        records = [r for r in records if record_match_key(r) == wanted]
+    if not records:
+        raise RunError(
+            f"no {args.type} record {name}" + (" with that content" if args.content else "")
+        )
+    if len(records) > 1 and not args.all:
+        for record in records:
+            print(f"MATCH {format_record(record)}")
+        raise RunError(
+            f"{len(records)} records match: add --content C, or --all to delete them all"
+        )
+    writes = []
+    for record in sorted(records, key=record_sort_key):
+        print(f"DELETE {format_record(record)}")
+        writes.append(DnsWrite("delete", f"DELETE {format_record(record)}", {},
+                               api_id(record.get("id"), "record")))  # fmt: skip
+    if not args.apply:
+        print(PLAN_END)
+        return 0
+    snapshot = apply_dns(s, zone, writes)
+    print(f"roll back with: cca cloudflare dns restore-zone {_d(snapshot)}")
+    return 0
 
 
 def cmd_ensure_dkim(s: Session, args: argparse.Namespace) -> int:
@@ -2198,6 +2247,7 @@ HANDLERS = {
     ("zone", "info"): cmd_zone_info,
     ("zone", "add"): cmd_zone_add,
     ("dns", "import"): cmd_dns_import,
+    ("dns", "delete"): cmd_dns_delete,
     ("zone", "settings"): cmd_zone_settings,
     ("dns", "show-domain"): cmd_show_domain,
     ("dns", "show-dkim"): cmd_show_dkim,

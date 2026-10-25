@@ -15,8 +15,8 @@ cca cloudflare GROUP COMMAND [ARGS]
   snapshot goes to `cloudflare.export_dir`: for WAF the zone export
   `ZONE+<UTC time>.json`, for DNS a `dns dump-zone` file `ZONE+<UTC time>.dns.json`
   (a `restore-zone` input); a failed snapshot writes nothing. Every write is then read
-  back; a mismatch or a rejected write exits 1, and a rejected DNS write lists what was
-  already applied and the `restore-zone` command for the snapshot. A plan without
+  back; a mismatch or a rejected write exits 1. For DNS both name the `restore-zone`
+  command for the snapshot, and a rejected write also lists what was already applied. A plan without
   changes writes no snapshot.
 - Target WAF rules with the rule id from `waf list`; a position (`3`) works only in a
   plan, an exact description must be unique.
@@ -57,8 +57,15 @@ DNS writes:
   and its nameservers (exit 0). The account is `--account ID` as given (Cloudflare
   checks it), else the only account the token sees (account list, or the accounts of its
   zones); none or more than one → exit 1 asking for `--account`.
-- Only these write DNS; other A/AAAA/MX/TXT changes need a dump restore or an import
-  file. Never edit a dump to make a change.
+- `dns delete D --name N --type T [--content C] [--all]`: `--name` relative to the zone
+  (`@` = apex), `--type` case-insensitive, `--content` matches like `restore-zone` (TXT
+  without quoting). The plan lists `DELETE <record>` per match. No match → exit 1;
+  several matches without `--content` → `MATCH` lines and exit 1 unless `--all`. SOA and
+  NS at the apex are refused (exit 1). `--apply`: snapshot, delete, read-back (records
+  gone), then `roll back with: cca cloudflare dns restore-zone <snapshot>`. Check the
+  domain file for the record's purpose first.
+- Only these write DNS; other A/AAAA/MX/TXT changes are delete + import (or a dump
+  restore). Never edit a dump to make a change.
 
 Token permissions (custom token, zone resources = the project's zones; each command
 needs its row, a missing one is an HTTP 403, exit 1):
@@ -84,6 +91,7 @@ needs its row, a missing one is an HTTP 403, exit 1):
 | `zone list [--name S]`, `zone info D`, `zone settings D [--setting K]...` | see zones, plan, audit settings, rule counts with free-plan quotas |
 | `zone add D [--account ID]` | create a zone (type full, the account's default plan) and print its Cloudflare nameservers |
 | `dns import D FILE` | create A/AAAA/CNAME/MX/TXT records from a BIND zone file (migration) |
+| `dns delete D --name N --type T [--content C] [--all]` | delete records of one name and type |
 | `dns list D [--name N] [--type T]` | see every record of the zone, or of one name or type |
 | `dns show-domain D...`, `dns show-dkim D...` | see `@`/`www`/`_dmarc` or `_domainkey` records |
 | `dns ensure-cname D --name L --target FQDN [--proxied\|--dns-only]` | create or fix one CNAME (`@` = apex) |

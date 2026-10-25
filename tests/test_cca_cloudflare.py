@@ -83,6 +83,7 @@ class Api:
         self.errors: dict[tuple[str, str], tuple[int, dict]] = {}  # (method, path) -> reply
         self.misplace = False  # rule writes land at the end regardless of position
         self.ignore_dns_writes = False  # DNS POST/PATCH answer OK but change nothing
+        self.ignore_deletes: set[str] = set()  # record ids whose DELETE answers OK, no-op
         self.accounts: list[dict] | int = [dict(ACCOUNT)]  # an int: that HTTP error
         self.requests: list[httpx.Request] = []
         self.serial = 100
@@ -213,7 +214,8 @@ class Api:
         if self.ignore_dns_writes and method == "PATCH":
             return self.ok(current)
         if method == "DELETE":
-            records.remove(current)
+            if rid not in self.ignore_deletes:
+                records.remove(current)
             return self.ok({"id": rid})
         current.update(body)  # PATCH
         return self.ok(current)
@@ -1326,6 +1328,66 @@ def test_dns_import_conflict_or_unsupported_writes_nothing(api, tmp_path, capsys
     code, out, _ = cca(capsys, "dns", "import", "example.com", path, "--apply")
     assert code == 1 and "UNSUPPORTED line 1: example.com CAA" in out
     assert api.writes() == []
+
+
+def test_dns_delete_plan_apply_and_rollback_hint(api, tmp_path, capsys):
+    api.records[Z1] = [
+        record(10, "ns.example.com", "A", "192.0.2.53"),
+        record(11, "ns.example.com", "AAAA", "2001:db8::53"),
+    ]
+    argv = ("dns", "delete", "example.com", "--name", "ns", "--type", "a")
+    code, out, _ = cca(capsys, *argv)
+    assert code == 0 and "DELETE ns.example.com A 192.0.2.53 ttl=1 proxied=false" in out
+    assert api.writes() == []
+    code, out, _ = cca(capsys, *argv, "--apply")
+    assert code == 0 and [w.method for w in api.writes()] == ["DELETE"]
+    assert "read-back OK: 1 change(s)" in out
+    [name] = snapshots(tmp_path)
+    assert (
+        f"roll back with: cca cloudflare dns restore-zone {tmp_path}/tmp/cloudflare/{name}" in out
+    )
+    assert [r["type"] for r in api.records[Z1]] == ["AAAA"]
+    code, _, err = cca(capsys, *argv)
+    assert code == 1 and "no A record ns.example.com" in err
+
+
+def test_dns_delete_several_matches(api, capsys):
+    api.records[Z1] = [
+        record(10, "example.com", "TXT", '"v=spf1 -all"'),
+        record(11, "example.com", "TXT", "google-site-verification=x"),
+    ]
+    argv = ("dns", "delete", "example.com", "--name", "@", "--type", "TXT")
+    code, out, err = cca(capsys, *argv, "--apply")
+    assert code == 1 and "2 records match: add --content C, or --all" in err
+    assert out.count("MATCH example.com TXT") == 2 and api.writes() == []
+    code, out, _ = cca(capsys, *argv, "--content", "v=spf1 -all", "--apply")  # quotes ignored
+    assert code == 0 and "DELETE example.com TXT" in out and len(api.writes()) == 1
+    assert [r["content"] for r in api.records[Z1]] == ["google-site-verification=x"]
+    code, _, err = cca(capsys, *argv, "--content", "nope")
+    assert code == 1 and "with that content" in err
+
+
+def test_dns_delete_partial_read_back_mismatch_names_the_rollback(api, tmp_path, capsys):
+    api.records[Z1] = [
+        record(10, "ns.example.com", "A", "192.0.2.53"),
+        record(11, "ns.example.com", "A", "192.0.2.54"),
+    ]
+    api.ignore_deletes = {hexid(11)}
+    argv = ("dns", "delete", "example.com", "--name", "ns", "--type", "A", "--all", "--apply")
+    code, _, err = cca(capsys, *argv)
+    assert code == 1 and "read-back does not match the write" in err
+    assert "DELETE ns.example.com A 192.0.2.54 ttl=1 proxied=false: the record still exists" in err
+    [name] = snapshots(tmp_path)
+    assert (
+        f"roll back with: cca cloudflare dns restore-zone {tmp_path}/tmp/cloudflare/{name}" in err
+    )
+
+
+@pytest.mark.parametrize("rtype", ["NS", "SOA"])
+def test_dns_delete_refuses_apex_ns_soa(api, capsys, rtype):
+    api.records[Z1] = [record(10, "example.com", "NS", "a.ns.example.net")]
+    code, _, err = cca(capsys, "dns", "delete", "example.com", "--name", "@", "--type", rtype)
+    assert code == 1 and "served by Cloudflare: not deletable" in err and api.writes() == []
 
 
 def test_restore_zone_domain_override_and_bad_input(api, tmp_path, capsys):
