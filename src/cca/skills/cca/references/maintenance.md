@@ -86,7 +86,9 @@ related work is scheduled as one intervention.
 5. Report one line per change (IDs, evidence, action; for a merge the surviving task and
    the refs, plan and acceptance criteria it keeps; for a rename `old → new` with every
    ID), wait for approval, then apply only with `backlog task edit` (`--add-ref`,
-   `--append-notes`, `--add-label`/`--remove-label`, `-s Done`) and `backlog task archive`.
+   `--append-notes`, `--add-label`/`--remove-label`, `-s Done`) and `backlog task archive`
+   (edit first: from backlog 1.54 an archived task keeps its ID and refs but is read-only
+   until `backlog task restore ID`; there is no `task complete`).
 6. Verify: one survivor per merged group, no lost refs or plans, closed tasks are Done,
    no alias of a normalized `area:` remains; report counts before and after and anything
    left unchanged because it was ambiguous.
