@@ -157,6 +157,11 @@ allowed is the job of the command validator, not of `cca curl`.
   delivered with `load-buffer` + `paste-buffer` (send-keys arguments are limited to
   about 16 KB and a lone `;` argument is a tmux command separator). Timeout: exit 124,
   the command keeps running, `--read --marker M` returns its output and status later.
+  One command per window: a last START marker without END in the pane refuses the next
+  call (exit 2, names the marker and the `--read --marker` hint); a per-user `flock`
+  (tmux session + server, in a 0700 dir under the temp dir) is held from that check
+  through window creation and paste until the START marker shows; a concurrent call
+  waits up to 10 s, then is refused (TASK-14).
 - ssh: own process group, killed with its children on timeout or local Ctrl-C.
 - Exit status: the remote command's; 124 timeout; 130/143/129/137 signal markers; 2
   usage/config/transport error.

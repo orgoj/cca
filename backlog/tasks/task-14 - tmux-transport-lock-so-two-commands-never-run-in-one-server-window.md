@@ -1,9 +1,11 @@
 ---
 id: TASK-14
 title: 'tmux transport: lock so two commands never run in one server window'
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@cca_dev'
 created_date: '2026-10-26 08:42'
+updated_date: '2026-10-26 08:47'
 labels:
   - executor
   - tmux
@@ -21,8 +23,14 @@ The tmux transport has no lock: a second cca run on the same server pastes its l
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 cca run over tmux refuses (distinct error, names the running marker and the --read hint) when the server's pane has a START marker without END, also after an earlier timeout
-- [ ] #2 Concurrent cca run calls on one server never both paste: the second waits briefly or is refused while the first holds the lock
-- [ ] #3 Concurrent first calls on a server without a window create exactly one window
-- [ ] #4 Tests with the real tmux test server cover busy pane, timed-out leftover and concurrency; docs in references/run.md and --help
+- [x] #1 cca run over tmux refuses (distinct error, names the running marker and the --read hint) when the server's pane has a START marker without END, also after an earlier timeout
+- [x] #2 Concurrent cca run calls on one server never both paste: the second waits briefly or is refused while the first holds the lock
+- [x] #3 Concurrent first calls on a server without a window create exactly one window
+- [x] #4 Tests with the real tmux test server cover busy pane, timed-out leftover and concurrency; docs in references/run.md and --help
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+tmux transport: running_marker() refuses a call while the pane's last START marker has no END (exit 2, names the marker and the --read --marker hint; covers timed-out commands). WindowLock: per-user flock (tmux session + server, 0700 dir cca-UID under the temp dir) held from the busy check through window creation and paste until the own START marker shows; a second caller waits up to LOCK_WAIT=10s, then is refused. cca run --session takes the same lock. Tests on the real tmux server: busy pane, timed-out leftover, concurrent first calls (one window, one refused; fails without the lock), lock wait. Docs: references/run.md, --help epilog, doc-1. tests/run-all.sh ALL PASSED, 877 pytest.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -48,9 +48,16 @@ usually dies on its next write (SIGPIPE); one that no longer writes keeps runnin
 check with `pgrep` before repeating it. Narrow the command (`head`, `grep`, `tail`).
 
 Timeout over tmux: the command keeps running in the window. The error names its marker;
-do not start another command on that server until it finished:
 `cca run --read --marker CCA_... SERVER` prints its output and exits with its status,
 or 124 while it still runs.
+
+One command per server window over tmux: while the pane shows a START marker without
+its END (a running or timed-out command), `cca run` on that server is refused (exit 2,
+`busy: command CCA_...`) and types nothing; wait and check it with the `--read --marker`
+line from the error. A local per-user lock covers the check, window creation and paste:
+a concurrent call on the same server waits up to 10 s, then is refused (`another cca run
+is starting a command`). A pane stuck for good: close its window in tmux, the next
+command opens a new one.
 
 With `[run.log]` every command is appended to `<dir>/<date>-<operator>.log` with likely
 secrets masked; the operator is `run.log.operator` or, when absent, the OS login name.

@@ -47,6 +47,10 @@ exit status: the remote command's; 124 timeout; 130/143/129/137 when the command
 interrupted, terminated, hung up or killed; 2 usage, config or transport error; 125 ssh
 output over 16 MiB (ssh killed, only its first 64 KiB printed).
 
+tmux: one command per server window; while an earlier one still runs (also after a
+timeout) the call is refused with exit 2 and the --read --marker line to check it; a
+concurrent call on the same server waits up to 10s for the window lock.
+
 examples:
   cca run -t server1 -- uptime
   cca run -t server1 <<'EOF'
@@ -356,7 +360,8 @@ def _session(cfg: config.Config, req: Request) -> int:
     if not servers:
         raise CcaError(f"{cfg.path}: no [servers] configured")
     for server in servers:
-        _, created = executor.window(cfg, server)
+        with executor.WindowLock(cfg, server):
+            _, created = executor.window(cfg, server)
         print(f"{server}\t{'opened' if created else 'open'}")
     print(f"attach: tmux attach -t ={name}")
     return 0

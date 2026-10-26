@@ -9,14 +9,16 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import types
 from pathlib import Path
 
 import pytest
 
-from cca import executor
+from cca import config, executor
 from cca.cli import main
+from cca.output import CcaError
 
 TMUX = shutil.which("tmux")
 SERVERS = (
@@ -632,6 +634,16 @@ def test_marker_block_typed_line_is_not_a_marker():
     assert not executor._end_re(M).search(line)
 
 
+def test_running_marker():
+    done = f"=== START {M} ===\nx\n=== END {M} EXITCODE=0 ===\n$ "
+    assert executor.running_marker("") is None
+    assert executor.running_marker(done) is None
+    assert executor.running_marker(done + "\n=== START CCA_3_4 ===\nrunning") == "CCA_3_4"
+    other_end = f"=== START {M} ===\n=== END CCA_9_9 EXITCODE=0 ===\n"
+    assert executor.running_marker(other_end) == M
+    assert executor.running_marker(executor._typed_line(M, "echo hi", None)) is None
+
+
 # --- tmux transport (real tmux on a private socket)
 
 
@@ -642,6 +654,7 @@ def tmux_env(env, monkeypatch):
     os.symlink(TMUX, env / "bin" / "tmux")
     sock = tempfile.mkdtemp(prefix="cca-tmux-")  # short: socket paths are length-limited
     monkeypatch.setenv("TMUX_TMPDIR", sock)
+    monkeypatch.setattr(tempfile, "tempdir", str(env))  # window locks in env/cca-UID
     monkeypatch.setattr(executor, "SSH_SETTLE", 0.5)
     monkeypatch.setattr(executor, "POLL", 0.05)
     project(env, run='transport = "tmux"\n[run.tmux]\nsession = "cca-test"\n')
@@ -780,3 +793,65 @@ def test_tmux_all(tmux_env, monkeypatch, capsys):
     assert cca(["--all", "--", "echo $CCA_TARGET"], monkeypatch) == 0
     out = capsys.readouterr().out
     assert out.index("admin@host1") < out.index("host2") < out.index("\nfail\n")
+
+
+def test_tmux_busy_pane_refused(tmux_env, monkeypatch, capsys):
+    """A START marker without END in the pane: nothing is typed into the window."""
+    assert cca(["-t", "server1", "--", "echo first"], monkeypatch) == 0
+    window_id = tmux_out("list-windows", "-t", "=cca-test", "-F", "#{window_id}").strip()
+    subprocess.run(
+        [TMUX, "send-keys", "-t", window_id, "echo '=== START CCA_5_6 ==='; cat", "Enter"],
+        check=True,
+    )
+    time.sleep(0.5)
+    capsys.readouterr()
+    assert cca(["-t", "server1", "--", "echo typed"], monkeypatch) == 2
+    err = capsys.readouterr().err
+    assert "busy: command CCA_5_6 still runs" in err
+    assert "cca run --read --marker CCA_5_6 server1" in err
+    assert "typed" not in tmux_out("capture-pane", "-p", "-t", window_id)
+
+
+def test_tmux_timed_out_leftover_refused_until_done(tmux_env, monkeypatch, capsys):
+    assert cca(["--timeout", "1", "-t", "server1", "--", "sleep 2; echo late"], monkeypatch) == 124
+    marker = capsys.readouterr().err.split("--marker ")[1].split()[0]
+    assert cca(["-t", "server1", "--", "echo next"], monkeypatch) == 2
+    assert f"busy: command {marker} still runs" in capsys.readouterr().err
+    time.sleep(2)
+    assert cca(["-t", "server1", "--", "echo next"], monkeypatch) == 0
+    assert capsys.readouterr().out == "next\n"
+
+
+def test_tmux_concurrent_first_calls(tmux_env, monkeypatch):
+    """Two calls on a server without a window: one window, one command, the other refused."""
+    cfg = config.require()
+    results: list = []
+
+    def call(command: str) -> None:
+        try:
+            results.append(executor.execute(cfg, "server1", command, timeout=10))
+        except CcaError as e:
+            results.append(str(e))
+
+    threads = [threading.Thread(target=call, args=(c,)) for c in ("sleep 2; echo a", "echo b")]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert tmux_out("list-windows", "-t", "=cca-test", "-F", "#{window_name}") == "server1\n"
+    assert len(ssh_calls(tmux_env)) == 1
+    done = [r for r in results if isinstance(r, executor.Result)]
+    refused = [r for r in results if isinstance(r, str)]
+    assert len(done) == 1 and len(refused) == 1, results
+    assert done[0].code == 0 and done[0].output in ("a\n", "b\n")
+    assert "busy: command CCA_" in refused[0]
+
+
+def test_tmux_lock_wait_then_refused(tmux_env, monkeypatch, capsys):
+    monkeypatch.setattr(executor, "LOCK_WAIT", 0.3)
+    with executor.WindowLock(config.require(), "server1"):
+        assert cca(["-t", "server1", "--", "echo x"], monkeypatch) == 2
+        assert "another cca run is starting a command" in capsys.readouterr().err
+        assert cca(["-t", "server2", "--", "echo y"], monkeypatch) == 0  # other server
+    assert cca(["-t", "server1", "--", "echo x"], monkeypatch) == 0
+    assert oct(os.stat(tmux_env / f"cca-{os.getuid()}").st_mode & 0o777) == "0o700"

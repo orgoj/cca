@@ -9,11 +9,14 @@ signal traps, exit codes) is the one of the former cca-tmux-cli and tmux_cli_pyt
 from __future__ import annotations
 
 import base64
+import hashlib
 import os
 import re
 import shlex
 import signal
+import stat
 import subprocess
+import tempfile
 import threading
 import time
 from dataclasses import dataclass
@@ -29,6 +32,7 @@ TMUX_INPUT_MAX = 64 * 1024  # bytes of stdin content sent through a tmux pane
 SSH_SETTLE = 2.0  # seconds a new tmux window gets for ssh to connect
 POLL = 0.2  # seconds between checks for the END marker
 TMUX_TIMEOUT = 30  # seconds for one tmux client call
+LOCK_WAIT = 10  # seconds a second caller waits for the window lock before it is refused
 OUTPUT_MAX = 16 * 1024 * 1024  # bytes of combined ssh output kept from one command
 OUTPUT_LIMIT_EXIT = 125  # exit status when the output limit stopped ssh
 OUTPUT_HEAD = 64 * 1024  # bytes of the start of the output kept when the limit stopped ssh
@@ -478,6 +482,9 @@ def _typed_line(marker: str, command: str, stdin: bytes | None) -> str:
     )
 
 
+_START_RE = re.compile(r"=== START (CCA_[0-9]+_[0-9]+) ===")
+
+
 def _end_re(marker: str) -> re.Pattern[str]:
     return re.compile(
         rf"=== END {re.escape(marker)} "
@@ -526,39 +533,118 @@ def block_output(body: list[str], complete: bool) -> str:
     return safe_output("".join(line + "\n" for line in body))
 
 
+def running_marker(text: str) -> str | None:
+    """The marker of the last START line in the pane text when its END is missing."""
+    lines = [line.rstrip() for line in text.splitlines()]
+    for i in range(len(lines) - 1, -1, -1):
+        m = _START_RE.fullmatch(lines[i])
+        if m:
+            end_re = _end_re(m.group(1))
+            if any(end_re.fullmatch(line) for line in lines[i + 1 :]):
+                return None
+            return m.group(1)
+    return None
+
+
+def _lock_dir() -> Path:
+    """A 0700 directory of this user under the temp dir for the window locks."""
+    path = Path(tempfile.gettempdir()) / f"cca-{os.getuid()}"
+    try:
+        path.mkdir(mode=0o700)
+    except FileExistsError:
+        pass
+    info = path.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+        raise CcaError(f"{path}: lock directory is not a private directory of this user")
+    return path
+
+
+class WindowLock:
+    """flock of one server window (tmux session + server) for this user.
+
+    Held from the busy check through window creation and paste until the pane shell
+    echoed the START marker, so a second caller never types into a running command.
+    A second caller waits up to LOCK_WAIT seconds, then is refused.
+    """
+
+    def __init__(self, cfg: Config, server: str):
+        key = hashlib.sha256(f"{session(cfg)}\0{server}".encode()).hexdigest()[:32]
+        self.path = _lock_dir() / f"tmux-{key}.lock"
+        self.server = server
+        self.fd: int | None = None
+
+    def __enter__(self) -> WindowLock:
+        import fcntl  # POSIX only, like the tmux transport
+
+        fd = os.open(self.path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        deadline = time.monotonic() + LOCK_WAIT
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    os.close(fd)
+                    raise CcaError(
+                        f"{self.server}: another cca run is starting a command in its tmux "
+                        f"window (lock held over {LOCK_WAIT}s); try again"
+                    ) from None
+                time.sleep(POLL)
+        self.fd = fd
+        return self
+
+    def release(self) -> None:
+        if self.fd is not None:
+            os.close(self.fd)  # closing the only descriptor drops the flock
+            self.fd = None
+
+    def __exit__(self, *exc: object) -> None:
+        self.release()
+
+
 def _tmux_execute(
     cfg: Config, server: str, target: str, command: str, timeout: float, stdin: bytes | None
 ) -> Result:
     if stdin is not None and len(stdin) > TMUX_INPUT_MAX:
         raise CcaError(f"stdin over {TMUX_INPUT_MAX} bytes cannot go through a tmux pane")
-    window_id, created = window(cfg, server)
-    if created:
-        time.sleep(SSH_SETTLE)
-    marker = f"CCA_{time.time_ns()}_{os.getpid()}"
-    buffer = f"cca-{marker}"
-    # paste-buffer writes straight to the pane (no key names, no argv size limit, no copy
-    # mode); its default separator turns the final newline into Enter
-    tmux(
-        "load-buffer",
-        "-b",
-        buffer,
-        "-",
-        input=(_typed_line(marker, command, stdin) + "\n").encode(),
-    )
-    tmux("paste-buffer", "-d", "-b", buffer, "-t", window_id)
-    end_re = _end_re(marker)
-    deadline = time.monotonic() + timeout
-    try:
-        while True:
-            if any(end_re.fullmatch(line.rstrip()) for line in capture(window_id).splitlines()):
-                break
-            if time.monotonic() >= deadline:
-                block = marker_block(capture(window_id, "-"), marker)
-                output = block_output(block[0], False) if block else ""
-                return Result(server, 124, output, marker, timed_out=True)
-            time.sleep(POLL)
-    except KeyboardInterrupt:
-        raise _InterruptedError(marker) from None
+    with WindowLock(cfg, server) as lock:
+        window_id, created = window(cfg, server)
+        if created:
+            time.sleep(SSH_SETTLE)
+        else:
+            busy = running_marker(capture(window_id, "-"))
+            if busy is not None:
+                raise CcaError(
+                    f"{server}: busy: command {busy} still runs in its tmux window (no END "
+                    f"marker); check it with: cca run --read --marker {busy} {server}"
+                )
+        marker = f"CCA_{time.time_ns()}_{os.getpid()}"
+        buffer = f"cca-{marker}"
+        # paste-buffer writes straight to the pane (no key names, no argv size limit, no
+        # copy mode); its default separator turns the final newline into Enter
+        tmux(
+            "load-buffer",
+            "-b",
+            buffer,
+            "-",
+            input=(_typed_line(marker, command, stdin) + "\n").encode(),
+        )
+        tmux("paste-buffer", "-d", "-b", buffer, "-t", window_id)
+        end_re = _end_re(marker)
+        deadline = time.monotonic() + timeout
+        try:
+            while True:
+                if lock.fd is not None and marker_block(capture(window_id, "-"), marker):
+                    lock.release()  # the pane shell read the line: the next one is refused
+                if any(end_re.fullmatch(line.rstrip()) for line in capture(window_id).splitlines()):
+                    break
+                if time.monotonic() >= deadline:
+                    block = marker_block(capture(window_id, "-"), marker)
+                    output = block_output(block[0], False) if block else ""
+                    return Result(server, 124, output, marker, timed_out=True)
+                time.sleep(POLL)
+        except KeyboardInterrupt:
+            raise _InterruptedError(marker) from None
     block = marker_block(capture(window_id, "-"), marker)
     if block is None or block[1] is None:
         raise CcaError(
