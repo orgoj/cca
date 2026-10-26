@@ -1,13 +1,12 @@
 ---
 id: TASK-5
 title: Release-check denylist covering all consumer projects
-status: In Progress
+status: Done
 assignee:
   - '@cca_dev'
 created_date: '2026-10-15 12:53'
-updated_date: '2026-10-26 08:02'
-labels:
-  - 'blocked:external'
+updated_date: '2026-10-26 08:20'
+labels: []
 dependencies:
   - TASK-1.5
   - TASK-4
@@ -24,13 +23,21 @@ The release check (CCA_DENYLIST) currently uses the denylist of one consumer pro
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Every consumer project using cca has a denylist covering its servers, domains and internal tool names
+- [x] #1 Every consumer project using cca has a denylist covering its servers, domains and internal tool names
 - [x] #2 README Release documents how the release check runs against all consumer denylists
-- [ ] #3 Release check passes against every consumer denylist
+- [x] #3 Release check passes against every consumer denylist
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
 Release check now takes CCA_DENYLIST=FILE:FILE:... (one denylist per consumer project, each stays in its project); tests/leak_scan.py loads every file, fails on a missing file, an empty entry or a file without patterns; release-check.sh validates the list before running. README Release documents it (AC #2). Format/content spec for the projects handed to the coordination agent. Waiting for the four project denylists (AC #1) and a release check against all of them (AC #3).
+
+All four consumer projects created their denylist (format spec handed out by the coordination agent). The first full scan found one real server name in two test files (replaced, dbc324b). Release check of v1.12.0 passed pre-tag and post-tag with CCA_DENYLIST listing all four. Commits are now guarded by githooks/pre-commit and commit-msg against the same list (git config cca.denylist).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Release check runs against every consumer denylist (FILE:FILE...); all four exist; v1.12.0 passed against all of them; commit hooks enforce the same list.
+<!-- SECTION:FINAL_SUMMARY:END -->
