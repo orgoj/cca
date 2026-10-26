@@ -21,7 +21,7 @@ step() {
     fi
 }
 
-step shellcheck shellcheck -S warning "$ROOT"/tests/*.sh
+step shellcheck shellcheck -S warning "$ROOT"/tests/*.sh "$ROOT"/githooks/*
 
 for t in "$ROOT"/tests/test-*.sh; do
     case "$(basename "$t")" in

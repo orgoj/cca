@@ -1,0 +1,15 @@
+#!/bin/bash
+# Leak check of the commit message against every consumer denylist (see pre-commit).
+
+set -u
+
+HERE=$(cd "$(dirname "$0")" && pwd)
+if ! DENY=$(git config --get cca.denylist); then
+    echo "commit-msg: no consumer denylists: git config cca.denylist FILE:FILE..." >&2
+    exit 1
+fi
+
+if ! grep -v '^#' "$1" | python3 -I "$HERE/../tests/leak_scan.py" "$DENY" --stdin; then
+    echo "commit-msg: denylisted name in the commit message (LEAK lines above)" >&2
+    exit 1
+fi

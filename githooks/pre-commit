@@ -1,0 +1,21 @@
+#!/bin/bash
+# Leak check of the staged change: added lines and added/renamed file names against every
+# consumer denylist. The list lives only in this clone's config, never in the repo:
+#   git config core.hooksPath githooks
+#   git config cca.denylist /path/a/cca-shared-denylist.txt:/path/b/cca-shared-denylist.txt
+
+set -u
+
+HERE=$(cd "$(dirname "$0")" && pwd)
+if ! DENY=$(git config --get cca.denylist); then
+    echo "pre-commit: no consumer denylists: git config cca.denylist FILE:FILE..." >&2
+    exit 1
+fi
+
+if ! {
+    git diff --cached --name-only --diff-filter=ACR
+    git diff --cached --no-color --no-ext-diff -U0 | grep '^+' | grep -v '^+++ '
+} | python3 -I "$HERE/../tests/leak_scan.py" "$DENY" --stdin; then
+    echo "pre-commit: denylisted name in the staged change (LEAK lines above); replace it" >&2
+    exit 1
+fi

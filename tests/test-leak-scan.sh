@@ -64,6 +64,31 @@ check 0 "tracked live link not followed" python3 -I "$SCAN" "$DENY" --repo "$TMP
 rm "$TMP/repo/a.txt"
 check 2 "tracked file missing from work tree" python3 -I "$SCAN" "$DENY" --repo "$TMP/repo" .
 
+# Git hooks: staged lines, file names and the message, denylists from git config
+H="$TMP/hooked"
+git init -q "$H"
+git -C "$H" config core.hooksPath "$ROOT/githooks"
+git -C "$H" config user.name Test
+git -C "$H" config user.email test@example.com
+echo "plain" >"$H/a.txt"
+git -C "$H" add a.txt
+check 1 "hook without cca.denylist refuses" git -C "$H" commit -q -m clean
+git -C "$H" config cca.denylist "$DENY:$TMP/deny-two.txt"
+check 0 "clean commit passes" git -C "$H" commit -q -m clean
+echo "host other-canary-1" >"$H/b.txt"
+git -C "$H" add b.txt
+check 1 "added line from the second list refused" git -C "$H" commit -q -m add
+git -C "$H" rm -q --cached b.txt
+rm "$H/b.txt"
+echo "x" >"$H/leak-canary-3.txt"
+git -C "$H" add leak-canary-3.txt
+check 1 "file name refused" git -C "$H" commit -q -m add
+git -C "$H" rm -q --cached leak-canary-3.txt
+echo "more" >>"$H/a.txt"
+git -C "$H" add a.txt
+check 1 "commit message refused" git -C "$H" commit -q -m "fix for leak-canary-4"
+check 0 "clean message passes" git -C "$H" commit -q -m "more text"
+
 # The release step fails closed without the consumer denylist (before running anything)
 check 1 "release check without CCA_DENYLIST" env -u CCA_DENYLIST "$ROOT/tests/release-check.sh" pre-tag
 check 1 "release check with a missing denylist" \

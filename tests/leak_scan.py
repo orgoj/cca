@@ -4,6 +4,7 @@
 Usage:
     tests/leak_scan.py DENYLIST --repo REPO [PATH...]   git-tracked files (under PATHs)
     tests/leak_scan.py DENYLIST --dir DIR               every file under DIR (built dists)
+    tests/leak_scan.py DENYLIST --stdin                 text on stdin (git hooks)
 
 DENYLIST: one file, or several joined by ':' (os.pathsep), one per consumer project; each
 holds one case-insensitive regex per line, '#' comments. Every file must exist and hold a
@@ -93,6 +94,16 @@ def content(path: Path) -> str:
 
 
 def main(argv: list[str]) -> int:
+    if len(argv) == 2 and argv[1] == "--stdin":
+        patterns = load_all(argv[0])
+        hits = [
+            f"stdin:{n}: {line.strip()[:100]}"
+            for n, line in enumerate(sys.stdin.read().splitlines(), 1)
+            if any(p.search(line) for p in patterns)
+        ]
+        for h in hits:
+            print(f"LEAK {h}")
+        return 1 if hits else 0
     if len(argv) < 3 or argv[1] not in ("--repo", "--dir"):
         die(__doc__)
     patterns = load_all(argv[0])

@@ -51,6 +51,10 @@ tag; tags never move; subcommands are not released one by one).
   this repo against a denylist the PROJECT supplies via
   `$CCA_DENYLIST` or its cwd. **The project denylist never lives here** — storing it would leak
   the very names it guards; `tests/fixtures/leak-denylist.txt` only exercises the mechanism.
+  Commit guard: `githooks/pre-commit` (staged lines, file names) and `githooks/commit-msg`
+  refuse a commit with a denylisted name. One-time per clone: `git config core.hooksPath
+  githooks` and `git config cca.denylist FILE:FILE...` (every consumer denylist; local
+  config, never committed). Never bypass them with `--no-verify`.
 - ⛔ **developing this tool never uses anything from consumer projects' production** — no servers,
   APIs, secrets, configs or server names, not even read-only or temporarily (no temp configs in
   `tmp/`). Live use belongs to the project's own agent. Verify with tests, fixtures and public
