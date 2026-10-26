@@ -4,9 +4,9 @@ Checks the current project directory and prints one line per check (`OK`, `WARN`
 `FAIL`); exits 1 when any check fails.
 
 Checks: `.cca.toml` found and valid, `sops` on PATH, the age key sops will use (below), the project directories
-`cca/guides` and `cca/incidents`, what `cca run` needs (servers configured,
-`run.transport`, `ssh` and with tmux also `tmux` on PATH and `run.tmux.session`, `tokf`
-when `run.tokf` is set), the `[run.log]` directory when logging is configured, the `backlog` CLI and the
+`cca/guides` and `cca/incidents`, what `cca run` needs when `[servers]` has entries
+(`run.transport`, `ssh` and with tmux also `tmux` on PATH and `run.tmux.session`, `tokf`
+when `run.tokf` is set; a project without servers skips these), the `[run.log]` directory when logging is configured, the `backlog` CLI and the
 project statuses `Note` and `Done` (used by `cca watchlist`),
 the `cca` skill links in `.claude/skills`, and that no old `cca-*` script or skill is
 installed: an agent skill dir or `PATH` dir that is an old CCA checkout's `bin/` or

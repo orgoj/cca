@@ -338,19 +338,32 @@ def test_doctor_run_checks_ready(ready, capsys):
 
 
 def test_doctor_run_checks_fail(ready, capsys):
-    (ready / ".cca.toml").write_text("schema_version = 1\n[run]\ntokf = true\n")
+    (ready / ".cca.toml").write_text("schema_version = 1\n[servers.server1]\n[run]\ntokf = true\n")
     (ready / "bin" / "ssh").unlink()
     (ready / "bin" / "tmux").unlink()
     assert main(["doctor"]) == 1
     out = capsys.readouterr().out
     for line in (
-        "WARN servers: none in [servers]",
         "FAIL ssh: not on PATH",
         "FAIL tmux: not on PATH",
         'FAIL run.tmux.session: not set (required with run.transport = "tmux")',
         "WARN tokf: not on PATH or no cca-v1 protocol support",
     ):
         assert line in out
+
+
+def test_doctor_without_servers_skips_run_checks(ready, capsys):
+    # a project without servers is valid: no ssh, tmux or session needed
+    (ready / ".cca.toml").write_text("schema_version = 1\n[run]\ntokf = true\n")
+    (ready / "bin" / "ssh").unlink()
+    (ready / "bin" / "tmux").unlink()
+    capsys.readouterr()
+    assert main(["doctor"]) == 0
+    out = capsys.readouterr().out
+    assert "FAIL" not in out and "WARN" not in out
+    assert "OK   servers: none in [servers] (cca run checks skipped)" in out
+    for check in ("run.transport", "ssh:", "tmux", "tokf"):
+        assert check not in out
 
 
 def test_doctor_run_checks_ssh_transport(ready, capsys):

@@ -141,14 +141,13 @@ def _check_age_key(report, cfg: config.Config | None) -> None:
 
 
 def _check_run(report, cfg: config.Config) -> None:
-    """What cca run and the commands using its executor need."""
+    """What cca run and the commands using its executor need; nothing without servers."""
     run_cfg = cfg.data["run"]
     servers = cfg.data["servers"]
-    report(
-        "OK" if servers else "WARN",
-        "servers",
-        f"{len(servers)} configured" if servers else "none in [servers] (cca run needs them)",
-    )
+    if not servers:  # a project without servers is valid, it just does not use cca run
+        report("OK", "servers", "none in [servers] (cca run checks skipped)")
+        return
+    report("OK", "servers", f"{len(servers)} configured")
     report("OK", "run.transport", run_cfg["transport"])
     ssh_path = shutil.which("ssh")
     report("OK" if ssh_path else "FAIL", "ssh", ssh_path or "not on PATH")
