@@ -1,10 +1,10 @@
 ---
 id: TASK-4
 title: One-time conversion of consumer projects to cca
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-15 12:21'
-updated_date: '2026-10-20 14:37'
+updated_date: '2026-10-26 07:18'
 labels:
   - 'blocked:external'
 dependencies:
@@ -22,6 +22,18 @@ Starts only after the complete cca CLI is finished, reviewed and approved by the
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Each consumer project has a valid .cca.toml and no remaining reference to an old cca-* command or legacy config input
-- [ ] #2 cca doctor passes in each consumer project
+- [x] #1 Each consumer project has a valid .cca.toml and no remaining reference to an old cca-* command or legacy config input
+- [x] #2 cca doctor passes in each consumer project
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+All consumer projects are converted (per the user the last project was the final one; its project agent confirmed via the coordination agent): valid .cca.toml, no legacy config inputs, no old cca-* references except history lines; cca doctor exit 0. Its only doctor WARN: shared user-level ~/bin links into the old bin/, removed with TASK-2 (doc-6 step 8).
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Every consumer project converted per doc-6; both criteria confirmed by the project agents (doctor exit 0). Legacy removal continues in TASK-2.
+<!-- SECTION:FINAL_SUMMARY:END -->
