@@ -1,7 +1,7 @@
 # CCA - Cyber-CLI Admin Toolkit
 
 Agent-agnostic toolkit: one Python command `cca <subcommand>` (installed with uv) and its
-skill `cca`; the old bash scripts and skills stay until every project is migrated.
+skill `cca`. The old `cca-*` scripts and skills are gone (TASK-2); history: tag `legacy-baseline`.
 
 ## Architecture
 
@@ -12,9 +12,6 @@ src/cca/       # unified `cca` Python CLI (uv project at repo root)
   skills/cca/  # the shipped skill: SKILL.md + references/<subcommand>.md
 tests/         # bash tests, pytest (tests/test_cca_*.py), fixtures
 backlog/       # Backlog.md tasks; docs/doc-1 design, doc-2 .cca.toml schema, doc-6 migration guide
-bin/           # legacy cca-* scripts (unchanged until TASK-2)
-lib/           # legacy shell helpers (cca-env.sh: legacy project config loader)
-skills/        # legacy skills (unchanged until TASK-2)
 ```
 
 ## Commands
@@ -27,16 +24,10 @@ Run test scripts directly (they are executable), never as `bash tests/...`; new 
 | `uv run pytest tests/test_cca_<name>.py` | Tests of one subcommand |
 | `uv run ruff check` / `uv run ruff format <file>` | Lint / format |
 | `tests/run-all.sh` | Run everything: shellcheck, bash tests, ruff, pytest, package checks |
-| `tests/test-legacy-baseline.sh` | bin/, lib/, root skills/ unchanged vs tag `legacy-baseline` (incl. untracked files) |
 | `tests/test-leak-scan.sh` | backlog/ and src/ against the fixture denylist; release check fails closed |
 | `tests/test-package.sh [DENYLIST]` | uv build, wheel/sdist content, install smoke into a temp uv tool dir, skill command scan |
 | `tests/release-check.sh pre-tag\|post-tag` | Release check with the consumer denylist (`CCA_DENYLIST`), see README "Release" |
 | `tests/test-shared-clean.sh` | Check repo has no project-specific names (run from project dir) |
-| `tests/test-run-on-server.sh` | legacy cca-run-on-server config loading, logging, --create-file (fake ssh/tmux) |
-| `tests/test-curl-secret.sh` | legacy cca-curl-secret with fake sops/curl |
-| `tests/test-command-safety.sh` | legacy command safety validation |
-| `tests/test-tmux-cli-script.sh` | legacy literal multiline script execution with fake tmux |
-| `tests/test-signal-handling.sh` | legacy cca-tmux-cli exit codes and Ctrl-C/SIGTERM markers (private tmux server, skips without tmux) |
 
 Install and release: README "Install" and "Release" (non-editable `uv tool install` from a
 tag; tags never move; subcommands are not released one by one).
@@ -56,8 +47,8 @@ tag; tags never move; subcommands are not released one by one).
   belong in the PROJECT `.cca.toml` (doc-2), secrets in its sops files. Examples in docs and
   `--help` use `server1`, `server2`, `example.com`, `203.0.113.x`. This applies to tests too — a
   test fixture is not an exception.
-  Guard: `tests/test-shared-clean.sh` (wraps `cca-check-shared-clean`, plus `tests/leak_scan.py`
-  for backlog/ and src/) scans this repo against a denylist the PROJECT supplies via
+  Guard: `tests/test-shared-clean.sh` (`tests/leak_scan.py` over every tracked file) scans
+  this repo against a denylist the PROJECT supplies via
   `$CCA_DENYLIST` or its cwd. **The project denylist never lives here** — storing it would leak
   the very names it guards; `tests/fixtures/leak-denylist.txt` only exercises the mechanism.
 - ⛔ **developing this tool never uses anything from consumer projects' production** — no servers,
@@ -66,9 +57,9 @@ tag; tags never move; subcommands are not released one by one).
   targets only. The only exception is the release check's `$CCA_DENYLIST` file.
 - config: `cca` reads settings only from one `.cca.toml` and secrets only from sops, never from
   environment variables; a new setting is a doc-2 schema change
-- legacy: `bin/`, `lib/` and root `skills/` stay byte-for-byte unchanged until TASK-2 (enforced
-  by `tests/test-legacy-baseline.sh`); consumer projects migrate by doc-6
-- naming: new skills use `cca-` prefix; never rename a shipped script or skill without explicit approval (project docs and reports reference them, e.g. `asn-wrap` stays unprefixed)
+- skills: the only shipped skill is `cca` (`src/cca/skills/cca/`); a new topic is a reference
+  there, not a new skill; never rename a subcommand without explicit approval (project docs
+  and reports reference them)
 - naming: user's explicit choice overrides conventions (e.g., `commit` not `committing`)
 - project tracking: dependent projects are documented only in each project's own
   `.claude/CLAUDE.md`; never list project names or paths in this shared repo
@@ -92,9 +83,6 @@ tag; tags never move; subcommands are not released one by one).
   "nothing to do" and hides the bug for months (`cca-watchlist`, `cca-diagnose-gather`,
   `cca-learn-analyzer` all had it).
 - `cca install skills` errors if the target directory doesn't exist (by design, won't auto-create)
-- ⛔ **Legacy config loading (`lib/cca-env.sh`, loader in `cca-tmux-cli`) is load-bearing** until
-  TASK-2: projects contain nested git repos that inherit the parent project's `.cca-env`, and config
-  files use CWD-relative paths. Never change the search walk, priority or stop condition.
 - `pipefail` + a reader that exits before EOF (`head`, `grep -q`, a test fake that ignores
   stdin) kills the writer with SIGPIPE (exit 141): a flaky failure only under load. Test
   fakes fed through a pipe must read stdin (`cat >/dev/null`); don't pipe into early-exit

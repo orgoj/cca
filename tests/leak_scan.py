@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Leak scan for the parts of this repo that bin/cca-check-shared-clean does not cover.
+"""Leak scan of this repo or a built dist against a project denylist.
 
 Usage:
-    tests/leak_scan.py DENYLIST --repo REPO PATH...   git-tracked files under PATHs
-    tests/leak_scan.py DENYLIST --dir DIR             every file under DIR (built dists)
+    tests/leak_scan.py DENYLIST --repo REPO [PATH...]   git-tracked files (under PATHs)
+    tests/leak_scan.py DENYLIST --dir DIR               every file under DIR (built dists)
 
-DENYLIST: one case-insensitive regex per line, '#' comments (same format as
-cca-check-shared-clean). Exit codes: 0 = clean, 1 = leak found, 2 = usage/runtime error.
+DENYLIST: one case-insensitive regex per line, '#' comments.
+Exit codes: 0 = clean, 1 = leak found, 2 = usage/runtime error.
 """
 
 import os

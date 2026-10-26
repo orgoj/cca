@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Run the whole CCA test suite: shellcheck, bash tests (incl. legacy baseline, leak scan,
-# package build + install smoke), ruff, pytest.
+# Run the whole CCA test suite: shellcheck, bash tests (leak scan, package build + install
+# smoke), ruff, pytest.
 # Usage: tests/run-all.sh   (exit 0 only when everything passes)
 
 set -u
@@ -21,15 +21,7 @@ step() {
     fi
 }
 
-shell_files=("$ROOT"/lib/*.sh "$ROOT"/tests/*.sh)
-for f in "$ROOT"/bin/*; do
-    # cca-tmux-cli is kept as-is until it is replaced by a dippy wrapper
-    [ "$(basename "$f")" = cca-tmux-cli ] && continue
-    if [ -f "$f" ] && head -n 1 "$f" | grep -q 'bash'; then
-        shell_files+=("$f")
-    fi
-done
-step shellcheck shellcheck -S warning "${shell_files[@]}"
+step shellcheck shellcheck -S warning "$ROOT"/tests/*.sh
 
 for t in "$ROOT"/tests/test-*.sh; do
     case "$(basename "$t")" in

@@ -99,9 +99,8 @@ tests/run-all.sh                 # shellcheck, bash tests, ruff, pytest, build +
 tests/test-shared-clean.sh       # run from a project directory that supplies the denylist
 ```
 
-`run-all.sh` also fails when `bin/`, `lib/` or `skills/` differ from the `legacy-baseline`
-tag, and scans `backlog/`, `src/` and the built wheel/sdist with the fixture denylist
-`tests/fixtures/leak-denylist.txt`.
+`run-all.sh` also scans `backlog/`, `src/` and the built wheel/sdist with the fixture
+denylist `tests/fixtures/leak-denylist.txt`.
 
 ## Release
 
@@ -124,58 +123,9 @@ Each project is converted once by hand following `backlog/docs/doc-6`: legacy co
 inputs → `.cca.toml` keys, old commands → `cca` subcommands, every old skill replaced by
 the packaged skill `cca` (doc-6 "Skills": its references cover the knowledge workflow,
 problem solving, discovery, logs and maintenance), removal of the legacy config files,
-and `cca doctor` without old CCA links. The old scripts and skills below are deleted
-only after every project is converted.
-
-## Legacy: `bin/`, `lib/`, `skills/`
-
-Still linked into projects that are not converted yet, so they stay byte-for-byte
-unchanged until they are removed. Their configuration is read by `lib/cca-env.sh` from
-the CWD up to the git root, closest first: `.cca-tmux-cli` > `.cca-env` > `.env`.
-
-| Script | Description |
-|--------|-------------|
-| `cca-install` | Symlink scripts and skills into place |
-| `cca-doctor` | Check the project's CCA setup (`--fix` removes broken skill links) |
-| `cca-tmux-cli` | Run commands in visible SSH sessions via tmux |
-| `cca-run-on-server` | Run a command or create a file on a server (tmux-cli or ssh backend) |
-| `cca-run-all` | Run a `cca-*` script against every configured server |
-| `cca-server-hostname` / `cca-server-info` / `cca-server-status` | Basic server facts |
-| `cca-diagnose-gather` | Gather diagnostics for troubleshooting |
-| `cca-check-domain` | Domain health checks (DNS, our IPs, hosting marker) |
-| `cca-watchlist` | Manage `watchlist.json` (agenda, ready, search, edits) |
-| `cca-hetrix` | HetrixTools monitoring status |
-| `asn-wrap` | ASN/IP lookup with compact `-s` output |
-| `cca-curl-secret` | curl with credentials from a SOPS file |
-| `cca-validate-args` | Reject shell metacharacters in arguments |
-| `cca-check-shared-clean` | Check this repo against a project-supplied denylist (stays) |
-
-| Skill | Purpose |
-|-------|---------|
-| `cca-core` | Mandatory entry point before any server work |
-| `cca-solving-problems` | Unified problem resolution, including security incidents |
-| `cca-asking` | Natural-language server questions |
-| `cca-diagnosing` | Context-aware troubleshooting |
-| `cca-server-discovery` | Discover services on an unknown server |
-| `cca-server-logs` | System and service log analysis |
-| `cca-watching` | Daily watchlist check |
-| `cca-managing-watchlist` | Edit the watchlist with `cca-watchlist` |
-| `cca-creating-incidents` | Create or update incident records |
-| `cca-saving-guides` | Save a solved issue as a guide |
-| `cca-optimizing-guides` | Monthly knowledge-base maintenance |
-| `cca-learning` | Integrate session learnings into the knowledge base |
-| `cca-searching` | Full-text search of guides and incidents |
-| `cca-researching-web` | Web research: docs, bugs, CVEs |
-| `cca-hetrix-monitoring` | HetrixTools monitoring and outages |
-| `cca-tmux-cli` | `cca-tmux-cli` usage |
-| `cca-setting-up` | Initial CCA setup in a project |
-| `cca-migrating` | Migrate CCA between repositories |
-| `cca-creating-skills` | Create new CCA skills |
-
-Install (targets must already exist; links point back into this repo):
-`./bin/cca-install bin ~/bin`, `./bin/cca-install skills`. Dependencies: bash, Python
-3.10+, tmux, yq (mikefarah v4), sops, jq, asn,
-[tantivy2agents](https://github.com/orgoj/tantivy2agents) for search.
+and `cca doctor` without old CCA links. Every project is converted; the old `cca-*`
+scripts, their config loader and the old skills are removed (last state: tag
+`legacy-baseline`). doc-6 maps each old command to its `cca` successor.
 
 ## License
 

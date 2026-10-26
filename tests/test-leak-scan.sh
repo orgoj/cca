@@ -1,6 +1,6 @@
 #!/bin/bash
-# Leak scan of backlog/ and src/ (not covered by bin/cca-check-shared-clean) with the
-# repository fixture denylist, plus a self-test that a planted name is caught.
+# Leak scan of backlog/ and src/ with the repository fixture denylist, plus a self-test
+# that a planted name is caught.
 # The consumer denylist runs in tests/test-shared-clean.sh and tests/release-check.sh.
 
 set -u

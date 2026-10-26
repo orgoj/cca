@@ -23,7 +23,7 @@ WHEEL_REQUIRED = [
     "cca/skills/cca/SKILL.md",
 ]
 SDIST_TOP_FILES = {"pyproject.toml", "README.md", "PKG-INFO", ".gitignore"}
-# old scripts (bin/ at legacy-baseline) and the removed experiment; ".cca-skills" is
+# old scripts (removed; tag legacy-baseline) and the removed experiment; ".cca-skills" is
 # a file name, not a command, hence the lookbehind
 LEGACY_RE = re.compile(r"(?<![\w.-])(cca-[a-z][a-z0-9-]*|asn-wrap|tmux-cli-python|tmux_cli_python)")
 CCA_CALL_RE = re.compile(r"(?<![\w.-])cca[ \t]+([a-z-][\w-]*)")

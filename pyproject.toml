@@ -41,8 +41,6 @@ addopts = "-v --tb=short"
 target-version = "py311"
 line-length = 100
 src = ["src", "tests"]
-# Tests of the legacy bin/ scripts; they go away with their ports
-extend-exclude = ["tests/test_asn_wrap.py", "tests/test_watchlist.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
