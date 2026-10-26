@@ -1514,6 +1514,8 @@ def test_waf_rule_selectors(api, capsys):
     assert code == 0 and "#2" in out
     code, _, err = cca(capsys, *base, "same")
     assert code == 1 and "matches several rules" in err
+    code, _, err = cca(capsys, *base, "missing")
+    assert code == 1 and "--rule: no rule with description 'missing'" in err
     code, _, err = cca(capsys, *base, "4")
     assert code == 1 and "out of range 1-3" in err
     code, _, err = cca(capsys, *base, "3", "--apply")
@@ -1545,7 +1547,19 @@ def test_waf_edit_keeps_fields_and_verifies(api, tmp_path, capsys):
     assert code == 0 and "read-back OK: #1" in out
     body = json.loads(api.writes()[0].content)
     assert body["action_parameters"] == {"ruleset": "current"} and body["enabled"] is False
+    assert body["logging"] == {"enabled": False} and body["action"] == "skip"
     assert not {"id", "version", "last_updated", "ref"} & set(body)
+
+
+def test_waf_edit_drops_nulls_and_keeps_ref(api, capsys):
+    params = {"ruleset": "current", "products": None, "phases": None}
+    waf(api, rule(1, "a", action="skip", action_parameters=params, ref=hexid(1)))
+    code, _, _ = cca(
+        capsys, "waf", "edit", "example.com", "--rule", hexid(1), "--description", "b", "--apply"
+    )
+    assert code == 0
+    body = json.loads(api.writes()[0].content)
+    assert body["action_parameters"] == {"ruleset": "current"} and body["ref"] == hexid(1)
 
 
 def test_waf_edit_nothing_to_change(api, capsys):
@@ -1569,7 +1583,9 @@ def test_waf_move(api, capsys):
         capsys, "waf", "move", "example.com", "--rule", hexid(3), "--after", hexid(1), "--apply"
     )
     assert code == 0 and "read-back OK: #2" in out
-    assert json.loads(api.writes()[0].content)["position"] == {"after": hexid(1)}
+    body = json.loads(api.writes()[0].content)
+    assert body["position"] == {"after": hexid(1)}
+    assert body["expression"] == rule(3, "c")["expression"]  # the full rule, not only position
     assert [r["description"] for r in api.phases[(Z1, WAF)]["rules"]] == ["a", "c", "b"]
 
 
@@ -1581,6 +1597,19 @@ def test_waf_read_back_mismatch_exit_1(api, capsys):
     )
     assert code == 1 and "read-back does not match the write" in err
     assert f"expected right before {hexid(1)} (#1), is #2" in err
+    code, _, err = cca(capsys, *ADD, "--before", hexid(1), "--apply")
+    assert code == 1 and "read-back does not match the write" in err
+
+
+def test_waf_add_rate_limited_read_exit_1(api, capsys):
+    waf(api, rule(1, "a"))
+    path = f"/zones/{Z1}/rulesets/phases/{WAF}/entrypoint"
+    api.errors[("GET", path)] = (
+        429,
+        {"success": False, "messages": [], "errors": [{"code": 971, "message": "rate limited"}]},
+    )
+    code, _, err = cca(capsys, *ADD, "--apply")
+    assert code == 1 and "cannot read rules of phase" in err and api.writes() == []
 
 
 def test_waf_write_rejected_exit_1(api, capsys):
