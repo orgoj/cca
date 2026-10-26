@@ -180,7 +180,7 @@ CLOUDFLARE = (
 def test_confirmed_on_our_address(env, capsys):
     _dns, web, directory = env
     write_config(directory, ["127.0.0.1"])
-    web.route(f"https://site.test/{MARKER}", body=b"web1\n")
+    web.route(f"https://site.test/{MARKER}", body=b"server1\n")
     code, out, err = run(capsys, "Site.Test.")
     assert code == 0
     assert out.splitlines() == [
@@ -191,7 +191,7 @@ def test_confirmed_on_our_address(env, capsys):
         "Redirects from http://site.test/:",
         "  301 http://site.test/ -> https://site.test/ [HTTP->HTTPS]",
         "  200 https://site.test/",
-        "Result: CONFIRMED (served by web1)",
+        "Result: CONFIRMED (served by server1)",
     ]
     assert err == ""
     assert not any(host == "rdap.test" for _s, host, _p in web.requests)
@@ -201,7 +201,7 @@ def test_foreign_address_owner_and_cdn(env, capsys):
     _dns, web, directory = env
     write_config(directory, ["192.0.2.1"])
     web.route("https://rdap.test/rdap/ip/127.0.0.1", body=CLOUDFLARE)
-    web.route(f"https://site.test/{MARKER}", body=b"web1")
+    web.route(f"https://site.test/{MARKER}", body=b"server1")
     code, out, _err = run(capsys, "site.test")
     assert code == 0
     assert "A: 127.0.0.1 - owner: CLOUDFLARENET (Cloudflare, Inc.) - CDN Cloudflare" in out
@@ -212,7 +212,7 @@ def test_rdap_failures_are_informational(env, capsys):
     write_config(directory, [])
     dns_server.records["site.test."] = [("A", "127.0.0.1"), ("AAAA", "::1")]
     web.route("https://rdap.test/rdap/ip/127.0.0.1", 302, Location="http://rdap.test/x")
-    web.route(f"https://site.test/{MARKER}", body=b"web1")
+    web.route(f"https://site.test/{MARKER}", body=b"server1")
     code, out, err = run(capsys, "site.test")
     assert code == 0
     assert "A: 127.0.0.1 - owner: unknown (RDAP redirect to non-HTTPS http://rdap.test/x)" in out
@@ -245,7 +245,7 @@ def test_marker_redirect_to_other_host_fails(env, capsys):
     _dns, web, directory = env
     write_config(directory, ["127.0.0.1"])
     web.route(f"https://site.test/{MARKER}", 302, Location=f"https://other.test/{MARKER}")
-    web.route(f"https://other.test/{MARKER}", body=b"web1")
+    web.route(f"https://other.test/{MARKER}", body=b"server1")
     code, out, _err = run(capsys, "site.test")
     assert code == 1
     assert out.endswith(
@@ -278,7 +278,7 @@ def test_marker_invalid(env, capsys, status, body, reason):
 def test_invalid_certificate_is_reported(env, capsys):
     _dns, web, directory = env
     write_config(directory, ["127.0.0.1"])
-    web.route(f"https://v6.test/{MARKER}", body=b"web1")
+    web.route(f"https://v6.test/{MARKER}", body=b"server1")
     web.route("http://v6.test/", 301, Location="https://v6.test/")
     web.route("https://v6.test/", body=b"home")
     code, out, _err = run(capsys, "v6.test")

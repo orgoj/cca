@@ -94,7 +94,7 @@ def put_ok(env: Path, ssh: str = "host1") -> None:
 FINDING = {
     "id": "abc123",
     "module": "php_logs",
-    "container": "web1",
+    "container": "container1",
     "path": "",
     "line": 8,
     "detail": "Allowed memory size exhausted",
@@ -261,7 +261,7 @@ def test_show_lists_findings(env, capsys):
     out = capsys.readouterr().out
     assert out.startswith("quick ")
     assert "\x1b" not in out and "x\\x1b[2Jy" in out
-    assert "  abc123  php_logs  container=web1  path=  new  " in out
+    assert "  abc123  php_logs  container=container1  path=  new  " in out
 
 
 def test_show_finding_file_window(env, capsys):
@@ -398,12 +398,12 @@ def test_show_container_path_after_restart(env, capsys, pid):
 
 def test_show_lists_uncovered_reasons(env, capsys):
     project(env)
-    modules = {"files": {"status": "uncovered", "uncovered": ["web1: chybi index"]}}
+    modules = {"files": {"status": "uncovered", "uncovered": ["container1: chybi index"]}}
     put(env, "host1", "quick", state())
     put(env, "host1", "deep", state(modules=modules))
     assert main(["ioc", "show", "server1"]) == 0
     assert "deep " in (out := capsys.readouterr().out)
-    assert "\n  uncovered files: web1: chybi index\n" in out
+    assert "\n  uncovered files: container1: chybi index\n" in out
 
 
 @pytest.mark.parametrize(("age_h", "warned"), [(0, True), (5, False)])
@@ -440,7 +440,7 @@ def test_baseline_saves_stdout_only(env, capsys):
     write_exe(
         env / "rbin" / "host-ioc",
         '#!/bin/sh\n[ "$1" = baseline ] || exit 97\necho "warning: slow" >&2\n'
-        'printf "containers:\\n  web1:\\n    cron: []\\n"\n',
+        'printf "containers:\\n  container1:\\n    cron: []\\n"\n',
     )
     assert main(["ioc", "baseline", "server1"]) == 0
     captured = capsys.readouterr()
@@ -448,7 +448,7 @@ def test_baseline_saves_stdout_only(env, capsys):
     saved = Path(captured.out.strip())
     assert saved.parent == env / "work" / "tmp" / "host-ioc"
     assert saved.name.startswith("server1+") and saved.suffix == ".yaml"
-    assert saved.read_text() == "containers:\n  web1:\n    cron: []\n"
+    assert saved.read_text() == "containers:\n  container1:\n    cron: []\n"
 
 
 def test_baseline_failure_writes_nothing(env, capsys):
