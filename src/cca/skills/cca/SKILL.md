@@ -14,6 +14,7 @@ what.
 |---|---|---|
 | `cca asn` | look up IP addresses: ASN, RPKI, organization, country, datacenter/proxy/VPN flags, PTR | [asn](references/asn.md) |
 | `cca check-domain` | check whether a domain points to our hosting: DNS, address owner, hosting marker, redirects | [check-domain](references/check-domain.md) |
+| `cca checkouts` | compare local checkouts of one shared repository before or after a sync: HEADs, commits each lacks, uncommitted changes (read-only) | [checkouts](references/checkouts.md) |
 | `cca clean` | delete old work files from the project's tmp/ (plan by default, unfinished work and rollback snapshots stay) | [clean](references/clean.md) |
 | `cca cloudflare` | read and change Cloudflare zones: DNS, WAF rules, audit, events, traffic, exports | [cloudflare](references/cloudflare.md) |
 | `cca config show` | see which `.cca.toml` is used and its values with defaults | [config](references/config.md) |
