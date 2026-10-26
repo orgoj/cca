@@ -5,8 +5,9 @@ Usage:
     tests/leak_scan.py DENYLIST --repo REPO [PATH...]   git-tracked files (under PATHs)
     tests/leak_scan.py DENYLIST --dir DIR               every file under DIR (built dists)
 
-DENYLIST: one case-insensitive regex per line, '#' comments.
-Exit codes: 0 = clean, 1 = leak found, 2 = usage/runtime error.
+DENYLIST: one file, or several joined by ':' (os.pathsep), one per consumer project; each
+holds one case-insensitive regex per line, '#' comments. Every file must exist and hold a
+pattern. Exit codes: 0 = clean, 1 = leak found, 2 = usage/runtime error.
 """
 
 import os
@@ -20,6 +21,14 @@ from pathlib import Path
 def die(message: str):
     print(f"ERROR: {message}", file=sys.stderr)
     sys.exit(2)
+
+
+def load_all(denylists: str) -> list[re.Pattern]:
+    """Patterns of every file in a pathsep-joined list; an empty entry is an error."""
+    paths = denylists.split(os.pathsep)
+    if not all(paths):
+        die(f"empty entry in denylist list '{denylists}'")
+    return [p for path in paths for p in load_patterns(Path(path))]
 
 
 def load_patterns(denylist: Path) -> list[re.Pattern]:
@@ -86,7 +95,7 @@ def content(path: Path) -> str:
 def main(argv: list[str]) -> int:
     if len(argv) < 3 or argv[1] not in ("--repo", "--dir"):
         die(__doc__)
-    patterns = load_patterns(Path(argv[0]))
+    patterns = load_all(argv[0])
     base = Path(argv[2]).resolve()
     files = tracked(base, argv[3:] or ["."]) if argv[1] == "--repo" else walk(base)
     hits = []

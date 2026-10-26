@@ -35,6 +35,17 @@ echo "host leak-canary-$$ here" >"$TMP/dist/pkg/b.txt"
 check 1 "planted name caught" python3 -I "$SCAN" "$DENY" --dir "$TMP/dist"
 check 2 "missing denylist fails" python3 -I "$SCAN" "$TMP/missing.txt" --dir "$TMP/dist"
 
+# Several denylists (one per consumer project): each one is applied
+mkdir -p "$TMP/multi"
+echo "server of project two: other-canary-$$" >"$TMP/multi/c.txt"
+printf '# project two\nother-canary-[0-9]+\n' >"$TMP/deny-two.txt"
+check 0 "first list alone misses it" python3 -I "$SCAN" "$DENY" --dir "$TMP/multi"
+check 1 "second list in FILE:FILE caught" python3 -I "$SCAN" "$DENY:$TMP/deny-two.txt" --dir "$TMP/multi"
+check 2 "missing file in the list fails" python3 -I "$SCAN" "$DENY:$TMP/missing.txt" --dir "$TMP/multi"
+check 2 "empty entry in the list fails" python3 -I "$SCAN" "$DENY::$TMP/deny-two.txt" --dir "$TMP/multi"
+echo "# comments only" >"$TMP/deny-empty.txt"
+check 2 "list file without patterns fails" python3 -I "$SCAN" "$DENY:$TMP/deny-empty.txt" --dir "$TMP/multi"
+
 # Symlinks: link text is scanned, the target never read
 mkdir -p "$TMP/outside" "$TMP/links/sub"
 echo "leak-canary-1 outside" >"$TMP/outside/file"
@@ -57,5 +68,9 @@ check 2 "tracked file missing from work tree" python3 -I "$SCAN" "$DENY" --repo 
 check 1 "release check without CCA_DENYLIST" env -u CCA_DENYLIST "$ROOT/tests/release-check.sh" pre-tag
 check 1 "release check with a missing denylist" \
     env CCA_DENYLIST="$TMP/missing.txt" "$ROOT/tests/release-check.sh" pre-tag
+check 1 "release check with one missing denylist in the list" \
+    env CCA_DENYLIST="$DENY:$TMP/missing.txt" "$ROOT/tests/release-check.sh" pre-tag
+check 1 "release check with an empty list entry" \
+    env CCA_DENYLIST="$DENY:" "$ROOT/tests/release-check.sh" pre-tag
 
 exit $FAIL

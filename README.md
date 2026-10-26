@@ -107,13 +107,16 @@ denylist `tests/fixtures/leak-denylist.txt`.
 Subcommands are not released one by one. Tags are `v<version>` and are never moved.
 
 1. Bump `version` in `pyproject.toml`, commit.
-2. Pre-tag check (needs the consumer project's denylist, fails without it):
-   `CCA_DENYLIST=/path/to/denylist tests/release-check.sh pre-tag`
-   (clean work tree, tag not yet present, `run-all.sh`, shared-clean and package checks
-   with that denylist).
+2. Pre-tag check against the denylists of ALL consumer projects, joined by `:` (fails
+   without them, or when one is missing, empty or has no pattern):
+   `CCA_DENYLIST=/path/a/cca-shared-denylist.txt:/path/b/cca-shared-denylist.txt tests/release-check.sh pre-tag`
+   (clean work tree, tag not yet present, `run-all.sh`, shared-clean over every tracked
+   file and the package checks with every denylist). Each denylist stays in its project
+   (one case-insensitive regex per line, `#` comments: its servers, domains, internal
+   tool and client names); never copy one into this repo.
 3. Tag: `git tag -a vX.Y.Z -m "cca X.Y.Z"`.
-4. Post-tag check: `CCA_DENYLIST=/path/to/denylist tests/release-check.sh post-tag`
-   (the tag equals the package version and points at HEAD).
+4. Post-tag check: the same command with `post-tag` (the tag equals the package version
+   and points at HEAD).
 5. Install: `uv tool install --reinstall "cca @ git+file:///path/to/cca-clone@vX.Y.Z"`,
    then `cca --version`.
 

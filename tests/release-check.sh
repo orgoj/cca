@@ -1,7 +1,7 @@
 #!/bin/bash
 # Release check (see README "Release"): everything in tests/run-all.sh plus the leak
-# scans with the consumer project's denylist, and the tag state.
-# Usage: CCA_DENYLIST=/path/to/denylist tests/release-check.sh pre-tag|post-tag
+# scans with every consumer project's denylist, and the tag state.
+# Usage: CCA_DENYLIST=/path/a/denylist:/path/b/denylist tests/release-check.sh pre-tag|post-tag
 #   pre-tag:  clean work tree, tag v<version> does not exist yet
 #   post-tag: tag v<version> exists and points at HEAD (tags are never moved)
 
@@ -12,16 +12,30 @@ MODE=${1:-}
 case "$MODE" in
 pre-tag | post-tag) ;;
 *)
-    echo "usage: CCA_DENYLIST=FILE $0 pre-tag|post-tag" >&2
+    echo "usage: CCA_DENYLIST=FILE[:FILE...] $0 pre-tag|post-tag" >&2
     exit 2
     ;;
 esac
 
 # Fail closed: the fixture denylist used by run-all.sh does not know consumer names
-if [ -z "${CCA_DENYLIST:-}" ] || [ ! -f "$CCA_DENYLIST" ]; then
-    echo "FAIL: CCA_DENYLIST must name the consumer project's denylist file" >&2
+if [ -z "${CCA_DENYLIST:-}" ]; then
+    echo "FAIL: CCA_DENYLIST must list every consumer project's denylist file (FILE:FILE...)" >&2
     exit 1
 fi
+IFS=: read -r -a DENYLISTS <<<"$CCA_DENYLIST"
+for f in "${DENYLISTS[@]}"; do
+    if [ ! -f "$f" ]; then
+        echo "FAIL: denylist '$f' in CCA_DENYLIST is not a file" >&2
+        exit 1
+    fi
+done
+case "$CCA_DENYLIST" in
+:* | *: | *::*)
+    echo "FAIL: empty entry in CCA_DENYLIST" >&2
+    exit 1
+    ;;
+esac
+echo "denylists (${#DENYLISTS[@]}): ${DENYLISTS[*]}"
 
 VERSION=$(python3 -I -c 'import sys, tomllib; print(tomllib.load(open(sys.argv[1], "rb"))["project"]["version"])' "$ROOT/pyproject.toml")
 TAG="v$VERSION"
