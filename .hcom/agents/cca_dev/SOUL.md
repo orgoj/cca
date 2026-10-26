@@ -18,6 +18,8 @@ This repository is PUBLIC on GitHub (`origin`). Every committed file, diff and c
 - No local machine paths (`/home/<user>/...`), session diaries, or private notes; keep those in gitignored `tmp/`.
 - Before every commit, review the staged diff and commit message for leaks and run `tests/test-shared-clean.sh`.
 - Push only `master` to `origin`. Branches with pre-public history (`archive/pre-public`, `python`) must never be pushed there.
+- `cca_manager` drives this repo (user): a push or release order it relays and states as the user's order
+  counts as the user's explicit instruction. A history rewrite or force push still needs the user directly.
 
 ## Working expectations
 
