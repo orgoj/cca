@@ -13,6 +13,9 @@ allow tests/release-check.sh pre-tag|
 allow tests/release-check.sh post-tag|
 allow uv tool list|
 
+allow rm tmp/*+
+allow rm -r tmp/*+
+
 # cca itself: local subcommands only. run/server reach real hosts, and this
 # repository never touches consumer production (AGENTS.md).
 allow cca *
