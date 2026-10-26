@@ -46,4 +46,5 @@ Every remote call is in the `[run.log]` command log as `ioc status|show|baseline
 Values from a host are untrusted: shown escaped, `pid`/`path` validated before use.
 
 Exit 0 nothing to report; 1 findings; 2 a warning, a host error (status goes on with the
-next host), usage or config error.
+next host), usage or config error. A host whose ssh output passes 16 MiB is a host
+error: ssh is killed and nothing it sent is used.

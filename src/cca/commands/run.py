@@ -44,7 +44,8 @@ options (only before SERVER or --):
   --session            tmux only: open missing ssh windows (all servers by default)
 
 exit status: the remote command's; 124 timeout; 130/143/129/137 when the command was
-interrupted, terminated, hung up or killed; 2 usage, config or transport error.
+interrupted, terminated, hung up or killed; 2 usage, config or transport error; 125 ssh
+output over 16 MiB (ssh killed, output discarded).
 
 examples:
   cca run -t server1 -- uptime

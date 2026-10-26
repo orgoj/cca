@@ -29,7 +29,8 @@ sections:
 A section whose command fails gets exit="N" on its tag; the other sections still run.
 --timeout is the total time for one server.
 
-exit status: 0 all sections ran; 124 timeout; 255 ssh failed; 2 usage or config error.
+exit status: 0 all sections ran; 124 timeout; 255 ssh failed; 125 output over 16 MiB
+(ssh killed, report stopped); 2 usage or config error.
 With --all the servers run in config order and the first non-zero exit stops it.
 
 examples:

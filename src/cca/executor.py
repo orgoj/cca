@@ -14,6 +14,7 @@ import re
 import shlex
 import signal
 import subprocess
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -28,6 +29,10 @@ TMUX_INPUT_MAX = 64 * 1024  # bytes of stdin content sent through a tmux pane
 SSH_SETTLE = 2.0  # seconds a new tmux window gets for ssh to connect
 POLL = 0.2  # seconds between checks for the END marker
 TMUX_TIMEOUT = 30  # seconds for one tmux client call
+OUTPUT_MAX = 16 * 1024 * 1024  # bytes of combined ssh output kept from one command
+OUTPUT_LIMIT_EXIT = 125  # exit status when the output limit stopped ssh
+READ_CHUNK = 64 * 1024
+STOP_GRACE = 5  # seconds to drain the output pipe after ssh was killed
 
 SIGNAL_EXIT_CODES = {"INTERRUPTED": 130, "TERMINATED": 143, "HANGUP": 129, "KILLED": 137}
 MARKER_RE = re.compile(r"CCA_[0-9]+_[0-9]+")
@@ -224,6 +229,13 @@ def execute(
             f"(check later: cca run --read --marker {e.marker} {server})",
             130,
         ) from None
+    except _OutputLimitError:
+        _log(log_target, server, text, "output-limit")
+        raise CcaError(
+            f"{server}: output exceeded {_size(OUTPUT_MAX)}, ssh stopped and "
+            "the output discarded; the command may still run (narrow it: head, grep, tail)",
+            OUTPUT_LIMIT_EXIT,
+        ) from None
     _log(log_target, server, text, "timeout" if result.timed_out else str(result.code))
     return result
 
@@ -276,9 +288,19 @@ def _stop(proc: subprocess.Popen) -> None:
         pass
 
 
+class _OutputLimitError(Exception):
+    pass
+
+
+def _size(n: int) -> str:
+    return f"{n // (1024 * 1024)} MiB" if n % (1024 * 1024) == 0 else f"{n} bytes"
+
+
 def _ssh_execute(
     server: str, target: str, command: str, timeout: float, stdin: bytes | None
 ) -> Result:
+    """Output is read as it arrives; past OUTPUT_MAX bytes ssh is killed, so a hostile
+    remote shell cannot exhaust local memory before the timeout."""
     argv = ssh.argv(target, remote_command(command, stdin is not None))
     try:
         proc = subprocess.Popen(
@@ -290,17 +312,56 @@ def _ssh_execute(
         )
     except OSError as e:
         raise CcaError(f"cannot run ssh: {e.strerror}") from None
+    chunks: list[bytes] = []
+    overflow = threading.Event()
+
+    def read() -> None:
+        size = 0
+        try:
+            while chunk := proc.stdout.read1(READ_CHUNK):
+                size += len(chunk)
+                if size > OUTPUT_MAX:
+                    overflow.set()
+                    _stop(proc)
+                    return
+                chunks.append(chunk)
+        except (OSError, ValueError):  # the pipe was closed after a timeout
+            pass
+
+    def write() -> None:
+        try:
+            proc.stdin.write(stdin)
+            proc.stdin.close()
+        except OSError:  # the remote side stopped reading
+            pass
+
+    threads = [threading.Thread(target=read, daemon=True)]
+    if stdin is not None:
+        threads.append(threading.Thread(target=write, daemon=True))
+    deadline = time.monotonic() + timeout
     try:
-        out, _ = proc.communicate(stdin, timeout=timeout)
+        for thread in threads:
+            thread.start()
+        proc.wait(timeout=timeout)
+        threads[0].join(max(0.0, deadline - time.monotonic()))  # EOF: children exited too
+        if threads[0].is_alive():
+            raise subprocess.TimeoutExpired(argv, timeout)
     except subprocess.TimeoutExpired:
         _stop(proc)
-        out, _ = proc.communicate()
-        return Result(server, 124, safe_output(out), timed_out=True)
+        proc.wait()
+        threads[0].join(STOP_GRACE)  # a child outside the group may hold the pipe open
+        if overflow.is_set():
+            raise _OutputLimitError() from None
+        return Result(server, 124, safe_output(b"".join(chunks)), timed_out=True)
     except BaseException:
         _stop(proc)
         proc.wait()
         raise
-    return Result(server, proc.returncode, safe_output(out))
+    finally:
+        proc.stdout.close()
+    if overflow.is_set():
+        raise _OutputLimitError()
+    return Result(server, proc.returncode, safe_output(b"".join(chunks)))
 
 
 # --- tmux transport
