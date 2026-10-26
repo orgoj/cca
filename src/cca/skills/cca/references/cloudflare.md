@@ -64,6 +64,19 @@ DNS writes:
   NS at the apex are refused (exit 1). `--apply`: snapshot, delete, read-back (records
   gone), then `roll back with: cca cloudflare dns restore-zone <snapshot>`. Check the
   domain file for the record's purpose first.
+- `zone aop list [--name S] [--verbose]`, `zone aop set D on|off`: shared Authenticated
+  Origin Pulls = zone setting `tls_client_auth` (Cloudflare's global client certificate;
+  per-zone certificates are another API, not supported). Turning it on blocks nothing by
+  itself: the origin must require and verify the client certificate. It proves the request
+  came through Cloudflare, not through this account's zone or WAF. `list` reads every zone
+  page across all accounts of the token and prints `AOP tls_client_auth: on= off= error=
+  (N zones, M accounts)`, with `--verbose` first a `zone<TAB>account<TAB>value` line per
+  zone. A failed read or a value other than on/off is never counted as off: the summary
+  and each failed zone with its reason go to stderr as one line, exit 1. `set` targets
+  exactly one zone (the same name in two accounts → exit 1) and prints one line: `PLAN`,
+  `OK ... unchanged` (nothing written) or `CHANGED ... read-back OK`; the setting is read
+  back after the write, a mismatch or a rejected write → exit 1. `--verbose` also prints
+  the zone and account id. No snapshot (one value, the line shows the old one).
 - Only these write DNS; other A/AAAA/MX/TXT changes are delete + import (or a dump
   restore). Never edit a dump to make a change.
 
@@ -76,7 +89,7 @@ needs its row, a missing one is an HTTP 403, exit 1):
 | Zone > Zone > Edit (account-wide zone resources) | `zone add --apply` |
 | Zone > DNS > Read / Edit | `dns` reads / `dns ensure-*`, `restore-zone --apply` |
 | Zone > Zone WAF > Read / Edit | `waf list`, `ratelimit list`, `export`, `diff` / `waf add\|edit\|move --apply` |
-| Zone > Zone Settings > Read | `zone info`, `zone settings`, `uam status`, `export`, `diff` |
+| Zone > Zone Settings > Read / Edit | `zone info`, `zone settings`, `zone aop`, `uam status`, `export`, `diff` / `zone aop set --apply` |
 | Zone > Config Settings > Read | `config list`, `export`, `diff` |
 | Zone > Firewall Services > Read | `access list`, `ua list`, `export`, `diff` |
 | Zone > Bot Management > Read | `bots status` |
@@ -90,6 +103,7 @@ needs its row, a missing one is an HTTP 403, exit 1):
 | `token verify` | check the token and its policies |
 | `zone list [--name S]`, `zone info D`, `zone settings D [--setting K]...` | see zones, plan, audit settings, rule counts with free-plan quotas |
 | `zone add D [--account ID]` | create a zone (type full, the account's default plan) and print its Cloudflare nameservers |
+| `zone aop list [--name S] [--verbose]`, `zone aop set D on\|off` | count / switch shared Authenticated Origin Pulls (`tls_client_auth`) |
 | `dns import D FILE` | create A/AAAA/CNAME/MX/TXT records from a BIND zone file (migration) |
 | `dns delete D --name N --type T [--content C] [--all]` | delete records of one name and type |
 | `dns list D [--name N] [--type T]` | see every record of the zone, or of one name or type |

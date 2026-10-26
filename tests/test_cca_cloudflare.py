@@ -84,6 +84,7 @@ class Api:
         self.misplace = False  # rule writes land at the end regardless of position
         self.ignore_dns_writes = False  # DNS POST/PATCH answer OK but change nothing
         self.ignore_deletes: set[str] = set()  # record ids whose DELETE answers OK, no-op
+        self.ignore_setting_writes = False  # setting PATCH answers OK but changes nothing
         self.accounts: list[dict] | int = [dict(ACCOUNT)]  # an int: that HTTP error
         self.requests: list[httpx.Request] = []
         self.serial = 100
@@ -167,6 +168,15 @@ class Api:
         zid, rest = m.groups()
         if rest == "settings":
             return self.ok(self.settings.get(zid, []))
+        if rest.startswith("settings/"):
+            key = rest.split("/")[1]
+            items = self.settings.setdefault(zid, [])
+            item = next((s for s in items if s["id"] == key), None)
+            if item is None:
+                return self.fail(404, "Unrecognized zone setting name")
+            if request.method == "PATCH" and not self.ignore_setting_writes:
+                item["value"] = body["value"]
+            return self.ok(item)
         if rest == "bot_management":
             bots = self.bots.get(zid, {})
             return self.fail(bots, "forbidden") if isinstance(bots, int) else self.ok(bots)
@@ -515,6 +525,115 @@ def test_zone_settings_selected_and_unavailable(api, capsys):
     )
     assert code == 0
     assert 'minify: {"js": "off"}' in out and "waf: (not available on this plan)" in out
+
+
+AOP = "tls_client_auth"
+OTHER_ACCOUNT = {"id": hexid(901), "name": "Other account"}
+
+
+def aop(api: Api, **values: str) -> None:
+    """Shared AOP per zone id; zones without a value are off."""
+    for z in api.zones:
+        api.settings[z["id"]] = [{"id": AOP, "value": values.get(z["id"], "off")}]
+
+
+def setting_writes(api: Api) -> list[tuple[str, dict]]:
+    return [(r.url.path, json.loads(r.content)) for r in api.writes()]
+
+
+def test_zone_aop_list_all_pages_and_accounts(api, capsys):
+    api.zones = [zone(i, f"z{i:03}.example.com") for i in range(1, 121)]
+    for z in api.zones[60:]:
+        z["account"] = dict(OTHER_ACCOUNT)
+    aop(api, **{hexid(1): "on", hexid(70): "on"})
+    code, out, _ = cca(capsys, "zone", "aop", "list")
+    assert code == 0
+    assert out == f"AOP {AOP}: on=2 off=118 error=0 (120 zones, 2 accounts)\n"
+    code, out, _ = cca(capsys, "zone", "aop", "list", "--name", "Z002", "--verbose")
+    assert out.splitlines() == [
+        "z002.example.com\tExample account\toff",
+        f"AOP {AOP}: on=0 off=1 error=0 (1 zones, 1 accounts)",
+    ]
+    assert api.writes() == []
+
+
+def test_zone_aop_list_read_error_is_never_off(api, capsys):
+    aop(api, **{hexid(2): "weird"})
+    api.errors[("GET", f"/zones/{Z1}/settings/{AOP}")] = (
+        403,
+        {"success": False, "messages": [], "errors": [{"code": 10000, "message": "Auth error"}]},
+    )
+    code, out, err = cca(capsys, "zone", "aop", "list")
+    assert code == 1 and out == "" and err.count("\n") == 1
+    assert f"AOP {AOP}: on=0 off=0 error=2 (2 zones, 1 accounts); read failed:" in err
+    assert "example.com: HTTP 403" in err and "Auth error" in err
+    assert f"example.org: unexpected {AOP} value 'weird'" in err
+    code, out, _ = cca(capsys, "zone", "aop", "list", "--verbose")
+    assert code == 1 and "example.com\tExample account\tERROR" in out
+
+
+def test_zone_aop_list_zone_page_error_exit_1(api, capsys):
+    api.errors[("GET", "/zones")] = (
+        500,
+        {"success": False, "messages": [], "errors": [{"code": 1000, "message": "boom"}]},
+    )
+    code, out, err = cca(capsys, "zone", "aop", "list")
+    assert code == 1 and out == "" and err.count("\n") == 1 and "boom" in err
+
+
+def test_zone_aop_set_plan_apply_unchanged(api, capsys):
+    aop(api)
+    code, out, _ = cca(capsys, "zone", "aop", "set", "example.com", "on")
+    assert code == 0 and api.writes() == []
+    assert out == (
+        f"PLAN example.com (Example account) {AOP} off -> on"
+        " - nothing changed in Cloudflare (add --apply to write)\n"
+    )
+    code, out, _ = cca(capsys, "zone", "aop", "set", "example.com", "on", "--apply")
+    assert code == 0
+    assert out == f"CHANGED example.com (Example account) {AOP} off -> on, read-back OK\n"
+    assert setting_writes(api) == [(f"/client/v4/zones/{Z1}/settings/{AOP}", {"value": "on"})]
+    assert api.requests[-1].method == "GET"  # read back after the write
+    code, out, _ = cca(capsys, "zone", "aop", "set", "example.com", "on", "--apply")
+    assert code == 0 and out == f"OK example.com (Example account) {AOP}=on, unchanged\n"
+    assert len(api.writes()) == 1
+    code, out, _ = cca(capsys, "zone", "aop", "set", "example.com", "off", "--verbose")
+    assert out.splitlines()[0] == f"zone_id={Z1} account_id={hexid(900)}"
+
+
+def test_zone_aop_set_failures_exit_1(api, capsys):
+    aop(api)
+    code, _, err = cca(capsys, "zone", "aop", "set", "missing.example.com", "on", "--apply")
+    assert code == 1 and "not found" in err
+    api.zones.append(dict(zone(3, "example.com"), account=dict(OTHER_ACCOUNT)))
+    code, _, err = cca(capsys, "zone", "aop", "set", "example.com", "on", "--apply")
+    assert code == 1 and "more than one" in err
+    api.zones.pop()
+    api.ignore_setting_writes = True
+    code, _, err = cca(capsys, "zone", "aop", "set", "example.com", "on", "--apply")
+    assert code == 1 and f"read-back: example.com (Example account) {AOP}=off, expected on" in err
+    api.errors[("PATCH", f"/zones/{Z1}/settings/{AOP}")] = (
+        403,
+        {"success": False, "messages": [], "errors": [{"code": 9109, "message": "Unauthorized"}]},
+    )
+    code, _, err = cca(capsys, "zone", "aop", "set", "example.com", "on", "--apply")
+    assert code == 1 and "Cloudflare rejected the write: HTTP 403" in err and "Unauthorized" in err
+    writes = len(api.writes())
+    aop(api, **{Z1: "weird"})
+    code, _, err = cca(capsys, "zone", "aop", "set", "example.com", "off", "--apply")
+    assert code == 1 and f"unexpected {AOP} value 'weird', nothing written" in err
+    del api.settings[Z1]
+    code, _, err = cca(capsys, "zone", "aop", "set", "example.com", "on", "--apply")
+    assert code == 1 and "nothing written" in err
+    assert len(api.writes()) == writes
+
+
+def test_zone_aop_usage(api, capsys):
+    code, _, err = cca(capsys, "zone", "aop")
+    assert code == 2 and err.startswith("usage: cca cloudflare zone aop ")
+    with pytest.raises(SystemExit) as exc:
+        cca(capsys, "zone", "aop", "set", "example.com", "yes")
+    assert exc.value.code == 2
 
 
 def test_dns_show_domain_flags_missing(api, capsys):

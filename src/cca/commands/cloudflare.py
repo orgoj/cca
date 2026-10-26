@@ -55,6 +55,7 @@ CRAWLERS = re.compile(r"googlebot|bingbot|seznambot|applebot|yandexbot|duckduckb
 # actions the CLI can build a complete rule for; others need action_parameters
 WRITABLE_ACTIONS = ("block", "managed_challenge", "js_challenge", "challenge", "log")
 READONLY_RULE_FIELDS = ("id", "version", "last_updated")
+AOP_SETTING = "tls_client_auth"  # shared (global certificate) Authenticated Origin Pulls
 # a missing zone entrypoint ruleset is recognized only by this 404 message; any other read
 # error is fatal so an empty list never creates a new ruleset
 MISSING_ENTRYPOINT = re.compile(
@@ -148,6 +149,7 @@ EPILOG = """\
 examples:
   cca cloudflare zone list --name example
   cca cloudflare zone info example.com
+  cca cloudflare zone aop list
   cca cloudflare dns show-domain example.com
   cca cloudflare dns list example.com --type MX
   cca cloudflare dns ensure-cname example.com --name www --target target.example.net
@@ -157,9 +159,10 @@ examples:
   cca cloudflare events example.com --since 2h
   cca cloudflare export example.com && cca cloudflare diff example.com
 
-Write commands (zone add, dns ensure-*, dns import, dns delete, dns restore-zone, waf
-add/edit/move) only plan; --apply writes and reads the change back (exit 1 on a mismatch
-or a rejected write); DNS and WAF writes first save a snapshot to cloudflare.export_dir. The token
+Write commands (zone add, zone aop set, dns ensure-*, dns import, dns delete, dns
+restore-zone, waf add/edit/move) only plan; --apply writes and reads the change back
+(exit 1 on a mismatch or a rejected write); DNS and WAF writes first save a snapshot to
+cloudflare.export_dir. The token
 comes from the sops file secrets.cloudflare (.cca.toml); the API endpoint is always
 api.cloudflare.com.
 """
@@ -464,6 +467,19 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     p = command(sub, "settings", "zone settings")
     p.add_argument("domain", type=_zone)
     p.add_argument("--setting", action="append", type=_text, help="only this key (repeatable)")
+    p = command(sub, "aop", f"shared Authenticated Origin Pulls (setting {AOP_SETTING})")
+    p.set_defaults(cf_help=p.format_help)
+    aop = p.add_subparsers(metavar="COMMAND")
+    p = command(aop, "list", "on/off counts over all zones and accounts of the token")
+    p.set_defaults(cf_command="aop list")
+    p.add_argument("--name", type=_text, help="only zones whose name contains this substring")
+    p.add_argument("--verbose", action="store_true", help="also one line per zone")
+    p = command(aop, "set", "switch shared AOP of one zone on or off (default: plan)")
+    p.set_defaults(cf_command="aop set")
+    p.add_argument("domain", type=_zone)
+    p.add_argument("state", choices=("on", "off"))
+    p.add_argument("--verbose", action="store_true", help="also print zone and account id")
+    apply(p)
 
     sub = group("dns", "DNS records")
     p = command(sub, "show-domain", "records for @, www and _dmarc")
@@ -986,6 +1002,84 @@ def cmd_zone_settings(s: Session, args: argparse.Namespace) -> int:
         if isinstance(value, dict | list):
             value = json.dumps(value, ensure_ascii=False)
         print(f"{_d(key)}: {_d(value)}")
+    return 0
+
+
+def _aop_value(s: Session, zone_id: str) -> str:
+    """Shared AOP of a zone: on or off; anything else (error, odd value) is a RunError."""
+    try:
+        raw = s.client.get(f"/zones/{zone_id}/settings/{AOP_SETTING}", cast_to=object)
+    except Exception as exc:  # noqa: BLE001 - counted as an error, never as off
+        raise RunError(api_error(exc)) from None
+    data = plain(raw)
+    if isinstance(data, dict) and isinstance(data.get("result"), dict):
+        data = data["result"]
+    value = data.get("value") if isinstance(data, dict) else None
+    if value not in ("on", "off"):
+        raise RunError(f"unexpected {AOP_SETTING} value '{_d(value)}'")
+    return value
+
+
+def _zone_account(zone: dict) -> dict:
+    account = zone.get("account")
+    return account if isinstance(account, dict) else {}
+
+
+def cmd_zone_aop_list(s: Session, args: argparse.Namespace) -> int:
+    zones = _sorted_zones(s, args.name)
+    counts = {"on": 0, "off": 0, "error": 0}
+    errors = []
+    for zone in zones:
+        account = _d(_zone_account(zone).get("name", "?"))
+        try:
+            value = _aop_value(s, zone["id"])
+        except RunError as exc:
+            counts["error"] += 1
+            errors.append(f"{_d(zone.get('name'))}: {exc}")
+            value = "ERROR"
+        else:
+            counts[value] += 1
+        if args.verbose:
+            print(f"{_d(zone.get('name', '?'))}\t{account}\t{value}")
+    accounts = {_zone_account(z).get("id") for z in zones}
+    summary = (
+        f"AOP {AOP_SETTING}: on={counts['on']} off={counts['off']} error={counts['error']} "
+        f"({len(zones)} zones, {len(accounts)} accounts)"
+    )
+    if errors:
+        raise RunError(f"{summary}; read failed: {'; '.join(errors)}")
+    print(summary)
+    return 0
+
+
+def cmd_zone_aop_set(s: Session, args: argparse.Namespace) -> int:
+    zone = s.zone(args.domain)
+    zone_id = zone["id"]
+    account = _zone_account(zone)
+    where = f"{args.domain} ({_d(account.get('name', '?'))})"
+    if args.verbose:
+        print(f"zone_id={zone_id} account_id={_d(account.get('id', '?'))}")
+    try:
+        current = _aop_value(s, zone_id)
+    except RunError as exc:
+        raise RunError(f"{where}: {exc}, nothing written") from None
+    if current == args.state:
+        print(f"OK {where} {AOP_SETTING}={current}, unchanged")
+        return 0
+    change = f"{where} {AOP_SETTING} {current} -> {args.state}"
+    if not args.apply:
+        print(f"PLAN {change} - nothing changed in Cloudflare (add --apply to write)")
+        return 0
+    try:
+        s.client.patch(
+            f"/zones/{zone_id}/settings/{AOP_SETTING}", body={"value": args.state}, cast_to=object
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise RunError(f"Cloudflare rejected the write: {api_error(exc)}") from None
+    after = _aop_value(s, zone_id)  # read-back
+    if after != args.state:
+        raise RunError(f"read-back: {where} {AOP_SETTING}={after}, expected {args.state}")
+    print(f"CHANGED {change}, read-back OK")
     return 0
 
 
@@ -2249,6 +2343,8 @@ HANDLERS = {
     ("dns", "import"): cmd_dns_import,
     ("dns", "delete"): cmd_dns_delete,
     ("zone", "settings"): cmd_zone_settings,
+    ("zone", "aop list"): cmd_zone_aop_list,
+    ("zone", "aop set"): cmd_zone_aop_set,
     ("dns", "show-domain"): cmd_show_domain,
     ("dns", "show-dkim"): cmd_show_dkim,
     ("dns", "ensure-dkim"): cmd_ensure_dkim,
