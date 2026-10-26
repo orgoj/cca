@@ -47,4 +47,5 @@ Values from a host are untrusted: shown escaped, `pid`/`path` validated before u
 
 Exit 0 nothing to report; 1 findings; 2 a warning, a host error (status goes on with the
 next host), usage or config error. A host whose ssh output passes 16 MiB is a host
-error: ssh is killed and nothing it sent is used.
+error: ssh is killed and nothing it sent is parsed (`show` prints its first 64 KiB
+escaped, like any raw data).

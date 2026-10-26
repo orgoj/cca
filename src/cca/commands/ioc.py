@@ -95,6 +95,8 @@ def _remote(cfg: config.Config, host: str, script: str, timeout: int, log: str):
 def _failed(host: str, result) -> CcaError:
     if result.timed_out:
         return CcaError(f"{host}: timed out")
+    if result.truncated:  # host data: never used, only reported
+        return CcaError(f"{host}: output over the limit, ssh stopped")
     tail = result.output.strip().splitlines()[-1:] or ["no output"]
     return CcaError(f"{host}: remote command failed (exit {result.code}): {tail[0]}")
 

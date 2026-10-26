@@ -42,8 +42,10 @@ cca run --session [SERVER...]
 Exit status: the remote command's; 124 when `--timeout` (default 300 s) passed;
 130/143/129/137 when the command was interrupted, terminated, hung up or killed; 2 a
 usage, config or transport error; 255 ssh could not connect; 125 over ssh when the
-output passed 16 MiB: ssh is killed, the output discarded, `--all` stops (narrow the
-command with `head`, `grep`, `tail` and run it again).
+output passed 16 MiB: ssh is killed, only the first 64 KiB are printed (`--all`:
+`exit="output-limit"`, then it stops). The remote command loses its output channel and
+usually dies on its next write (SIGPIPE); one that no longer writes keeps running, so
+check with `pgrep` before repeating it. Narrow the command (`head`, `grep`, `tail`).
 
 Timeout over tmux: the command keeps running in the window. The error names its marker;
 do not start another command on that server until it finished:

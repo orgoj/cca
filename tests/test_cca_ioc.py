@@ -238,6 +238,18 @@ def test_transport_choice(env, monkeypatch, transport, via):
     assert seen == [via]
 
 
+def test_output_limit_is_a_host_error(env, monkeypatch, capsys):
+    project(env)
+
+    def fake(cfg, server, command, **kw):
+        head = '@@host-ioc quick\n{"findings": []}\n'  # a plausible start is never used
+        return executor.Result(server, executor.OUTPUT_LIMIT_EXIT, head, truncated=True)
+
+    monkeypatch.setattr(executor, "execute", fake)
+    assert main(["ioc", "status", "server1"]) == 2
+    assert "server1: ERROR server1: output over the limit, ssh stopped" in capsys.readouterr().out
+
+
 def test_parse_states_ignores_noise():
     output = (
         'banner\n@@host-ioc quick\n{"findings": []}\n\n@@host-ioc-end quick 0\n'

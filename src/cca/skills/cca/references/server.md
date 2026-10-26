@@ -40,7 +40,7 @@ gets `exit="N"` (`exit="timeout"`) on its tag; the other sections still run.
 server in config order and stops at the first non-zero exit.
 
 Exit 0 all sections ran; 124 timeout; 255 ssh failed (no further calls to that
-server); 125 a section's output passed 16 MiB (ssh killed, the report stops, `--all`
-too); 2 usage or configuration error.
+server); 125 a section's output passed 16 MiB (ssh killed, the section tag gets
+`exit="output-limit"` and its first 64 KiB, the report stops, `--all` too); 2 usage or configuration error.
 
 For anything else on the server use `cca run`.

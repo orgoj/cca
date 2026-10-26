@@ -30,7 +30,7 @@ A section whose command fails gets exit="N" on its tag; the other sections still
 --timeout is the total time for one server.
 
 exit status: 0 all sections ran; 124 timeout; 255 ssh failed; 125 output over 16 MiB
-(ssh killed, report stopped); 2 usage or config error.
+(ssh killed, first 64 KiB shown, report stopped); 2 usage or config error.
 With --all the servers run in config order and the first non-zero exit stops it.
 
 examples:
@@ -142,6 +142,10 @@ def _section(
         print(f"cca: error: {server}: timed out before section {name}", file=sys.stderr)
         return 124
     result = executor.execute(cfg, server, PREFIX + command, timeout=remaining, via="ssh")
+    if result.truncated:
+        sys.stdout.write(_tag(name, f'{attrs} exit="output-limit"', result.output))
+        print(f"cca: error: {executor.limit_message(result)}", file=sys.stderr)
+        return result.code
     if result.timed_out:
         sys.stdout.write(_tag(name, f'{attrs} exit="timeout"', result.output))
         print(f"cca: error: {server}: section {name} did not finish in time", file=sys.stderr)

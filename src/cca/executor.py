@@ -31,6 +31,7 @@ POLL = 0.2  # seconds between checks for the END marker
 TMUX_TIMEOUT = 30  # seconds for one tmux client call
 OUTPUT_MAX = 16 * 1024 * 1024  # bytes of combined ssh output kept from one command
 OUTPUT_LIMIT_EXIT = 125  # exit status when the output limit stopped ssh
+OUTPUT_HEAD = 64 * 1024  # bytes of the start of the output kept when the limit stopped ssh
 READ_CHUNK = 64 * 1024
 STOP_GRACE = 5  # seconds to drain the output pipe after ssh was killed
 
@@ -46,6 +47,22 @@ class Result:
     output: str  # combined stdout and stderr, control characters escaped
     marker: str | None = None  # tmux: the marker to find the output again
     timed_out: bool = False
+    truncated: bool = False  # ssh output passed OUTPUT_MAX: ssh killed, output = its start
+
+
+def limit_message(result: Result) -> str:
+    """The error line for a truncated result."""
+    return (
+        f"{result.server}: output exceeded {_size(OUTPUT_MAX)}, ssh stopped; shown only its "
+        f"first {_size(OUTPUT_HEAD)}; the command may still run (narrow it: head, grep, tail)"
+    )
+
+
+def _size(n: int) -> str:
+    for unit, factor in (("MiB", 1024 * 1024), ("KiB", 1024)):
+        if n % factor == 0:
+            return f"{n // factor} {unit}"
+    return f"{n} bytes"
 
 
 # --- remote form (both transports)
@@ -229,14 +246,8 @@ def execute(
             f"(check later: cca run --read --marker {e.marker} {server})",
             130,
         ) from None
-    except _OutputLimitError:
-        _log(log_target, server, text, "output-limit")
-        raise CcaError(
-            f"{server}: output exceeded {_size(OUTPUT_MAX)}, ssh stopped and "
-            "the output discarded; the command may still run (narrow it: head, grep, tail)",
-            OUTPUT_LIMIT_EXIT,
-        ) from None
-    _log(log_target, server, text, "timeout" if result.timed_out else str(result.code))
+    status = "timeout" if result.timed_out else str(result.code)
+    _log(log_target, server, text, "output-limit" if result.truncated else status)
     return result
 
 
@@ -288,12 +299,11 @@ def _stop(proc: subprocess.Popen) -> None:
         pass
 
 
-class _OutputLimitError(Exception):
-    pass
-
-
-def _size(n: int) -> str:
-    return f"{n // (1024 * 1024)} MiB" if n % (1024 * 1024) == 0 else f"{n} bytes"
+def _head(chunks: list[bytes]) -> str:
+    """The first OUTPUT_HEAD bytes, cut after the last whole line when there is one."""
+    head = b"".join(chunks)[:OUTPUT_HEAD]
+    end = head.rfind(b"\n")
+    return safe_output(head[: end + 1] if end >= 0 else head)
 
 
 def _ssh_execute(
@@ -319,12 +329,12 @@ def _ssh_execute(
         size = 0
         try:
             while chunk := proc.stdout.read1(READ_CHUNK):
+                chunks.append(chunk)
                 size += len(chunk)
                 if size > OUTPUT_MAX:
                     overflow.set()
                     _stop(proc)
                     return
-                chunks.append(chunk)
         except (OSError, ValueError):  # the pipe was closed after a timeout
             pass
 
@@ -351,7 +361,7 @@ def _ssh_execute(
         proc.wait()
         threads[0].join(STOP_GRACE)  # a child outside the group may hold the pipe open
         if overflow.is_set():
-            raise _OutputLimitError() from None
+            return Result(server, OUTPUT_LIMIT_EXIT, _head(chunks), truncated=True)
         return Result(server, 124, safe_output(b"".join(chunks)), timed_out=True)
     except BaseException:
         _stop(proc)
@@ -360,7 +370,7 @@ def _ssh_execute(
     finally:
         proc.stdout.close()
     if overflow.is_set():
-        raise _OutputLimitError()
+        return Result(server, OUTPUT_LIMIT_EXIT, _head(chunks), truncated=True)
     return Result(server, proc.returncode, safe_output(b"".join(chunks)))
 
 

@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from cca import executor
 from cca.cli import main
 from cca.commands import server
 
@@ -100,6 +101,17 @@ def test_hostname(env, capsys):
     assert main(["server", "hostname", "server1"]) == 0
     assert capsys.readouterr().out == '<hostname server="server1">h1</hostname>\n'
     assert ssh_calls(env) == ["admin@host1"]
+
+
+def test_output_limit_stops_the_report(env, monkeypatch, capsys):
+    project(env)
+    monkeypatch.setattr(executor, "OUTPUT_MAX", 1000)
+    write_exe(env / "rbin" / "hostname", "#!/bin/sh\nwhile :; do echo h1; done\n")
+    assert main(["server", "hostname", "--all"]) == executor.OUTPUT_LIMIT_EXIT
+    captured = capsys.readouterr()
+    assert captured.out.startswith('<hostname server="server1" exit="output-limit">\nh1\n')
+    assert "server1: output exceeded 1000 bytes, ssh stopped" in captured.err
+    assert ssh_calls(env) == ["admin@host1"]  # --all stops
 
 
 def test_hostname_by_alias(env, capsys):

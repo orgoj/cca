@@ -278,12 +278,16 @@ def test_ssh_timeout(env, monkeypatch, capsys):
 def test_ssh_output_limit_stops_endless_output(env, monkeypatch, capsys):
     project(env)
     monkeypatch.setattr(executor, "OUTPUT_MAX", 100_000)
+    monkeypatch.setattr(executor, "OUTPUT_HEAD", 1024)
     started = time.monotonic()
     assert cca(["-t", "server1", "--", "yes x"], monkeypatch) == executor.OUTPUT_LIMIT_EXIT
     assert time.monotonic() - started < 10  # killed on overflow, not at the 300 s timeout
     captured = capsys.readouterr()
-    assert captured.out == ""  # the partial output is discarded
-    assert "server1: output exceeded 100000 bytes, ssh stopped" in captured.err
+    assert captured.out == "x\n" * 512  # the first 1 KiB, whole lines
+    assert captured.err == (
+        "cca: error: server1: output exceeded 100000 bytes, ssh stopped; shown only its "
+        "first 1 KiB; the command may still run (narrow it: head, grep, tail)\n"
+    )
 
 
 def test_ssh_output_limit_boundary(env, monkeypatch, capsys):
@@ -293,7 +297,9 @@ def test_ssh_output_limit_boundary(env, monkeypatch, capsys):
     assert capsys.readouterr().out == "a" * 1000
     code = cca(["-t", "server1", "--", "head -c 1001 /dev/zero | tr '\\0' a"], monkeypatch)
     assert code == executor.OUTPUT_LIMIT_EXIT
-    assert "output exceeded" in capsys.readouterr().err
+    captured = capsys.readouterr()
+    assert captured.out == "a" * 1001  # no newline: the head is not cut at a line end
+    assert "output exceeded 1000 bytes" in captured.err
 
 
 def test_ssh_output_limit_logged_and_stops_all(env, monkeypatch, capsys):
@@ -301,6 +307,9 @@ def test_ssh_output_limit_logged_and_stops_all(env, monkeypatch, capsys):
     (env / "work" / "logs").mkdir()
     monkeypatch.setattr(executor, "OUTPUT_MAX", 1000)
     assert cca(["--all", "--", "yes x"], monkeypatch) == executor.OUTPUT_LIMIT_EXIT
+    assert capsys.readouterr().out.startswith(
+        '<server-result name="server1" exit="output-limit">\nx\n'
+    )
     assert len(ssh_calls(env)) == 1  # server2 and server3 never contacted
     (log,) = (env / "work" / "logs").iterdir()
     assert "output-limit" in log.read_text()

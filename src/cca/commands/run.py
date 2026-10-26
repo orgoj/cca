@@ -45,7 +45,7 @@ options (only before SERVER or --):
 
 exit status: the remote command's; 124 timeout; 130/143/129/137 when the command was
 interrupted, terminated, hung up or killed; 2 usage, config or transport error; 125 ssh
-output over 16 MiB (ssh killed, output discarded).
+output over 16 MiB (ssh killed, only its first 64 KiB printed).
 
 examples:
   cca run -t server1 -- uptime
@@ -192,7 +192,7 @@ def _stdin_command() -> str:
 
 def _tokf(cfg: config.Config, command: str, result: executor.Result) -> str:
     """Output passed through tokf when run.tokf is set and tokf supports protocol cca-v1."""
-    if not cfg.data["run"]["tokf"] or result.timed_out:
+    if not cfg.data["run"]["tokf"] or result.timed_out or result.truncated:
         return result.output
     path = tokf_path()
     if path is None:
@@ -238,6 +238,14 @@ def tokf_path() -> str | None:
     return path if probe.returncode == 0 else None
 
 
+def _report(result: executor.Result, timeout: int) -> None:
+    """The error line of a timed-out or truncated result (nothing otherwise)."""
+    if result.truncated:
+        print(f"cca: error: {executor.limit_message(result)}", file=sys.stderr)
+    elif result.timed_out:
+        _timed_out(result, timeout)
+
+
 def _timed_out(result: executor.Result, timeout: int) -> None:
     hint = (
         f"; check later: cca run --read --marker {result.marker} {result.server}"
@@ -279,8 +287,7 @@ def run(args: argparse.Namespace) -> int:
             cfg, req.servers[0], req.create_path, _stdin_bytes(), timeout=req.timeout
         )
         sys.stdout.write(result.output)
-        if result.timed_out:
-            _timed_out(result, req.timeout)
+        _report(result, req.timeout)
         return result.code
     command = req.command if req.command is not None else _stdin_command()
     executor.check_command(command)
@@ -288,8 +295,7 @@ def run(args: argparse.Namespace) -> int:
         return _all(cfg, command, req.timeout)
     result = executor.execute(cfg, req.servers[0], command, timeout=req.timeout)
     sys.stdout.write(_tokf(cfg, command, result))
-    if result.timed_out:
-        _timed_out(result, req.timeout)
+    _report(result, req.timeout)
     return result.code
 
 
@@ -300,11 +306,11 @@ def _all(cfg: config.Config, command: str, timeout: int) -> int:
     for server in servers:
         result = executor.execute(cfg, server, command, timeout=timeout)
         status = "timeout" if result.timed_out else str(result.code)
+        status = "output-limit" if result.truncated else status
         print(f'<server-result name="{server}" exit="{status}">')
         sys.stdout.write(_tokf(cfg, command, result))
         print("</server-result>", flush=True)
-        if result.timed_out:
-            _timed_out(result, timeout)
+        _report(result, timeout)
         if result.code != 0:
             return result.code
     return 0
